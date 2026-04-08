@@ -190,3 +190,8 @@ bootstrap-local.yml
 *.pptx
 !README.md
 !docs/*.md
+
+# ================================
+# Docker Compose 数据挂载
+# ================================
+volumes/
