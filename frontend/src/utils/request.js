@@ -6,6 +6,11 @@ const request = axios.create({
   timeout: 10000,
 })
 
+// 开发环境启用 mock
+if (import.meta.env.VITE_ENABLE_MOCK === 'true') {
+  import('./mock.js').then(({ setupMock }) => setupMock(request))
+}
+
 // 请求拦截器
 request.interceptors.request.use(
   config => {
