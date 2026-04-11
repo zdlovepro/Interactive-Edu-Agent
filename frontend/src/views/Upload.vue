@@ -41,12 +41,13 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import FileUpload from '@/components/Upload/FileUpload.vue'
 import { useCoursStore } from '@/stores/cours'
 import { useRouter } from 'vue-router'
 import { formatDate } from '@/utils'
 import request from '@/utils/request'
+import { COURSEWARE_API } from '@/constans/api'
 
 const router = useRouter()
 const coursStore = useCoursStore()
@@ -55,60 +56,84 @@ const uploadStatus = ref(null)
 const uploadError = ref(null)
 const uploadedCourseware = ref([])
 
+let pollTimer = null
+
+// 轮询解析状态，直到解析完成或失败
+const pollParseStatus = (coursewareId, coursewareItem) => {
+  const MAX_ATTEMPTS = 30
+  let attempts = 0
+
+  pollTimer = setInterval(async () => {
+    attempts++
+    if (attempts > MAX_ATTEMPTS) {
+      clearInterval(pollTimer)
+      coursewareItem.status = 'error'
+      uploadStatus.value = { status: 'error', message: '解析超时，请重试' }
+      return
+    }
+
+    try {
+      const res = await request.get(COURSEWARE_API.DETAIL(coursewareId))
+      if (res.code === 0) {
+        const status = res.data?.status
+        coursewareItem.status = status
+        if (status === 'PARSED') {
+          clearInterval(pollTimer)
+          uploadStatus.value = { status: 'success', message: '解析完成，可以开始讲课！' }
+          setTimeout(() => { uploadStatus.value = null }, 3000)
+        } else if (status === 'FAILED') {
+          clearInterval(pollTimer)
+          uploadStatus.value = { status: 'error', message: '课件解析失败，请重新上传' }
+        }
+      }
+    } catch {
+      // 网络错误时继续轮询
+    }
+  }, 3000)
+}
+
 const handleFileSelected = async file => {
   uploadError.value = null
-  uploadStatus.value = {
-    status: 'uploading',
-    message: '上传中...',
-    progress: 0,
-  }
+  uploadStatus.value = { status: 'uploading', message: '上传中...', progress: 0 }
 
   try {
     const formData = new FormData()
     formData.append('file', file)
 
-    // 模拟上传进度
-    const progressInterval = setInterval(() => {
-      if (uploadStatus.value.progress < 90) {
-        uploadStatus.value.progress += Math.random() * 30
-      }
-    }, 500)
-
-    // 调用后端上传接口
-    // const response = await request.post('/api/v1/courseware/upload', formData)
-
-    // 模拟响应
-    const response = {
-      data: {
-        id: Date.now(),
-        name: file.name,
-        size: file.size,
-        status: 'parsing',
+    const res = await request.post(COURSEWARE_API.UPLOAD, formData, {
+      timeout: 120000,
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: progressEvent => {
+        const percent = Math.round((progressEvent.loaded / progressEvent.total) * 100)
+        uploadStatus.value = {
+          status: 'uploading',
+          message: `上传中... ${percent}%`,
+          progress: percent,
+        }
       },
+    })
+
+    if (res.code !== 0) {
+      throw new Error(res.message || '上传失败')
     }
 
-    clearInterval(progressInterval)
-
-    uploadStatus.value = {
-      status: 'success',
-      message: '上传成功，正在解析...',
-      progress: 100,
+    const coursewareId = res.data.coursewareId
+    const coursewareItem = {
+      id: coursewareId,
+      name: file.name,
+      size: file.size,
+      status: 'PARSING',
+      createdAt: new Date().toISOString(),
     }
 
-    // 添加到课件列表
-    const courseware = response.data
-    uploadedCourseware.value.push(courseware)
-    coursStore.addCourseware(courseware)
+    uploadedCourseware.value.unshift(coursewareItem)
+    coursStore.addCourseware(coursewareItem)
 
-    // 2秒后清除状态
-    setTimeout(() => {
-      uploadStatus.value = null
-    }, 2000)
+    uploadStatus.value = { status: 'success', message: '上传成功，正在解析...', progress: 100 }
+
+    pollParseStatus(coursewareId, coursewareItem)
   } catch (error) {
-    uploadStatus.value = {
-      status: 'error',
-      message: '上传失败',
-    }
+    uploadStatus.value = { status: 'error', message: '上传失败' }
     uploadError.value = error.message || '上传失败，请重试'
   }
 }
@@ -119,12 +144,28 @@ const handleError = error => {
 
 const openCourseware = courseware => {
   coursStore.setCourseware(courseware)
-  // 跳转到讲稿预览页面
-  router.push({
-    name: 'Script',
-    params: { coursewareId: courseware.id },
-  })
+  router.push({ name: 'Script', params: { coursewareId: courseware.id } })
 }
+
+// 加载已有课件列表
+const loadCoursewareList = async () => {
+  try {
+    const res = await request.get(COURSEWARE_API.LIST)
+    if (res.code === 0 && Array.isArray(res.data?.items)) {
+      uploadedCourseware.value = res.data.items
+    }
+  } catch {
+    // 接口未就绪时静默失败，不影响上传功能
+  }
+}
+
+onMounted(() => {
+  loadCoursewareList()
+})
+
+onUnmounted(() => {
+  if (pollTimer) clearInterval(pollTimer)
+})
 </script>
 
 <style scoped>
