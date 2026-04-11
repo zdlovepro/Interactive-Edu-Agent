@@ -111,41 +111,57 @@ const coursStore = useCoursStore()
 
 const coursewareId = route.params.coursewareId
 
-// 讲课状态
+// ========== 讲课状态 ==========
+/** 讲课状态机：idle->playing->paused->finished */
 const lectureState = ref(LECTURE_STATE.IDLE)
+/** 后端返回的会话 ID，翻页和问答接口需要传入 */
 const sessionId = ref(null)
+/** 译自讲稿 segments 的幻灯片数据 */
 const slides = ref([])
+/** 当前页码（1-based） */
 const currentPage = ref(1)
 const errorMsg = ref('')
 
-// 问答
+// ========== 问答 ==========
+/** 输入框绑定内容 */
 const question = ref('')
+/** 是否正在等待问答接口返回 */
 const isAsking = ref(false)
+/** 问答历史列表，每项包含 { id, question, answer, evidence } */
 const qaList = ref([])
 const qaHistoryRef = ref(null)
 
-// TTS
+// ========== TTS ==========
+/** 是否正在语音朗读 */
 const isSpeaking = ref(false)
+/** 当前 SpeechSynthesisUtterance 实例，用于中止朗读 */
 let speechUtterance = null
 
-// 计算属性
+// ========== 计算属性 ==========
+/** 当前页的幻灯片数据 */
 const currentSlide = computed(() => slides.value[currentPage.value - 1])
 const totalPages = computed(() => slides.value.length)
+/** 讲课整体进度百分比（用于进度条展示） */
 const progressPercent = computed(() =>
   totalPages.value > 0 ? Math.round((currentPage.value / totalPages.value) * 100) : 0
 )
+/** 状态小标签文本，映射 LECTURE_STATE 枚举 */
 const stateLabel = computed(() => {
   const labels = { idle: '未开始', playing: '讲课中', paused: '已暂停', finished: '已完成' }
   return labels[lectureState.value] || ''
 })
 
-// Markdown 渲染
+// Markdown 渲染：将问答文本转为 HTML，开启换行支持
 const renderMd = text => {
   if (!text) return ''
   return marked.parse(text, { breaks: true })
 }
 
 // ========== 讲课流程 ==========
+/**
+ * 开始讲课：调用 /lecture/start 接口，获取 sessionId
+ * 若后端返回 currentNode 则定位到断点继续页
+ */
 const startLecture = async () => {
   try {
     const res = await request.post(LECTURE_API.START, { coursewareId })
@@ -164,6 +180,10 @@ const startLecture = async () => {
   }
 }
 
+/**
+ * 暂停讲课：先停止 TTS，再请求后端更改状态
+ * 即使网络请求失败也允许本地过渡到暂停
+ */
 const pauseLecture = async () => {
   stopSpeech()
   try {
@@ -175,6 +195,9 @@ const pauseLecture = async () => {
   coursStore.currentSession && (coursStore.currentSession.status = 'paused')
 }
 
+/**
+ * 继续讲课：同步后端状态，并将页码对齐到后端返回的 currentNode
+ */
 const resumeLecture = async () => {
   try {
     const res = await request.post(LECTURE_API.RESUME, { sessionId: sessionId.value })
@@ -189,6 +212,7 @@ const resumeLecture = async () => {
 }
 
 // ========== 翻页 ==========
+/** 上一页（同时停止当前 TTS） */
 const previousSlide = () => {
   if (currentPage.value > 1) {
     currentPage.value--
@@ -196,6 +220,7 @@ const previousSlide = () => {
   }
 }
 
+/** 下一页；已到最后一张时转为 finished 状态 */
 const nextSlide = () => {
   if (currentPage.value < totalPages.value) {
     currentPage.value++
@@ -207,6 +232,7 @@ const nextSlide = () => {
 }
 
 // ========== TTS 语音合成 ==========
+/** 切换朗读状态 */
 const toggleSpeech = () => {
   if (isSpeaking.value) {
     stopSpeech()
@@ -215,6 +241,7 @@ const toggleSpeech = () => {
   }
 }
 
+/** 使用 Web Speech API 朗读当前幻灯片文本，中文语谷制定 */
 const speakCurrent = () => {
   const text = currentSlide.value?.content
   if (!text || !globalThis.speechSynthesis) return
@@ -229,6 +256,7 @@ const speakCurrent = () => {
   isSpeaking.value = true
 }
 
+/** 停止朗读并清除状态 */
 const stopSpeech = () => {
   if (globalThis.speechSynthesis) {
     globalThis.speechSynthesis.cancel()
@@ -237,6 +265,10 @@ const stopSpeech = () => {
 }
 
 // ========== 问答 ==========
+/**
+ * 提交文字问题
+ * 展示「正在思考...」占位文本，接口返回后更新到实际答案
+ */
 const submitQuestion = async () => {
   const q = question.value.trim()
   if (!q || isAsking.value) return
@@ -267,6 +299,7 @@ const submitQuestion = async () => {
   }
 }
 
+/** 问答列表滚动到底部，补充新条目后自动升至可见 */
 const scrollQAToBottom = () => {
   nextTick(() => {
     if (qaHistoryRef.value) {
@@ -276,6 +309,7 @@ const scrollQAToBottom = () => {
 }
 
 // ========== 初始化 ==========
+/** 加载讲稿片段，将幻灯片数据映射到 slides */
 const loadSlides = async () => {
   try {
     const res = await request.get(SCRIPT_API.GET(coursewareId))

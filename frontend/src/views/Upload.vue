@@ -52,13 +52,21 @@ import { COURSEWARE_API } from '@/constans/api'
 const router = useRouter()
 const coursStore = useCoursStore()
 
+/** 当前上传状态（status / message / progress），为 null 时不展示任何状态提示 */
 const uploadStatus = ref(null)
+/** 圆d字错误文本，为 null 时不展示错误框 */
 const uploadError = ref(null)
+/** 已上传的课件列表（初始化时从后端加载，每次上传成功后头插） */
 const uploadedCourseware = ref([])
 
 let pollTimer = null
 
-// 轮询解析状态，直到解析完成或失败
+/**
+ * 课件解析状态轮询
+ * 上传成功后每 3s 轮询一次，最多 30 次（共 90s），解析完成或失败后停止
+ * @param {string} coursewareId - 课件 ID
+ * @param {object} coursewareItem - uploadedCourseware 列表中对应的引用，用于实时更新 status
+ */
 const pollParseStatus = (coursewareId, coursewareItem) => {
   const MAX_ATTEMPTS = 30
   let attempts = 0
@@ -92,6 +100,10 @@ const pollParseStatus = (coursewareId, coursewareItem) => {
   }, 3000)
 }
 
+/**
+ * 处理文件选择事件（由 FileUpload 组件触发）
+ * 流程：构建 FormData -> 带进度回调上传 -> 头插到列表 -> 启动解析状态轮询
+ */
 const handleFileSelected = async file => {
   uploadError.value = null
   uploadStatus.value = { status: 'uploading', message: '上传中...', progress: 0 }
@@ -138,16 +150,21 @@ const handleFileSelected = async file => {
   }
 }
 
+/** FileUpload 组件校验失败时回调 */
 const handleError = error => {
   uploadError.value = error
 }
 
+/** 跳转到请中课件的讲稿预览页 */
 const openCourseware = courseware => {
   coursStore.setCourseware(courseware)
   router.push({ name: 'Script', params: { coursewareId: courseware.id } })
 }
 
-// 加载已有课件列表
+/**
+ * 初始化加载课件列表
+ * 接口未就绪时静默失败，不影响上传功能
+ */
 const loadCoursewareList = async () => {
   try {
     const res = await request.get(COURSEWARE_API.LIST)
