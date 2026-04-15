@@ -54,11 +54,6 @@
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
-    <!-- HTTP client (recommended for async call) -->
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-webflux</artifactId>
-    </dependency>
 
     <!-- Optional but recommended: metadata for @ConfigurationProperties -->
     <dependency>
