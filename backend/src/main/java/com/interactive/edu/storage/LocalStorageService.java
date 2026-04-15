@@ -19,14 +19,23 @@ public class LocalStorageService implements StorageService {
     @Override
     public StoredObject save(String coursewareId, MultipartFile file) {
         try {
-            String filename = file.getOriginalFilename() == null ? "courseware.bin" : file.getOriginalFilename();
+            String originalFilename = file.getOriginalFilename();
+            String filename;
+            if (originalFilename == null || originalFilename.isBlank()) {
+                filename = "courseware.bin";
+            } else {
+                filename = Path.of(originalFilename).getFileName().toString();
+                if (filename.isBlank()) {
+                    filename = "courseware.bin";
+                }
+            }
             Path baseDir = Path.of(storageProperties.getLocalBaseDir()).toAbsolutePath().normalize();
             Path courseDir = baseDir.resolve(coursewareId).normalize();
             Files.createDirectories(courseDir);
 
             Path dest = courseDir.resolve(filename).normalize();
-            // basic safety: ensure still under baseDir
-            if (!dest.startsWith(baseDir)) {
+            // basic safety: ensure still under the current course directory
+            if (!dest.startsWith(courseDir)) {
                 throw new IllegalArgumentException("非法文件路径");
             }
 
