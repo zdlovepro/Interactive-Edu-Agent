@@ -1,4 +1,4 @@
-package com.interactive.edu.controller;
+package com.interactive.edu.service.courseware;
 
 import com.interactive.edu.dto.BaseResponse;
 import com.interactive.edu.dto.CoursewareUploadResult;
