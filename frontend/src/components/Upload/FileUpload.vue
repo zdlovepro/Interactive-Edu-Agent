@@ -27,7 +27,7 @@
  *   error(message: string)   - 校验失败时触发
  */
 import { ref } from 'vue'
-import { ALLOWED_EXTENSIONS, MAX_FILE_SIZE, UPLOAD_STATUS } from '@/constans/upload'
+import { ALLOWED_EXTENSIONS, MAX_FILE_SIZE } from '@/constans/upload'
 
 const fileInput = ref(null)
 
