@@ -1,22 +1,21 @@
 package com.interactive.edu.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
 import lombok.NoArgsConstructor;
 
-@Data
 @NoArgsConstructor
-@AllArgsConstructor
-public class ApiResponse<T> {
-    private int code;
-    private String message;
-    private T data;
+public class ApiResponse<T> extends BaseResponse<T> {
+
+    public ApiResponse(int code, String message, T data) {
+        super(code, message, data);
+    }
 
     public static <T> ApiResponse<T> ok(T data) {
-        return new ApiResponse<>(0, "success", data);
+        BaseResponse<T> response = BaseResponse.ok(data);
+        return new ApiResponse<>(response.getCode(), response.getMessage(), response.getData());
     }
 
     public static <T> ApiResponse<T> error(int code, String message) {
-        return new ApiResponse<>(code, message, null);
+        BaseResponse<T> response = BaseResponse.error(code, message);
+        return new ApiResponse<>(response.getCode(), response.getMessage(), response.getData());
     }
 }

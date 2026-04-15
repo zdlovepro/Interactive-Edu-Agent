@@ -5,6 +5,7 @@ import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.BucketExistsArgs;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -17,6 +18,8 @@ public class MinioStorageService implements StorageService {
 
     private final MinioClient minioClient;
     private final MinioProperties minioProperties;
+    private final Object bucketInitLock = new Object();
+    private volatile boolean bucketInitialized;
 
     @Override
     public StoredObject save(String coursewareId, MultipartFile file) {
@@ -43,12 +46,43 @@ public class MinioStorageService implements StorageService {
         }
     }
 
+    @PostConstruct
+    public void initializeBucket() {
+        try {
+            ensureBucket();
+        } catch (Exception e) {
+            throw new IllegalStateException("MinIO bucket 初始化失败: " + e.getMessage(), e);
+        }
+    }
+
     private void ensureBucket() throws Exception {
-        boolean exists = minioClient.bucketExists(
-                BucketExistsArgs.builder().bucket(minioProperties.getBucket()).build()
-        );
-        if (!exists) {
-            minioClient.makeBucket(MakeBucketArgs.builder().bucket(minioProperties.getBucket()).build());
+        if (bucketInitialized) {
+            return;
+        }
+
+        synchronized (bucketInitLock) {
+            if (bucketInitialized) {
+                return;
+            }
+
+            String bucket = minioProperties.getBucket();
+            boolean exists = minioClient.bucketExists(
+                    BucketExistsArgs.builder().bucket(bucket).build()
+            );
+            if (!exists) {
+                try {
+                    minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucket).build());
+                } catch (Exception e) {
+                    boolean createdByAnotherThread = minioClient.bucketExists(
+                            BucketExistsArgs.builder().bucket(bucket).build()
+                    );
+                    if (!createdByAnotherThread) {
+                        throw e;
+                    }
+                }
+            }
+
+            bucketInitialized = true;
         }
     }
 }
