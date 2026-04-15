@@ -1,219 +1,115 @@
-# 基于泛雅平台的 AI 互动智课生成与实时问答系统
+# 🎓 Interactive-Edu-Agent (基于泛雅平台的AI互动智课生成与实时问答系统)
 
-> 第十七届中国大学生服务外包创新创业大赛 A12 赛题作品
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Version](https://img.shields.io/badge/version-v3.0.0-green.svg)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen.svg)
+![Vue3](https://img.shields.io/badge/Vue.js-3.x-4FC08D.svg)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688.svg)
 
-## 📖 项目简介
-
-本项目面向高校通识课自主学习场景，基于超星泛雅平台（Web/移动端）轻量化集成，利用大模型、语音识别、自然语言处理等 AI 技术，构建了一套完整的 **AI 互动智课生成与实时问答系统**。系统实现了从课件解析、结构化讲稿生成、智能讲授到实时交互答疑、进度智能续接的全流程闭环，旨在解决传统课件“讲授模式固化、互动反馈缺失、个性化答疑不足”等问题，减轻教师备课负担，满足学生个性化学习需求。
-
-**核心价值**  
-- 教师上传 PPT/PDF 课件，系统自动解析并生成结构化讲稿，支持语音或数字人讲授。  
-- 学生在学习过程中可随时通过文字或语音打断提问，AI 结合课件上下文精准解答。  
-- 问答结束后自动定位原讲授节点，并根据学生理解情况智能调整后续讲授节奏。
+> **超星集团企业命题**：本项目旨在依托泛雅网络教学平台，通过大语言模型、数字人与 Edu-Agent 技术，将传统的静态课件（PPT/PDF）一键转化为具备“多模态视觉讲授、随时语音打断问答、学情诊断与主动提问”能力的智能互动课程。
 
 ---
 
-## 🎯 核心功能
+##  核心功能与亮点 (Key Features)
 
-### 1️⃣ 智课生成模块
-- **课件解析**：支持 PPTX/PDF 上传，自动提取文本、图片、公式等内容，识别知识点结构。  
-- **结构化讲稿生成**：基于大模型生成包含开场白、逐页讲解、过渡语、总结的结构化讲授脚本。  
-- **教师编辑**：提供可视化界面，支持教师对生成的讲稿进行修改、润色和保存。  
-- **语音合成**：对接 TTS 服务，将讲稿文本转换为自然语音，支持速度、音色调节。
+本项目突破了传统“录播课”单向输出的局限，实现了真正意义上的 **AI 互动教学**：
 
-### 2️⃣ 实时问答交互模块
-- **多模态提问**：学生可通过文字输入或语音输入（ASR）进行提问。  
-- **上下文感知**：系统自动关联当前讲授节点、历史问答及课件全文，构建 RAG 检索增强，保证答案的精准性和相关性。  
-- **多轮对话**：支持连续追问，模型能记忆对话上下文并持续提供解答。  
-- **答案溯源**：回答内容附带课件片段引用，避免幻觉，增强可信度。
-
-### 3️⃣ 进度续接与节奏调整模块
-- **节点标记**：每个讲授片段标记唯一 `node_id`，打断时自动保存 `resume_token`。  
-- **精准恢复**：问答结束后，系统自动定位原节点并继续讲授，支持中途离开后恢复学习。  
-- **理解度分析**：通过 NLP 分析学生提问及回答内容，判断理解程度，动态调整后续讲授速度或补充讲解。
-
-### 4️⃣ 系统集成与可视化
-- **Web 端界面**：适配泛雅平台样式，提供课程播放器、讲稿预览、问答面板。  
-- **进度可视化**：展示课程学习进度、知识点掌握情况，帮助学生了解学习状态。  
-- **API 接口**：提供标准 RESTful 接口，方便与泛雅平台及第三方系统集成。
+1.  **自动化课件获取与解析**：内置智能爬虫，支持通过 URL 一键抓取外部/泛雅平台课件，并进行高精度结构化解析与多模态图表特征提取。
+2.  **数字人沉浸式讲授**：自动生��结构化讲稿（开场、讲解、过渡），并通过 TTS 与音素时间戳对齐技术，驱动 2D/3D 数字人进行流媒体视频播报。
+3.  **毫秒级 VAD 打断与断点续播**：支持学生通过麦克风随时语音打断。检测到打断时，数字人瞬间切换为“聆听/思考”状态，解答完毕后**精准回到断点继续播放**。
+4.  **Edu-Agent 主动式教学**：搭载长短期记忆（Memory）的教学智能体。根据打断提问的内容动态诊断学生掌握度（0-100分）；当学情低于阈值时，Agent 会**主动弹出随堂测验**，并根据作答情况动态“快进”或“重讲”。
+5.  **泛雅平台级无缝集成**：提供 10+ 个标准 RESTful API，完美适配学习通移动端 H5 与泛雅 Web 端，支持 OAuth2 鉴权与高并发访问。
 
 ---
 
-## 🧱 技术架构
+##  技术栈与架构分工 (Tech Stack)
 
-```mermaid
-graph TD
-    A[前端 Vue/React] --> B[Nginx + Java Spring Boot]
-    B --> C[MySQL]
-    B --> D[Redis]
-    B --> E[MinIO / 本地存储]
-    B --> F[Python FastAPI 服务]
-    F --> G[PDF/PPT 解析引擎]
-    F --> H[RAG 问答引擎]
-    F --> I[LLM 大模型调用]
-    H --> J[向量数据库 pgvector/Milvus]
-    H --> K[知识库]
-```
+本项目由 4 人敏捷团队全栈开发，按微服务架构解耦：
 
-| 模块               | 技术选型                                     |
-| ------------------ | -------------------------------------------- |
-| 后端核心           | Java 11 / Spring Boot 2.7                    |
-| 数据存储           | MySQL 8.0 + Redis 7.0 + MinIO                |
-| 向量检索           | PostgreSQL + pgvector / Milvus               |
-| AI 服务            | Python 3.9 / FastAPI                         |
-| 大模型             | 文心大模型 / 通义千问 / 本地 Llama（可配置）   |
-| 语音处理           | 百度语音 / Azure TTS + ASR                   |
-| 前端               | Vue 3 + Vite + Pinia + Axios + Vant（移动端） |
-| 部署               | Docker + Docker Compose                      |
+### 1. 后端控制中心 (Java)
+* **核心框架**：Spring Boot, Spring Security OAuth2, MyBatis-Plus
+* **中间件**：Redis, MySQL, MinIO, Quartz (任务调度)
+* **实时通信与流媒体**：WebSocket (Netty), FFmpeg (视频 M3U8 切片)
+* **职责**：全局状态机管理、第三方语音/数字人 SDK 鉴权对接、10+ 标准 API 封装、高并发限流调优。
+
+### 2. Edu-Agent & 爬虫引擎 
+* **核心框架**：FastAPI, LangChain Agent Executor, Pydantic
+* **爬虫链路**：Scrapy, Selenium, Aiohttp, BeautifulSoup
+* **职责**：反爬绕过与资源下载、大模型结构化讲稿 Prompt 工程、Agent Tool 注册（工具调用）、短期会话 Memory 管理。
+
+### 3. 多模态 RAG & 视觉对齐 
+* **核心框架**：FastAPI, LlamaIndex, Transformers
+* **向量检索**：PostgreSQL + pgvector, OpenAI/BGE-m3 Embedding
+* **音视频与视觉**：MFA (音素时间戳对齐), GPT-4V/Qwen-VL (图表识别)
+* **职责**：切片向量入库、多模态上下文 RAG 检索、数字人驱动特征合成、NLP 学情诊断分类器与主动提问引擎。
+
+### 4. 互动流媒体前端 (Vue)
+* **核心框架**：Vue3, Element-Plus, Pinia, TypeScript
+* **媒体与交互**：Video.js/HLS.js (流媒体渲染), WebRTC/VAD.js (语音端点检测)
+* **通信协议**：Axios, WebSocket, SSE (Server-Sent Events)
+* **职责**：音频/视频流媒体播放器重构、状态机 UI 渲染（播放/思考/解答）、打断断点控制、移动端/Iframe 跨域集成适配。
 
 ---
 
-## 🚀 快速开始
+##  敏捷演进路线 (Roadmap)
 
-### 环境要求
-- Docker & Docker Compose（推荐）
-- 或 Java 11+、Python 3.9+、Node.js 16+、MySQL 8.0、Redis 7.0
+本项目采用敏捷开发模式，包含 1 次 MVP 冲刺与 2 次迭代演进：
 
-### 1. 克隆项目
+###  Sprint 0: 纯语音 MVP 原型 (2026.04.04 - 04.22)
+- [x] PPT/PDF 文档结构化解析与讲稿生成
+- [x] 接入 TTS 与 ASR，实现音频同步播报
+- [x] 前端 WebRTC 接入，实现 VAD 语音打断
+- [x] 基于 pgvector 的上下文 RAG 检索与 SSE 流式答疑
+- [x] 精准记录时间戳，跑通“打断-答疑-断点续播”闭环
+
+###  Iteration 1: 数字人视觉与爬虫自动化 (2026.04.23 - 05.06)
+- [x] 目标网站防反爬分析与 URL 批量下载调度
+- [x] MFA 音素特征提取与数字人驱动报文对齐
+- [x] 后端 FFmpeg 视频 M3U8 流式切片分发
+- [x] 前端流媒体播放器重构，实现数字人无缝画面切换
+- [x] PPT 图表多模态视觉信息提取入库
+###  Iteration 2: Edu-Agent 智能体与验收交付 (2026.05.07 - 05.16)
+- [x] 引入 LangChain 升级为具有反思与计划能力的 Agent
+- [x] 建立学生长期错题画像与单次授课短期记忆窗口
+- [x] NLP 学情诊断引擎：低于阈值触发随堂测验出题
+- [x] 动态节奏调控（自动执行视频 `seek` 重讲或跳过）
+- [x] 封装泛雅 10+ 标准接口，通过 JMeter 高并发压测
+- [x] Docker 容器化打包与方案文档归档
+
+---
+
+##  快速启动 (Quick Start)
+
+项目采用 Docker Compose 进行一键容器化编排，需预先安装 `Docker` 与 `docker-compose`。
+
 ```bash
-git clone https://github.com/your-team/ai-interactive-lecture.git
-cd ai-interactive-lecture
-```
+# 1. 克隆代码仓库
+git clone https://github.com/zdlovepro/Interactive-Edu-Agent.git
+cd Interactive-Edu-Agent
 
-### 2. 配置环境变量
-复制 `.env.example` 为 `.env`，根据实际情况修改：
-```bash
+# 2. 环境变量配置
 cp .env.example .env
-# 编辑 .env 文件，填写数据库、Redis、MinIO、大模型 API 等配置
+# 请在 .env 中填入大模型 API Key、数字人 SDK Token 及数据库密码
+
+# 3. 一键启动所有服务 (MySQL, Redis, MinIO, Java, Python x2, Nginx)
+docker-compose up -d
+
+# 4. 查看服务运行状态
+docker-compose ps
 ```
 
-### 3. 启动依赖服务（Docker）
-```bash
-docker-compose up -d mysql redis minio
-```
-
-### 4. 启动 Java 后端
-```bash
-cd backend-java
-mvn clean package
-java -jar target/courseware-0.0.1-SNAPSHOT.jar
-```
-
-### 5. 启动 Python AI 服务
-```bash
-cd python-service
-pip install -r requirements.txt
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
-```
-
-### 6. 启动前端
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-访问 `http://localhost:5173` 即可体验系统。
+- **前端访问地址**：`http://localhost:80`
+- **Java API 网关**：`http://localhost:8080/swagger-ui.html`
+- **Python A 服务 API**：`http://localhost:8001/docs`
+- **Python B 服务 API**：`http://localhost:8002/docs`
 
 ---
 
-## 📁 项目结构
+##  接口文档与集成方案
+本项目已完全解耦，可按需作为第三方组件嵌入泛雅平台：
+* 详细的 10+ 个核心 API 文档位于 `docs/api_reference.md`
+* 泛雅平台跨域集成与 Iframe 消息通信方案请参考 `docs/fanya_integration.md`
+* 架构设计图与技术演进详见 `docs/architecture/`
 
-```
-.
-├── backend-java               # Java 后端（Spring Boot）
-│   ├── src/main/java/...      # 业务代码
-│   ├── src/main/resources/    # 配置文件
-│   └── pom.xml
-├── python-service             # Python AI 服务（FastAPI）
-│   ├── app/
-│   │   ├── api/               # 路由层
-│   │   ├── services/          # 业务逻辑（解析、RAG、TTS）
-│   │   ├── models/            # Pydantic 模型
-│   │   └── config.py          # 配置
-│   ├── requirements.txt
-│   └── Dockerfile
-├── frontend                   # 前端（Vue 3 + Vant）
-│   ├── src/
-│   ├── public/
-│   └── package.json
-├── docker-compose.yml         # 一键部署所有服务
-├── .env.example               # 环境变量示例
-└── README.md                  # 本文件
-```
-
----
-
-## 🔌 API 接口（部分）
-
-所有接口遵循 RESTful 规范，统一前缀 `/api/v1`，响应格式见 [规约.md](规约.md)。
-
-| 接口                     | 方法 | 说明                         |
-| ------------------------ | ---- | ---------------------------- |
-| `/courseware/upload`     | POST | 上传课件文件                 |
-| `/courseware/{id}/parse` | POST | 触发课件解析                 |
-| `/script/generate`       | POST | 生成讲稿                     |
-| `/script/{id}`           | PUT  | 教师编辑讲稿                 |
-| `/lecture/start`         | POST | 开始讲课，返回会话及第一页   |
-| `/lecture/pause`         | POST | 暂停讲课                     |
-| `/lecture/resume`        | POST | 恢复讲课（支持 resume_token）|
-| `/qa/ask-text`           | POST | 文本问答                     |
-| `/qa/ask-voice`          | POST | 语音问答                     |
-| `/progress/{sessionId}`  | GET  | 获取学习进度                 |
-
-详细接口文档见 `docs/API.md` 或启动后访问：
-- Java 后端 Swagger：`http://localhost:8080/swagger-ui.html`
-- Python 服务 Swagger：`http://localhost:8001/docs`
-
----
-
-## ⚙️ 性能指标
-
-| 指标                         | 目标值               |
-| ---------------------------- | -------------------- |
-| 课件解析响应时间             | ≤ 2 分钟 / 份        |
-| 问答响应时间                 | ≤ 5 秒               |
-| 知识点识别准确率             | ≥ 80%                |
-| 答案准确率                   | ≥ 85%                |
-| 并发支持                     | ≥ 10 人              |
-| 移动端兼容                   | iOS / Android 主流机型 |
-
----
-
-## 🧪 测试数据集
-
-- 课件样本集：100 份高校课程 PPT/PDF（文、理、工、医）
-- 问答测试集：3000 条知识点关联问答对（由超星集团提供）
-
----
-
-## 👥 团队分工
-
-
-
----
-
-## 📜 许可证
-
-本项目仅用于课程项目，未经授权不得用于商业用途。
-
----
-
-## 🙏 致谢
-
-- 感谢超星集团提供的泛雅平台数据支持与 API 规范指导。
-- 感谢百度飞桨、文心大模型等开源社区的技术支持。
-- 感谢所有指导老师和团队成员的努力付出。
-
----
-
-## 📧 联系我们
-
-如有任何问题或建议，欢迎通过以下方式联系：
-
-- 项目仓库：[https://github.com/zdlovepro/Interactive-Edu-Agent](https://github.com/zdlovepro/Interactive-Edu-Agent)
-- 团队邮箱：zd205428@outlook.com
-
----
-
-**让每一份课件都能“开口说话”，让每一次提问都能得到精准回应。**
+## 📄 许可证 (License)
+本项目基于 [MIT License](LICENSE) 协议开源。赛事相关所有最终解释权归团队所有。
