@@ -34,7 +34,7 @@ public class Courseware {
     private String fileType;
 
     @Column(name = "status", length = 64, nullable = false)
-    private String status;
+    private String status = "UPLOADED";
 
     @Column(name = "uploader_id", length = 64)
     private String uploaderId;
