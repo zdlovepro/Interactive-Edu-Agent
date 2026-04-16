@@ -1,16 +1,19 @@
 package com.interactive.edu.entity;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EntityListeners;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
-import jakarta.persistence.EntityListeners;
 
 import java.time.LocalDateTime;
 
@@ -43,9 +46,9 @@ public class QaRecord {
     @Column(name = "answer_text", columnDefinition = "TEXT")
     private String answerText;
 
-    // Optional mapped field to JSON metadata, using JSON or varchar since length can be large
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "reference_fragments", columnDefinition = "JSON")
-    private String referenceFragments;
+    private JsonNode referenceFragments;
 
     @CreatedDate
     @Column(name = "create_time", updatable = false)
