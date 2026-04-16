@@ -53,6 +53,9 @@ const selectFile = () => {
  * @returns {boolean} true 表示校验通过
  */
 const validateFile = file => {
+  if (props.disabled) {
+    return false
+  }
   // 检查文件类型
   const ext = '.' + file.name.split('.').pop().toLowerCase()
   if (!ALLOWED_EXTENSIONS.includes(ext)) {
