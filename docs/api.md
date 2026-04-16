@@ -1,0 +1,495 @@
+# Interactive-Edu-Agent API 文档
+
+本文档用于统一项目对外接口、内部服务调用接口、状态字段和错误码约定，便于前后端联调、跨服务协作和后续平台集成。
+
+---
+
+## 1. 文档说明
+
+### 1.1 适用范围
+- 面向 `frontend` 调用 `backend` 的对外接口
+- 面向 `backend` 调用 `python-service` 的内部接口
+- 面向后续与泛雅平台对接的标准化 API 说明
+
+### 1.2 接口设计原则
+- 统一版本前缀
+- 统一响应结构
+- 统一错误码语义
+- 状态字段可枚举、可追踪
+- 支持链路追踪与问题排查
+
+---
+
+## 2. 通用约定
+
+### 2.1 基础路径
+- 对外网关接口：`/api/v1`
+- Python 内部服务接口：`/python/v1`
+
+### 2.2 请求格式
+- 普通请求：`application/json`
+- 文件上传：`multipart/form-data`
+- 字符编码：`UTF-8`
+
+### 2.3 响应格式
+
+成功响应：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {}
+}
+```
+
+失败响应：
+
+```json
+{
+  "code": 40001,
+  "message": "参数错误：coursewareId 不能为空",
+  "data": null
+}
+```
+
+分页响应：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "items": [],
+    "total": 0,
+    "page": 1,
+    "pageSize": 20
+  }
+}
+```
+
+### 2.4 公共请求头
+- `Authorization: Bearer <token>`：需要登录态时使用
+- `X-Trace-Id: <traceId>`：推荐透传链路 ID
+- `Content-Type`：按接口类型设置
+
+### 2.5 通用错误码
+- `0`：成功
+- `40001`：参数缺失或格式错误
+- `40002`：业务校验失败
+- `40101`：未登录或 Token 无效
+- `40301`：无权限访问
+- `40401`：资源不存在
+- `40901`：状态冲突或重复操作
+- `50001`：服务内部错误
+- `50201`：下游 Python 服务异常
+- `50202`：第三方模型或媒体服务异常
+
+---
+
+## 3. 核心业务对象
+
+### 3.1 课件对象
+
+```json
+{
+  "coursewareId": "cware_123456",
+  "name": "数据结构导论",
+  "fileUrl": "https://example.com/files/xxx.pptx",
+  "status": "READY",
+  "createdAt": "2026-04-16T10:00:00Z",
+  "updatedAt": "2026-04-16T10:10:00Z"
+}
+```
+
+### 3.2 解析任务对象
+
+```json
+{
+  "taskId": "task_parse_001",
+  "coursewareId": "cware_123456",
+  "status": "RUNNING",
+  "progress": 45,
+  "message": "正在提取页面与结构化内容"
+}
+```
+
+### 3.3 讲课会话对象
+
+```json
+{
+  "sessionId": "sess_789",
+  "coursewareId": "cware_123456",
+  "status": "PLAYING",
+  "currentNodeId": "node_001",
+  "currentPage": 3,
+  "resumeToken": "node_001|offset_123"
+}
+```
+
+### 3.4 问答结果对象
+
+```json
+{
+  "answer": "递归是函数直接或间接调用自身的一种方法。",
+  "evidence": [
+    {
+      "source": "page_3",
+      "text": "递归通常需要终止条件。"
+    }
+  ],
+  "latencyMs": 1250
+}
+```
+
+---
+
+## 4. 状态枚举
+
+### 4.1 课件状态
+- `UPLOADED`：已上传
+- `PARSING`：解析中
+- `PARSED`：解析完成
+- `GENERATING_SCRIPT`：讲稿生成中
+- `READY`：可开始讲课
+- `FAILED`：处理失败
+
+### 4.2 讲课会话状态
+- `IDLE`：未开始
+- `PLAYING`：讲解中
+- `INTERRUPTED`：被打断
+- `ANSWERING`：问答中
+- `RESUMING`：恢复讲课中
+- `ENDED`：已结束
+
+### 4.3 解析任务状态
+- `PENDING`：待执行
+- `RUNNING`：执行中
+- `SUCCESS`：成功
+- `FAILED`：失败
+
+---
+
+## 5. 对外 API
+
+### 5.1 上传课件
+- 方法：`POST`
+- 路径：`/api/v1/courseware/upload`
+- 描述：上传 PPT/PDF 等课件文件，创建课件记录
+
+请求参数：
+- `file`：必填，课件文件
+- `name`：选填，课件名称
+
+响应示例：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "coursewareId": "cware_123456",
+    "status": "UPLOADED"
+  }
+}
+```
+
+### 5.2 创建解析任务
+- 方法：`POST`
+- 路径：`/api/v1/courseware/parse`
+- 描述：为指定课件创建解析任务
+
+请求示例：
+
+```json
+{
+  "coursewareId": "cware_123456"
+}
+```
+
+响应示例：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "taskId": "task_parse_001",
+    "status": "PENDING"
+  }
+}
+```
+
+### 5.3 查询课件详情
+- 方法：`GET`
+- 路径：`/api/v1/courseware/{coursewareId}`
+- 描述：获取课件状态、基础信息和处理进度
+
+响应示例：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "coursewareId": "cware_123456",
+    "name": "数据结构导论",
+    "status": "READY",
+    "currentTaskStatus": "SUCCESS"
+  }
+}
+```
+
+### 5.4 查询课件列表
+- 方法：`GET`
+- 路径：`/api/v1/courseware`
+- 描述：分页查询课件列表
+
+请求参数：
+- `page`：页码
+- `pageSize`：每页数量
+- `status`：可选，按状态过滤
+
+### 5.5 开始讲课
+- 方法：`POST`
+- 路径：`/api/v1/lecture/start`
+- 描述：创建讲课会话并返回首个讲解节点
+
+请求示例：
+
+```json
+{
+  "coursewareId": "cware_123456",
+  "userId": "user_001"
+}
+```
+
+响应示例：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "sessionId": "sess_789",
+    "status": "PLAYING",
+    "currentNode": {
+      "nodeId": "node_001",
+      "pageIndex": 1,
+      "content": "本页主要讲解递归的基本定义。",
+      "audioUrl": "https://example.com/audio/001.mp3"
+    }
+  }
+}
+```
+
+### 5.6 暂停讲课
+- 方法：`POST`
+- 路径：`/api/v1/lecture/pause`
+- 描述：主动暂停当前讲课会话
+
+请求示例：
+
+```json
+{
+  "sessionId": "sess_789"
+}
+```
+
+### 5.7 恢复讲课
+- 方法：`POST`
+- 路径：`/api/v1/lecture/resume`
+- 描述：从最近断点恢复讲课
+
+请求示例：
+
+```json
+{
+  "sessionId": "sess_789",
+  "resumeToken": "node_001|offset_123"
+}
+```
+
+### 5.8 结束讲课
+- 方法：`POST`
+- 路径：`/api/v1/lecture/end`
+- 描述：结束当前讲课会话
+
+### 5.9 文本问答
+- 方法：`POST`
+- 路径：`/api/v1/qa/ask-text`
+- 描述：基于当前讲课上下文发起文本问答
+
+请求示例：
+
+```json
+{
+  "sessionId": "sess_789",
+  "question": "什么是递归？"
+}
+```
+
+响应示例：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "answer": "递归是函数直接或间接调用自身的一种方法。",
+    "evidence": [
+      {
+        "source": "page_3",
+        "text": "递归通常需要终止条件。"
+      }
+    ],
+    "latencyMs": 1250
+  }
+}
+```
+
+### 5.10 语音问答
+- 方法：`POST`
+- 路径：`/api/v1/qa/ask-voice`
+- 描述：提交语音流或语音文件，服务端识别后进入问答流程
+
+请求参数：
+- `sessionId`
+- `audio`
+
+### 5.11 查询会话详情
+- 方法：`GET`
+- 路径：`/api/v1/session/{sessionId}`
+- 描述：查询讲课会话当前状态、当前节点、恢复信息
+
+### 5.12 查询问答记录
+- 方法：`GET`
+- 路径：`/api/v1/session/{sessionId}/qa-records`
+- 描述：分页获取问答历史
+
+### 5.13 学情诊断结果
+- 方法：`GET`
+- 路径：`/api/v1/session/{sessionId}/learning-diagnosis`
+- 描述：获取当前会话的学情判断结果、掌握度评分和建议动作
+
+响应示例：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "score": 62,
+    "level": "MEDIUM",
+    "suggestion": "建议回讲当前知识点并插入一次随堂提问"
+  }
+}
+```
+
+---
+
+## 6. Python 内部服务 API
+
+### 6.1 解析课件
+- 方法：`POST`
+- 路径：`/python/v1/parse`
+- 描述：解析上传后的课件内容，返回结构化结果摘要
+
+请求示例：
+
+```json
+{
+  "coursewareId": "cware_123456",
+  "fileUrl": "https://example.com/files/xxx.pptx"
+}
+```
+
+响应示例：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "pages": 24,
+    "outline": [
+      "递归定义",
+      "递归终止条件",
+      "递归与栈"
+    ]
+  }
+}
+```
+
+### 6.2 生成讲稿
+- 方法：`POST`
+- 路径：`/python/v1/script/generate`
+- 描述：根据结构化内容生成讲解脚本
+
+### 6.3 构建向量索引
+- 方法：`POST`
+- 路径：`/python/v1/vectorize`
+- 描述：将切片内容写入向量库
+
+### 6.4 检索问答上下文
+- 方法：`POST`
+- 路径：`/python/v1/rag/retrieve`
+- 描述：按问题和当前上下文召回证据片段
+
+### 6.5 生成问答结果
+- 方法：`POST`
+- 路径：`/python/v1/qa/answer`
+- 描述：结合检索结果生成答案、证据和掌握度判断
+
+### 6.6 学情诊断
+- 方法：`POST`
+- 路径：`/python/v1/diagnosis/analyze`
+- 描述：分析学生提问与历史行为，输出掌握度和建议动作
+
+---
+
+## 7. 典型业务流程
+
+### 7.1 课件上传与解析
+1. 前端调用 `/api/v1/courseware/upload`
+2. 后端保存文件并创建课件记录
+3. 前端或后端触发 `/api/v1/courseware/parse`
+4. 后端调用 `/python/v1/parse`
+5. Python 返回解析摘要
+6. 后端更新课件状态并触发脚本生成、向量化等后续流程
+
+### 7.2 讲课中断与恢复
+1. 用户发起语音或文本提问
+2. 后端将会话状态更新为 `INTERRUPTED`
+3. 后端调用 Python 问答链路
+4. 返回问答结果并生成恢复令牌
+5. 前端调用 `/api/v1/lecture/resume`
+6. 会话恢复到原节点继续讲解
+
+---
+
+## 8. 联调要求
+
+### 8.1 前后端联调
+- 接口字段变更先更新本文件
+- 前端联调前确认：
+  - 路径
+  - 方法
+  - 请求格式
+  - 状态字段
+  - 错误码
+- 前端不得自行推断未文档化的字段含义
+
+### 8.2 后端与 Python 服务联调
+- 统一超时、重试和日志追踪策略
+- 对模型类返回值必须做结构化校验
+- 内部接口即使不直接暴露给前端，也必须保持响应结构统一
+
+---
+
+## 9. 文档维护要求
+
+- 新增接口时同步补充本文件
+- 调整字段、状态值、错误码时同步修改示例
+- 关键流程发生变化时同步更新“典型业务流程”章节
+- 如果实际代码中接口路径与本文档不一致，以修正文档和代码其中之一的方式尽快收敛，不允许长期漂移

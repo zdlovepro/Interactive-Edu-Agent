@@ -1,4 +1,4 @@
-# 🎓 Interactive-Edu-Agent (基于泛雅平台的AI互动智课生成与实时问答系统)
+#  Interactive-Edu-Agent (基于泛雅平台的AI互动智课生成与实时问答系统)
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Version](https://img.shields.io/badge/version-v3.0.0-green.svg)
@@ -81,6 +81,12 @@
 ##  快速启动 (Quick Start)
 
 项目采用 Docker Compose 进行一键容器化编排，需预先安装 `Docker` 与 `docker-compose`。
+### 环境准备
+- Docker
+- Docker Compose
+- JDK 17 或与项目后端实际版本一致的 Java 环境
+- Python 3.10+ 或与项目服务依赖一致的版本
+- Node.js 18+ 或与前端实际依赖一致的版本
 
 ```bash
 # 1. 克隆代码仓库
@@ -90,6 +96,12 @@ cd Interactive-Edu-Agent
 # 2. 环境变量配置
 cp .env.example .env
 # 请在 .env 中填入大模型 API Key、数字人 SDK Token 及数据库密码
+需要配置的内容通常包括：
+- 大模型 API Key
+- 对象存储配置
+- 数据库地址与账号密码
+- Python 服务访问地址
+- 媒体或数字人服务密钥
 
 # 3. 一键启动所有服务 (MySQL, Redis, MinIO, Java, Python x2, Nginx)
 docker-compose up -d
@@ -97,13 +109,15 @@ docker-compose up -d
 # 4. 查看服务运行状态
 docker-compose ps
 ```
+---
+- 前端页面：`http://localhost`
+- Java 接口文档：`http://localhost:8080/swagger-ui.html`
+- Python 服务文档：`http://localhost:8001/docs`
 
-- **前端访问地址**：`http://localhost:80`
-- **Java API 网关**：`http://localhost:8080/swagger-ui.html`
-- **Python A 服务 API**：`http://localhost:8001/docs`
-- **Python B 服务 API**：`http://localhost:8002/docs`
+
 
 ---
+
 
 ##  接口文档与集成方案
 本项目已完全解耦，可按需作为第三方组件嵌入泛雅平台：
@@ -111,5 +125,5 @@ docker-compose ps
 * 泛雅平台跨域集成与 Iframe 消息通信方案请参考 `docs/fanya_integration.md`
 * 架构设计图与技术演进详见 `docs/architecture/`
 
-## 📄 许可证 (License)
+##  许可证 (License)
 本项目基于 [MIT License](LICENSE) 协议开源。赛事相关所有最终解释权归团队所有。
