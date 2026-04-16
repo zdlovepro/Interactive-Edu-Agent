@@ -134,11 +134,24 @@ const handleFileSelected = async file => {
       timeout: 120000,
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: progressEvent => {
-        const percent = Math.round((progressEvent.loaded / progressEvent.total) * 100)
+        const loaded = progressEvent.loaded
+        const total = progressEvent.total
+        const hasValidTotal = Number.isFinite(total) && total > 0
+
+        if (hasValidTotal) {
+          const percent = Math.round((loaded / total) * 100)
+          uploadStatus.value = {
+            status: 'uploading',
+            message: `上传中... ${percent}%`,
+            progress: percent,
+          }
+          return
+        }
+
         uploadStatus.value = {
           status: 'uploading',
-          message: `上传中... ${percent}%`,
-          progress: percent,
+          message: `上传中... 已上传 ${loaded.toLocaleString()} 字节`,
+          progress: uploadStatus.value?.progress ?? 0,
         }
       },
     })
