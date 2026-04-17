@@ -95,23 +95,23 @@ const router = useRouter()
 const route = useRoute()
 const coursStore = useCoursStore()
 
-/** 讽文数据加载中状态 */
+/** 讲稿数据加载中状态 */
 const loading = ref(true)
-/** 讽文内容，包含 outline 大纲和 segments 片段 */
+/** 讲稿内容，包含 outline 大纲和 segments 片段 */
 const scriptData = ref(null)
-/** 讽文生成状态：null / 'GENERATING' / 'READY' */
+/** 讲稿生成状态：null / 'GENERATING' / 'READY' */
 const scriptStatus = ref(null)
 /** 当前高亮的大纲项 ID（对应左侧大纲和右侧内容的定位） */
 const activeSegmentId = ref(null)
 const errorMsg = ref('')
 const segmentsRef = ref(null)
 
-/** 讽文生成状态轮询定时器引用 */
+/** 讲稿生成状态轮询定时器引用 */
 let pollTimer = null
 
 const coursewareId = route.params.coursewareId
 
-// 获取讽文数据
+// 获取讲稿数据
 const fetchScript = async () => {
   loading.value = true
   try {
@@ -123,39 +123,39 @@ const fetchScript = async () => {
         activeSegmentId.value = res.data.outline[0].id
       }
     } else if (res.code === 0 && !res.data) {
-      // 讽文尚未生成，展示「生成讽文」按鈕
+      // 讲稿尚未生成，展示「生成讲稿」按钮
       scriptData.value = null
       scriptStatus.value = null
     } else {
-      errorMsg.value = res.message || '获取讽文失败'
+      errorMsg.value = res.message || '获取讲稿失败'
     }
   } catch {
-    errorMsg.value = '网络错误，无法获取讽文'
+    errorMsg.value = '网络错误，无法获取讲稿'
   } finally {
     loading.value = false
   }
 }
 
-// 触发讽文生成：POST 响应成功后启动轮询
+// 触发讲稿生成：POST 响应成功后启动轮询
 const generateScript = async () => {
   scriptStatus.value = 'GENERATING'
   errorMsg.value = ''
   try {
     const res = await request.post(SCRIPT_API.GENERATE(coursewareId))
     if (res.code === 0) {
-      // 后端开始异步生成，前端轮询直到讽文就绪
+      // 后端开始异步生成，前端轮询直到讲稿就绪
       pollGenerateStatus()
     } else {
       scriptStatus.value = null
-      errorMsg.value = res.message || '生成讽文失败'
+      errorMsg.value = res.message || '生成讲稿失败'
     }
   } catch {
     scriptStatus.value = null
-    errorMsg.value = '网络错误，无法生成讽文'
+    errorMsg.value = '网络错误，无法生成讲稿'
   }
 }
 
-// 讽文生成状态轮询：每 3s 查询一次，最多 40 次（共 120s）
+// 讲稿生成状态轮询：每 3s 查询一次，最多 40 次（共 120s）
 const pollGenerateStatus = () => {
   let attempts = 0
   const MAX_ATTEMPTS = 40
@@ -165,7 +165,7 @@ const pollGenerateStatus = () => {
     if (attempts > MAX_ATTEMPTS) {
       clearInterval(pollTimer)
       scriptStatus.value = null
-      errorMsg.value = '讽文生成超时，请重试'
+      errorMsg.value = '讲稿生成超时，请重试'
       return
     }
 
@@ -194,7 +194,7 @@ const scrollToSegment = segmentId => {
   }
 }
 
-/** 将讽文片段写入 store，跳转到讲课页 */
+/** 将讲稿片段写入 store，跳转到讲课页 */
 const startLecture = () => {
   coursStore.createSession({
     coursewareId,
