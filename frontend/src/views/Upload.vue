@@ -54,7 +54,7 @@ const coursStore = useCoursStore()
 
 /** 当前上传状态（status / message / progress），为 null 时不展示任何状态提示 */
 const uploadStatus = ref(null)
-/** 圆d字错误文本，为 null 时不展示错误框 */
+/** 错误文本，为 null 时不展示错误框 */
 const uploadError = ref(null)
 /** 已上传的课件列表（初始化时从后端加载，每次上传成功后头插） */
 const uploadedCourseware = ref([])
