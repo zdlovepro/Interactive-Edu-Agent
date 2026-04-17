@@ -27,7 +27,7 @@
  *   error(message: string)   - 校验失败时触发
  */
 import { ref } from 'vue'
-import { ALLOWED_EXTENSIONS, MAX_FILE_SIZE, UPLOAD_STATUS } from '@/constans/upload'
+import { ALLOWED_EXTENSIONS, MAX_FILE_SIZE } from '@/constans/upload'
 
 const fileInput = ref(null)
 
@@ -53,6 +53,9 @@ const selectFile = () => {
  * @returns {boolean} true 表示校验通过
  */
 const validateFile = file => {
+  if (props.disabled) {
+    return false
+  }
   // 检查文件类型
   const ext = '.' + file.name.split('.').pop().toLowerCase()
   if (!ALLOWED_EXTENSIONS.includes(ext)) {

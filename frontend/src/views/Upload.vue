@@ -4,7 +4,11 @@
       <h1>上传课件</h1>
       <p class="subtitle">支持 PPT 和 PDF，系统将自动解析并生成讲稿</p>
 
-      <FileUpload @file-selected="handleFileSelected" @error="handleError" />
+      <FileUpload
+        :disabled="uploadStatus?.status === 'uploading'"
+        @file-selected="handleFileSelected"
+        @error="handleError"
+      />
 
       <div v-if="uploadStatus" class="upload-status">
         <div class="status-indicator" :class="uploadStatus.status"></div>
@@ -71,6 +75,11 @@ const pollParseStatus = (coursewareId, coursewareItem) => {
   const MAX_ATTEMPTS = 30
   let attempts = 0
 
+  // 确保启动新轮询前清理旧 interval
+  if (pollTimer) {
+    clearInterval(pollTimer)
+  }
+
   pollTimer = setInterval(async () => {
     attempts++
     if (attempts > MAX_ATTEMPTS) {
@@ -105,6 +114,15 @@ const pollParseStatus = (coursewareId, coursewareItem) => {
  * 流程：构建 FormData -> 带进度回调上传 -> 头插到列表 -> 启动解析状态轮询
  */
 const handleFileSelected = async file => {
+  // 防止并发上传：若当前正在上传则忽略新的选择事件
+  if (uploadStatus.value?.status === 'uploading') return
+
+  // 清理上一次遗留的解析轮询，避免旧 interval 持续运行造成状态串扰
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+
   uploadError.value = null
   uploadStatus.value = { status: 'uploading', message: '上传中...', progress: 0 }
 
@@ -116,11 +134,24 @@ const handleFileSelected = async file => {
       timeout: 120000,
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: progressEvent => {
-        const percent = Math.round((progressEvent.loaded / progressEvent.total) * 100)
+        const loaded = progressEvent.loaded
+        const total = progressEvent.total
+        const hasValidTotal = Number.isFinite(total) && total > 0
+
+        if (hasValidTotal) {
+          const percent = Math.round((loaded / total) * 100)
+          uploadStatus.value = {
+            status: 'uploading',
+            message: `上传中... ${percent}%`,
+            progress: percent,
+          }
+          return
+        }
+
         uploadStatus.value = {
           status: 'uploading',
-          message: `上传中... ${percent}%`,
-          progress: percent,
+          message: `上传中... 已上传 ${loaded.toLocaleString()} 字节`,
+          progress: uploadStatus.value?.progress ?? 0,
         }
       },
     })
