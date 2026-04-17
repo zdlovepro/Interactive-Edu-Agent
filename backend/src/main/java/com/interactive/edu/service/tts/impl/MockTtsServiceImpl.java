@@ -16,16 +16,26 @@ import java.util.concurrent.CompletableFuture;
 @ConditionalOnProperty(prefix = "interactive.edu.tts", name = "provider", havingValue = "mock", matchIfMissing = true)
 public class MockTtsServiceImpl implements TtsService {
 
+    private String summarizeTextForLog(String text) {
+        if (text == null) {
+            return "null";
+        }
+        int maxPreviewLength = 100;
+        int textLength = text.length();
+        String preview = textLength <= maxPreviewLength ? text : text.substring(0, maxPreviewLength) + "...(truncated)";
+        return "length=" + textLength + ", preview=" + preview;
+    }
+
     @Override
     public byte[] generateAudioSync(String text) {
-        log.info("[MOCK TTS] 模拟进行文本生成语音，文本内容: {}", text);
+        log.info("[MOCK TTS] 模拟进行文本生成语音，文本摘要: {}", summarizeTextForLog(text));
         // 模拟返回空字节流（代表 MP3 数据）
         return new byte[0];
     }
 
     @Override
     public CompletableFuture<byte[]> generateAudioAsync(String text) {
-        log.info("[MOCK TTS] 模拟进行文本生成异步语音，文本内容: {}", text);
+        log.info("[MOCK TTS] 模拟进行文本生成异步语音，文本摘要: {}", summarizeTextForLog(text));
         return CompletableFuture.completedFuture(new byte[0]);
     }
 }
