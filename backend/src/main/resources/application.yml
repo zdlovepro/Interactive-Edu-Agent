@@ -11,3 +11,12 @@ logging:
   level:
     root: INFO
     com.interactive.edu: DEBUG
+
+interactive:
+  edu:
+    tts:
+      provider: ${TTS_PROVIDER:mock} # 支持 mock, azure
+      azure:
+        region: ${AZURE_TTS_REGION:eastus}
+        api-key: ${AZURE_TTS_API_KEY:}
+        voice-name: ${AZURE_TTS_VOICE_NAME:zh-CN-XiaoxiaoNeural}
