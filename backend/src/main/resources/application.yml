@@ -53,6 +53,8 @@ tts:
 # -----------------------------------------------------------------------
 tts:
   provider: ALIYUN
+  # 预签名直链有效期（分钟）。超时后链接失效，客户端需重新请求。默认 60 分钟
+  presigned-expiry-minutes: 60
   aliyun:
     app-key: ${TTS_ALIYUN_APP_KEY:your-app-key}
     access-key-id: ${TTS_ALIYUN_ACCESS_KEY_ID:your-access-key-id}

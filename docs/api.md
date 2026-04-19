@@ -514,6 +514,64 @@ CompletableFuture<TtsResult> synthesizeAsync(TtsRequest request);
 | `40011` | `TTS_INVALID_REQUEST` | 请求参数非法（文本为空或超过 1000 字符） |
 | `50211` | `TTS_TOKEN_FETCH_FAILED` | Token 获取失败（凭证错误或网络异常） |
 | `50212` | `TTS_SYNTHESIS_FAILED` | TTS 合成失败（上游服务 4xx/5xx） |
+| `50213` | `TTS_AUDIO_UPLOAD_FAILED` | 音频上传至对象存储失败（MinIO 不可用或音频数据为空） |
+
+---
+
+### 7.7 TTS 音频对象存储服务（TtsAudioStorageService）
+
+> 负责将 TTS 合成产生的音频字节流上传至 MinIO，并生成带有效期的预签名 GET 直链，供客户端直接播放，无需经过后端中转流量。
+
+#### 接口方法
+
+```java
+// 上传音频并生成预签名直链
+String uploadAndSign(String objectKey, byte[] audioData, String format, Integer expiryMins);
+
+// 生成规范化的对象 Key
+String generateObjectKey(String format);
+```
+
+#### 对象 Key 格式
+
+```
+tts-audio/{yyyy}/{MM}/{uuid}.{format}
+```
+
+示例：`tts-audio/2026/04/550e8400-e29b-41d4-a716-446655440000.wav`
+
+#### 预签名直链示例
+
+```
+http://localhost:9000/interactive-edu/tts-audio/2026/04/xxx.wav?X-Amz-Algorithm=...&X-Amz-Expires=3600&...
+```
+
+- 直链为 HTTP GET，客户端可直接播放
+- 有效期由 `tts.presigned-expiry-minutes`（默认 60 分钟）控制
+- 链接过期后需重新调用接口获取新链接
+
+#### 配置项
+
+| 配置项 | 默认值 | 说明 |
+|---|---|---|
+| `tts.presigned-expiry-minutes` | `60` | 预签名直链有效期（分钟） |
+
+#### Content-Type 映射
+
+| 格式 | Content-Type |
+|---|---|
+| `wav` | `audio/wav` |
+| `mp3` | `audio/mpeg` |
+| `pcm` | `audio/L16` |
+
+#### 典型调用链
+
+```java
+TtsResult result = ttsClient.synthesize(TtsRequest.builder().text("本页内容").build());
+String key  = ttsAudioStorageService.generateObjectKey(result.getFormat());
+String url  = ttsAudioStorageService.uploadAndSign(key, result.getAudioData(), result.getFormat(), null);
+// url 即为可播放的预签名直链，有效期 60 分钟
+```
 
 ---
 

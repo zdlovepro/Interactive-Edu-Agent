@@ -17,6 +17,12 @@ public class TtsProperties {
     /** 云厂商标识，当前仅支持 {@link TtsProvider#ALIYUN} */
     private TtsProvider provider = TtsProvider.ALIYUN;
 
+    /**
+     * TTS 音频上传后预签名直链的有效期（分钟）。
+     * 超过该时间后链接失效，客户端需重新请求。默认 60 分钟。
+     */
+    private int presignedExpiryMinutes = 60;
+
     private Aliyun aliyun = new Aliyun();
 
     @Data
