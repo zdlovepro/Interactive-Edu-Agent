@@ -47,15 +47,14 @@ public class ScriptCallbackService {
             return;
         }
 
-        // 处理 SUCCESS，遍历并落库
+        // 处理 SUCCESS，先清理历史数据，再按本次回调结果重新落库
         List<ScriptCallbackRequest.PageScriptDto> pages = request.getPages();
-        if (pages == null || pages.isEmpty()) {
-            log.warn("生成状态为SUCCESS，但讲稿为空，可能是纯图或解析异常");
-        } else {
-            // 在实际更新前，清理历史草稿数据(可选操作，防止重复回调堆积)
-            coursewarePageRepository.deleteByCoursewareId(courseware.getId());
-            lectureScriptRepository.deleteByCoursewareId(courseware.getId());
+        coursewarePageRepository.deleteByCoursewareId(courseware.getId());
+        lectureScriptRepository.deleteByCoursewareId(courseware.getId());
 
+        if (pages == null || pages.isEmpty()) {
+            log.warn("生成状态为SUCCESS，但讲稿为空，已清理历史讲稿数据，可能是纯图或解析异常");
+        } else {
             for (ScriptCallbackRequest.PageScriptDto page : pages) {
                 // 1. 存储课件页面基本信息
                 CoursewarePage cwPage = new CoursewarePage();
