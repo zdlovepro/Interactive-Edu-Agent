@@ -448,7 +448,173 @@
 
 ---
 
-## 7. 典型业务流程
+## 7. TTS 语音合成内部接口
+
+> **适用范围**：`backend` Java 服务内部调用，不对外暴露。由 Service 层注入 `TtsClient` 使用（如任务7批量预合成、单段实时播报）。
+
+### 7.1 TTS 合成请求对象（TtsRequest）
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `text` | `String` | ✅ | 待合成文本，最多 1000 个字符 |
+| `voice` | `String` | ❌ | 发音人（如 `aixia`/`aiyu`/`aijia`），默认使用配置值 |
+| `format` | `String` | ❌ | 音频格式：`wav`/`mp3`/`pcm`，默认 `wav` |
+| `sampleRate` | `Integer` | ❌ | 采样率（Hz），支持 `8000`/`16000`，默认 `16000` |
+| `speechRate` | `Integer` | ❌ | 语速，-500~500，0 为正常，默认 `0` |
+| `pitchRate` | `Integer` | ❌ | 语调，-500~500，0 为正常，默认 `0` |
+| `volume` | `Integer` | ❌ | 音量，0~100，默认 `50` |
+
+### 7.2 TTS 合成结果对象（TtsResult）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `audioData` | `byte[]` | 合成后的音频二进制数据 |
+| `format` | `String` | 实际音频格式（与请求中 `format` 一致） |
+| `sampleRate` | `int` | 实际采样率（Hz） |
+| `requestId` | `String` | 服务端请求 ID（来自 `X-NLS-RequestId` 响应头），用于问题排查 |
+
+### 7.3 接口方法
+
+```java
+// 同步合成（阻塞当前线程，适用于单段实时播报）
+TtsResult synthesize(TtsRequest request);
+
+// 异步合成（在 ttsTaskExecutor 线程池执行，适用于批量预生成）
+CompletableFuture<TtsResult> synthesizeAsync(TtsRequest request);
+```
+
+### 7.4 鉴权流程
+
+1. 使用 `AccessKeyId` + `AccessKeySecret` 向 NLS Token 端点换取短效 Token（24 小时有效）
+2. Token 在内存中缓存，提前 60 秒自动刷新
+3. 每次合成请求将 Token 与 AppKey 作为 Query 参数附加（`?appkey=X&token=Y`）
+4. **含 Token 的完整 URL 禁止打印到日志**（安全规约 §10）
+
+### 7.5 配置项（`application.yml` 前缀 `tts.aliyun`）
+
+| 配置项 | 默认值 | 说明 |
+|---|---|---|
+| `app-key` | — | 阿里云 NLS 项目 AppKey（必填） |
+| `access-key-id` | — | RAM AccessKeyId（必填） |
+| `access-key-secret` | — | RAM AccessKeySecret（必填） |
+| `endpoint` | `https://nls-gateway.cn-shanghai.aliyuncs.com` | NLS 网关地址 |
+| `voice` | `aixia` | 默认发音人 |
+| `format` | `wav` | 默认音频格式 |
+| `sample-rate` | `16000` | 默认采样率（Hz） |
+| `speech-rate` | `0` | 默认语速 |
+| `pitch-rate` | `0` | 默认语调 |
+| `volume` | `50` | 默认音量 |
+| `connect-timeout-ms` | `5000` | HTTP 连接超时（毫秒） |
+| `read-timeout-ms` | `30000` | HTTP 读取超时（毫秒） |
+
+### 7.6 错误码
+
+| 错误码 | 枚举 | 说明 |
+|---|---|---|
+| `40011` | `TTS_INVALID_REQUEST` | 请求参数非法（文本为空或超过 1000 字符） |
+| `50211` | `TTS_TOKEN_FETCH_FAILED` | Token 获取失败（凭证错误或网络异常） |
+| `50212` | `TTS_SYNTHESIS_FAILED` | TTS 合成失败（上游服务 4xx/5xx） |
+
+---
+
+## 8. 接口设计约定
+
+> 前端不得自行推断本文档化的字段含义
+
+### 8.1 命名约定
+
+- 路径
+- 方法
+- 请求格式
+- 状态字段
+- 错误码
+
+### 8.2 后端与 Python 服务联调
+- 统一超时、重试和日志追踪策略
+- 对模型类返回值必须做结构化校验
+- 内部接口即使不直接暴露给前端，也必须保持响应结构统一
+
+---
+
+## 9. 文档维护要求
+
+- 新增接口时同步补充本文件
+- 调整字段、状态值、错误码时同步修改示例
+- 关键流程发生变化时同步更新"典型业务流程"章节
+- 如果实际代码中接口路由与本文档不一致，以修正文档和代码其中之一的方式尽快收敛，不允许长期异步
+| `text` | String | 是 | 待合成文本，最多 1000 字符 |
+| `voice` | String | 否 | 发音人，如 `aixia`（女）、`aiyu`（男）；为 null 时使用配置默认值 |
+| `sampleRate` | Integer | 否 | 采样率（Hz），支持 `8000` / `16000`；为 null 时使用配置默认值 |
+| `format` | String | 否 | 音频格式：`wav` / `mp3` / `pcm`；为 null 时使用配置默认值 |
+| `speechRate` | Integer | 否 | 语速，范围 `-500~500`，`0` 为正常；为 null 时使用配置默认值 |
+| `pitchRate` | Integer | 否 | 语调，范围 `-500~500`，`0` 为正常；为 null 时使用配置默认值 |
+| `volume` | Integer | 否 | 音量，范围 `0~100`；为 null 时使用配置默认值 |
+
+### 7.2 TTS 合成结果对象（TtsResult）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `audioData` | byte[] | 合成后的音频二进制数据 |
+| `format` | String | 实际音频格式（`wav` / `mp3` / `pcm`） |
+| `sampleRate` | int | 实际采样率（Hz） |
+| `requestId` | String | 服务端请求 ID（来自 `X-NLS-RequestId` 响应头，用于问题排查） |
+
+### 7.3 TtsClient 接口方法
+
+#### 同步合成
+
+```java
+TtsResult synthesize(TtsRequest request)
+```
+
+- 调用方线程阻塞等待，直到音频数据完整返回
+- 适用场景：单段脚本实时播报（对延迟敏感）
+- 抛出：`TtsException`（含 `ErrorCode.TTS_SYNTHESIS_FAILED` 或 `TTS_TOKEN_FETCH_FAILED`）
+
+#### 异步合成
+
+```java
+CompletableFuture<TtsResult> synthesizeAsync(TtsRequest request)
+```
+
+- 立即返回，合成任务在专用线程池 `ttsTaskExecutor`（4核/8最大/200队列）中执行
+- 适用场景：任务7批量预生成全页音频（不阻塞主流程）
+- 异常通过 `CompletableFuture.failedFuture()` 传播
+
+### 7.4 鉴权流程（阿里云 NLS）
+
+1. 使用配置中的 `AccessKeyId` + `AccessKeySecret` 向 `POST <endpoint>/token` 换取 NLS Token（24 小时有效）
+2. Token 缓存于内存，提前 **60 秒**自动刷新（`synchronized` 保证线程安全）
+3. 每次合成请求将 Token 与 AppKey 附在 URL Query 参数中（阿里云 NLS 协议要求，URL 本身禁止打印到日志）
+4. 成功响应：HTTP 200，Body 为二进制音频
+5. 失败响应：HTTP 4xx/5xx，异常包装为 `TtsException`
+
+### 7.5 TTS 错误码
+
+| 错误码 | 常量 | 触发场景 |
+|---|---|---|
+| `40011` | `TTS_INVALID_REQUEST` | 文本为空或超过 1000 字符 |
+| `50211` | `TTS_TOKEN_FETCH_FAILED` | Token 获取失败（网络/Key 错误） |
+| `50212` | `TTS_SYNTHESIS_FAILED` | NLS 服务端 4xx/5xx |
+
+### 7.6 配置项（application.yml / 环境变量）
+
+| 配置键 | 环境变量 | 默认值 | 说明 |
+|---|---|---|---|
+| `tts.aliyun.app-key` | `TTS_ALIYUN_APP_KEY` | — | NLS 项目 AppKey（必填） |
+| `tts.aliyun.access-key-id` | `TTS_ALIYUN_ACCESS_KEY_ID` | — | RAM AccessKeyId（必填） |
+| `tts.aliyun.access-key-secret` | `TTS_ALIYUN_ACCESS_KEY_SECRET` | — | RAM AccessKeySecret（必填） |
+| `tts.aliyun.endpoint` | — | `https://nls-gateway.cn-shanghai.aliyuncs.com` | NLS 网关地址 |
+| `tts.aliyun.voice` | — | `aixia` | 默认发音人 |
+| `tts.aliyun.sample-rate` | — | `16000` | 默认采样率（Hz） |
+| `tts.aliyun.format` | — | `wav` | 默认音频格式 |
+| `tts.provider` | — | `ALIYUN` | 云厂商枚举（`TtsProvider`） |
+
+> **安全规约**：`app-key`、`access-key-id`、`access-key-secret` 必须通过环境变量注入，禁止明文提交到代码仓库。
+
+---
+
+## 8. 典型业务流程
 
 ### 7.1 课件上传与解析
 1. 前端调用 `/api/v1/courseware/upload`

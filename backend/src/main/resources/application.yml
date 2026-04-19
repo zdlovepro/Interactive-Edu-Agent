@@ -26,3 +26,23 @@ python:
     parse-path: /python/v1/parse
     connect-timeout: 5s
     read-timeout: 30s
+
+# -----------------------------------------------------------------------
+# TTS 文本转语音配置（阿里云 NLS 语音合成）
+# 敏感字段请覆盖于 application-dev.yml / 环境变量，不要提交明文 Key
+# -----------------------------------------------------------------------
+tts:
+  provider: ALIYUN
+  aliyun:
+    app-key: ${TTS_ALIYUN_APP_KEY:your-app-key}
+    access-key-id: ${TTS_ALIYUN_ACCESS_KEY_ID:your-access-key-id}
+    access-key-secret: ${TTS_ALIYUN_ACCESS_KEY_SECRET:your-access-key-secret}
+    endpoint: https://nls-gateway.cn-shanghai.aliyuncs.com
+    voice: aixia
+    sample-rate: 16000
+    format: wav
+    speech-rate: 0
+    pitch-rate: 0
+    volume: 50
+    connect-timeout-ms: 5000
+    read-timeout-ms: 30000
