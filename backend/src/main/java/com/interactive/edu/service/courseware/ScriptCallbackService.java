@@ -25,6 +25,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ScriptCallbackService {
 
+    private static final int MAX_NODE_ID_LENGTH = 64;
+    private static final String HASHED_NODE_ID_PREFIX = "n_";
+
     private final CoursewareRepository coursewareRepository;
     private final CoursewarePageRepository coursewarePageRepository;
     private final LectureScriptRepository lectureScriptRepository;
@@ -97,12 +100,12 @@ public class ScriptCallbackService {
 
     private String buildScopedNodeId(String coursewareId, Integer pageIndex, String nodeId) {
         String scopedNodeId = coursewareId + "_" + pageIndex + "_" + nodeId;
-        if (scopedNodeId.length() <= 64) {
+        if (scopedNodeId.length() <= MAX_NODE_ID_LENGTH) {
             return scopedNodeId;
         }
         String digest = UUID.nameUUIDFromBytes(scopedNodeId.getBytes(StandardCharsets.UTF_8))
                 .toString()
                 .replace("-", "");
-        return "n_" + digest;
+        return HASHED_NODE_ID_PREFIX + digest;
     }
 }
