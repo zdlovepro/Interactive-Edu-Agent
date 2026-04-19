@@ -3,6 +3,10 @@ spring:
     name: interactive-edu-backend
   profiles:
     active: dev
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
 
 server:
   port: 8080
@@ -11,3 +15,14 @@ logging:
   level:
     root: INFO
     com.interactive.edu: DEBUG
+
+storage:
+  type: local
+  local-base-dir: ./data/courseware
+
+python:
+  client:
+    base-url: http://localhost:8001
+    parse-path: /python/v1/parse
+    connect-timeout: 5s
+    read-timeout: 30s

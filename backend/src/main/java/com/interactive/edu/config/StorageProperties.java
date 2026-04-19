@@ -9,7 +9,7 @@ public class StorageProperties {
     /**
      * minio | local
      */
-    private String type = "minio";
+    private String type = "local";
 
     /**
      * for local storage, e.g. ./data/courseware

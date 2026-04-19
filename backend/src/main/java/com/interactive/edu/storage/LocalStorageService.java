@@ -2,6 +2,7 @@ package com.interactive.edu.service.storage;
 
 import com.interactive.edu.config.StorageProperties;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.util.FileSystemUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -11,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 @Service
+@ConditionalOnProperty(prefix = "storage", name = "type", havingValue = "local", matchIfMissing = true)
 @RequiredArgsConstructor
 public class LocalStorageService implements StorageService {
 

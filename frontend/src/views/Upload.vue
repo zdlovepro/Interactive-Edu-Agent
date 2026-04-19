@@ -25,18 +25,18 @@
       <div v-if="uploadedCourseware.length > 0" class="courseware-list">
         <h2>已上传课件</h2>
         <div class="list-items">
-          <div
-            v-for="item in uploadedCourseware"
-            :key="item.id"
-            class="list-item"
-            @click="openCourseware(item)"
+        <div
+          v-for="item in uploadedCourseware"
+          :key="item.id"
+          class="list-item"
+          @click="openCourseware(item)"
           >
             <div class="item-icon">📄</div>
             <div class="item-info">
               <p class="item-title">{{ item.name }}</p>
               <p class="item-meta">{{ formatDate(item.createdAt) }}</p>
             </div>
-            <div class="item-status" :class="item.status">{{ item.status }}</div>
+            <div class="item-status" :class="statusClass(item.status)">{{ statusLabel(item.status) }}</div>
           </div>
         </div>
       </div>
@@ -65,6 +65,35 @@ const uploadedCourseware = ref([])
 
 let pollTimer = null
 
+const statusClass = status => {
+  switch (status) {
+    case 'PARSING':
+      return 'parsing'
+    case 'PARSED':
+    case 'READY':
+      return 'success'
+    case 'FAILED':
+      return 'error'
+    default:
+      return ''
+  }
+}
+
+const statusLabel = status => {
+  switch (status) {
+    case 'PARSING':
+      return '解析中'
+    case 'PARSED':
+      return '已解析'
+    case 'READY':
+      return '可讲课'
+    case 'FAILED':
+      return '失败'
+    default:
+      return status || '未知状态'
+  }
+}
+
 /**
  * 课件解析状态轮询
  * 上传成功后每 3s 轮询一次，最多 30 次（共 90s），解析完成或失败后停止
@@ -84,7 +113,7 @@ const pollParseStatus = (coursewareId, coursewareItem) => {
     attempts++
     if (attempts > MAX_ATTEMPTS) {
       clearInterval(pollTimer)
-      coursewareItem.status = 'error'
+      coursewareItem.status = 'FAILED'
       uploadStatus.value = { status: 'error', message: '解析超时，请重试' }
       return
     }
@@ -94,7 +123,7 @@ const pollParseStatus = (coursewareId, coursewareItem) => {
       if (res.code === 0) {
         const status = res.data?.status
         coursewareItem.status = status
-        if (status === 'PARSED') {
+        if (status === 'PARSED' || status === 'READY') {
           clearInterval(pollTimer)
           uploadStatus.value = { status: 'success', message: '解析完成，可以开始讲课！' }
           setTimeout(() => { uploadStatus.value = null }, 3000)

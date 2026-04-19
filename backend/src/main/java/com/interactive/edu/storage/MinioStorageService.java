@@ -2,17 +2,20 @@ package com.interactive.edu.service.storage;
 
 import com.interactive.edu.config.MinioProperties;
 import io.minio.MinioClient;
-import io.minio.PutObjectArgs;
-import io.minio.MakeBucketArgs;
 import io.minio.BucketExistsArgs;
+import io.minio.MakeBucketArgs;
+import io.minio.PutObjectArgs;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
+import java.nio.file.Path;
 
 @Service
+@ConditionalOnProperty(prefix = "storage", name = "type", havingValue = "minio")
 @RequiredArgsConstructor
 public class MinioStorageService implements StorageService {
 
@@ -26,7 +29,10 @@ public class MinioStorageService implements StorageService {
         try {
             ensureBucket();
 
-            String filename = file.getOriginalFilename() == null ? "courseware.bin" : file.getOriginalFilename();
+            String originalFilename = file.getOriginalFilename();
+            String filename = originalFilename == null || originalFilename.isBlank()
+                    ? "courseware.bin"
+                    : Path.of(originalFilename).getFileName().toString();
             String objectKey = coursewareId + "/" + filename;
 
             try (InputStream in = file.getInputStream()) {

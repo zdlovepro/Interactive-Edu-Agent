@@ -4,11 +4,12 @@ import com.interactive.edu.config.PythonClientProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import java.net.http.HttpClient;
+import java.util.Collections;
+import java.util.List;
 
 @Slf4j
 @Component
@@ -32,23 +33,41 @@ public class PythonParseClient {
                 .build();
     }
 
-    @Async
-    public void callParseAsync(PythonParseRequest req) {
-        try {
-            String url = props.getBaseUrl() + props.getParsePath();
+    public ParsePayload parse(PythonParseRequest req) {
+        String url = props.getBaseUrl() + props.getParsePath();
+        ParseEnvelope envelope = restClient.post()
+                .uri(url)
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_JSON)
+                .body(req)
+                .retrieve()
+                .body(ParseEnvelope.class);
 
-            // 解析服务响应暂不强依赖，只要调用成功就行
-            String resp = restClient.post()
-                    .uri(url)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .accept(MediaType.APPLICATION_JSON)
-                    .body(req)
-                    .retrieve()
-                    .body(String.class);
+        if (envelope == null || envelope.code() != 0 || envelope.data() == null) {
+            throw new IllegalStateException("Python 解析服务返回异常");
+        }
 
-            log.info("Python parse called ok, coursewareId={}, resp={}", req.getCoursewareId(), resp);
-        } catch (Exception e) {
-            log.error("Python parse call failed, coursewareId={}, err={}", req.getCoursewareId(), e.getMessage(), e);
+        log.info("Python parse called ok, coursewareId={}, pages={}",
+                req.getCoursewareId(), envelope.data().pages());
+        return envelope.data();
+    }
+
+    public record ParseEnvelope(int code, String message, ParsePayload data) {
+    }
+
+    public record ParsePayload(int pages, List<String> outline, List<ParseSegment> segments) {
+        public List<String> safeOutline() {
+            return outline == null ? Collections.emptyList() : outline;
+        }
+
+        public List<ParseSegment> safeSegments() {
+            return segments == null ? Collections.emptyList() : segments;
+        }
+    }
+
+    public record ParseSegment(int pageIndex, String title, String content, List<String> knowledgePoints) {
+        public List<String> safeKnowledgePoints() {
+            return knowledgePoints == null ? Collections.emptyList() : knowledgePoints;
         }
     }
 }
