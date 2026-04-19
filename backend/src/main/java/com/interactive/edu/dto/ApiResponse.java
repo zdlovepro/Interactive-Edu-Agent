@@ -1,8 +1,5 @@
 package com.interactive.edu.dto;
 
-import lombok.NoArgsConstructor;
-
-@NoArgsConstructor
 public class ApiResponse<T> extends BaseResponse<T> {
 
     public ApiResponse(int code, String message, T data) {
