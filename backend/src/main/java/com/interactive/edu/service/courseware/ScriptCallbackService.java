@@ -33,13 +33,16 @@ public class ScriptCallbackService {
         log.info("收到讲稿生成异步回调, 课件ID: {}, 状态: {}", request.getCoursewareId(), request.getProcessStatus());
 
         Optional<Courseware> coursewareOpt = coursewareRepository.findById(request.getCoursewareId());
+        Courseware courseware;
         if (coursewareOpt.isEmpty()) {
-            log.warn("回调的课件ID不存在，或已被删除，跳过处理: {}", request.getCoursewareId());
-            return;
+            log.warn("回调的课件ID不存在，创建占位课件后继续处理: {}", request.getCoursewareId());
+            courseware = new Courseware();
+            courseware.setId(request.getCoursewareId());
+            courseware.setStatus("PROCESSING");
+            courseware = coursewareRepository.save(courseware);
+        } else {
+            courseware = coursewareOpt.get();
         }
-
-        Courseware courseware = coursewareOpt.get();
-
         if ("FAILED".equalsIgnoreCase(request.getProcessStatus())) {
             log.error("大模型生成讲稿失败，原因: {}", request.getErrorMessage());
             courseware.setStatus("FAILED");
