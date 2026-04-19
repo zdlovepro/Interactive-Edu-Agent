@@ -1,4 +1,4 @@
-package com.interactive.edu.storage;
+package com.interactive.edu.service.storage;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

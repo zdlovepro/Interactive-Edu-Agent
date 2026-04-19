@@ -1,4 +1,4 @@
-package com.interactive.edu.service;
+package com.interactive.edu.service.python;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

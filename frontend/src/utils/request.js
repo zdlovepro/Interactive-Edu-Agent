@@ -6,8 +6,8 @@ import axios from 'axios'
 
 // 创建 axios 实例
 const request = axios.create({
-  // 选取环境变量，未配置时默认居然 localhost:3000/api
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api',
+  // 开发环境默认走 Vite 代理，生产环境可通过环境变量覆盖
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api/v1',
   // 默誄10s 超时（上传接口可通过请求配置定制覆盖）
   timeout: 10000,
 })
