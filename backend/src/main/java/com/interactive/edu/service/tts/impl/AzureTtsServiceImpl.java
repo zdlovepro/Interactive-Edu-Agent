@@ -46,7 +46,7 @@ public class AzureTtsServiceImpl implements TtsService {
             }
         } catch (Exception e) {
             log.error("Azure TTS 服务同步调用出现内部错误", e);
-            throw new RuntimeException("生成音频失败: " + e.getMessage());
+            throw new RuntimeException("生成音频失败", e);
         }
     }
 
