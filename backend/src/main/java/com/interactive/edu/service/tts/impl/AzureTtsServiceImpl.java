@@ -11,6 +11,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 
@@ -40,8 +41,10 @@ public class AzureTtsServiceImpl implements TtsService {
             if (response.statusCode() == 200) {
                 return response.body();
             } else {
-                log.error("Azure TTS 请求响应失败, 状态码: {}, 返回体脱敏: {}", response.statusCode(), 
-                        new String(response.body()).length() > 50 ? "部分截断" : new String(response.body()));
+                String requestId = response.headers().firstValue("x-requestid").orElse("N/A");
+                String responseBodySummary = summarizeResponseBody(response.body());
+                log.error("Azure TTS 请求响应失败, 状态码: {}, requestId: {}, 返回体摘要: {}",
+                        response.statusCode(), requestId, responseBodySummary);
                 throw new RuntimeException("Azure TTS 调用异常, HTTPS Code: " + response.statusCode());
             }
         } catch (Exception e) {
@@ -100,5 +103,20 @@ public class AzureTtsServiceImpl implements TtsService {
                 .header("X-Microsoft-OutputFormat", "audio-16khz-128kbitrate-mono-mp3")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
+    }
+
+    private String summarizeResponseBody(byte[] responseBody) {
+        if (responseBody == null || responseBody.length == 0) {
+            return "empty";
+        }
+        String bodyText = new String(responseBody, StandardCharsets.UTF_8);
+        int maxLength = 120;
+        if (bodyText.length() <= maxLength) {
+            return bodyText;
+        }
+        int sideLength = 50;
+        return bodyText.substring(0, sideLength)
+                + "...(truncated)..."
+                + bodyText.substring(bodyText.length() - sideLength);
     }
 }
