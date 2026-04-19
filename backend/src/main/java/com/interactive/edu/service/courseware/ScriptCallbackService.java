@@ -98,6 +98,10 @@ public class ScriptCallbackService {
         log.info("课件 {} 的讲稿落库完成，状态更新为 READY", courseware.getId());
     }
 
+    /**
+     * node_id 在表中为全局唯一，这里优先使用“课件ID_页码_原始nodeId”做命名空间；
+     * 若超过数据库长度限制，则回退为稳定哈希值。
+     */
     private String buildScopedNodeId(String coursewareId, Integer pageIndex, String nodeId) {
         String scopedNodeId = coursewareId + "_" + pageIndex + "_" + nodeId;
         if (scopedNodeId.length() <= MAX_NODE_ID_LENGTH) {
@@ -106,6 +110,9 @@ public class ScriptCallbackService {
         String digest = UUID.nameUUIDFromBytes(scopedNodeId.getBytes(StandardCharsets.UTF_8))
                 .toString()
                 .replace("-", "");
-        return HASHED_NODE_ID_PREFIX + digest;
+        String hashedNodeId = HASHED_NODE_ID_PREFIX + digest;
+        return hashedNodeId.length() <= MAX_NODE_ID_LENGTH
+                ? hashedNodeId
+                : hashedNodeId.substring(0, MAX_NODE_ID_LENGTH);
     }
 }
