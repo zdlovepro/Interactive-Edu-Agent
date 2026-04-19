@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -31,6 +32,12 @@ public class ScriptCallbackService {
     @Transactional(rollbackFor = Exception.class)
     public void processScriptCallback(ScriptCallbackRequest request) {
         log.info("收到讲稿生成异步回调, 课件ID: {}, 状态: {}", request.getCoursewareId(), request.getProcessStatus());
+        String processStatus = request.getProcessStatus();
+        if (!"SUCCESS".equalsIgnoreCase(processStatus) && !"FAILED".equalsIgnoreCase(processStatus)) {
+            log.warn("收到未知的讲稿生成状态，忽略此次回调: coursewareId={}, processStatus={}",
+                    request.getCoursewareId(), processStatus);
+            return;
+        }
 
         Optional<Courseware> coursewareOpt = coursewareRepository.findById(request.getCoursewareId());
         Courseware courseware;
@@ -43,7 +50,7 @@ public class ScriptCallbackService {
         } else {
             courseware = coursewareOpt.get();
         }
-        if ("FAILED".equalsIgnoreCase(request.getProcessStatus())) {
+        if ("FAILED".equalsIgnoreCase(processStatus)) {
             log.error("大模型生成讲稿失败，原因: {}", request.getErrorMessage());
             courseware.setStatus("FAILED");
             coursewareRepository.save(courseware);
@@ -73,7 +80,7 @@ public class ScriptCallbackService {
                         script.setId(UUID.randomUUID().toString().replace("-", ""));
                         script.setCoursewareId(courseware.getId());
                         script.setPageIndex(page.getPageIndex());
-                        script.setNodeId(node.getNodeId());
+                        script.setNodeId(buildScopedNodeId(courseware.getId(), page.getPageIndex(), node.getNodeId()));
                         script.setContent(node.getContent());
                         script.setEditStatus("AUTO");
                         lectureScriptRepository.save(script);
@@ -86,5 +93,16 @@ public class ScriptCallbackService {
         courseware.setStatus("READY");
         coursewareRepository.save(courseware);
         log.info("课件 {} 的讲稿落库完成，状态更新为 READY", courseware.getId());
+    }
+
+    private String buildScopedNodeId(String coursewareId, Integer pageIndex, String nodeId) {
+        String scopedNodeId = coursewareId + "_" + pageIndex + "_" + nodeId;
+        if (scopedNodeId.length() <= 64) {
+            return scopedNodeId;
+        }
+        String digest = UUID.nameUUIDFromBytes(scopedNodeId.getBytes(StandardCharsets.UTF_8))
+                .toString()
+                .replace("-", "");
+        return "n_" + digest;
     }
 }
