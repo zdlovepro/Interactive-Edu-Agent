@@ -58,6 +58,9 @@ public class ScriptCallbackService {
             courseware.setStatus("FAILED");
             coursewareRepository.save(courseware);
             return;
+        } else if (!"SUCCESS".equalsIgnoreCase(request.getProcessStatus())) {
+            log.warn("收到未知的处理状态: {}，课件ID: {}，跳过落库处理", request.getProcessStatus(), courseware.getId());
+            return;
         }
 
         // 处理 SUCCESS，先清理历史数据，再按本次回调结果重新落库
