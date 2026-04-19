@@ -3,6 +3,7 @@ package com.interactive.edu.service.python;
 import com.interactive.edu.config.PythonClientProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
+import java.time.Duration;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -22,11 +23,11 @@ public class PythonParseClient {
         this.props = props;
 
         HttpClient httpClient = HttpClient.newBuilder()
-                .connectTimeout(props.getConnectTimeout())
+                .connectTimeout(Duration.ofMillis(props.getConnectTimeoutMs()))
                 .build();
 
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
-        requestFactory.setReadTimeout(props.getReadTimeout());
+        requestFactory.setReadTimeout(Duration.ofMillis(props.getReadTimeoutMs()));
 
         this.restClient = RestClient.builder()
                 .requestFactory(requestFactory)

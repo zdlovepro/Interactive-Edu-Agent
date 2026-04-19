@@ -438,5 +438,59 @@ public class CoursewareService {
         private void touch() {
             this.updatedAt = Instant.now();
         }
+    private MultipartFile withOriginalFilename(MultipartFile file, String originalFilename) {
+        return new MultipartFile() {
+            @Override
+            public String getName() {
+                return file.getName();
+            }
+
+            @Override
+            public String getOriginalFilename() {
+                return originalFilename;
+            }
+
+            @Override
+            public String getContentType() {
+                return file.getContentType();
+            }
+
+            @Override
+            public boolean isEmpty() {
+                return file.isEmpty();
+            }
+
+            @Override
+            public long getSize() {
+                return file.getSize();
+            }
+
+            @Override
+            public byte[] getBytes() throws IOException {
+                return file.getBytes();
+            }
+
+            @Override
+            public InputStream getInputStream() throws IOException {
+                return file.getInputStream();
+            }
+
+            @Override
+            public void transferTo(java.io.File dest) throws IOException, IllegalStateException {
+                file.transferTo(dest);
+            }
+
+            @Override
+            public org.springframework.core.io.Resource getResource() {
+                return file.getResource();
+            }
+
+            @Override
+            public void transferTo(java.nio.file.Path dest) throws IOException, IllegalStateException {
+                file.transferTo(dest);
+            }
+
+
+        };
     }
 }
