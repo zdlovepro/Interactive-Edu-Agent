@@ -23,4 +23,20 @@ public class AsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    /**
+     * TTS 批量合成专用线程池。
+     * 核心线程数 = 4，最大 = 8，队列 = 200，确保批量预合成时不阻塞主业务线程。
+     */
+    @Bean(name = "ttsTaskExecutor")
+    public TaskExecutor ttsTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(4);
+        executor.setMaxPoolSize(8);
+        executor.setQueueCapacity(200);
+        executor.setThreadNamePrefix("tts-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.initialize();
+        return executor;
+    }
 }
