@@ -1,5 +1,6 @@
 package com.interactive.edu.dto.callback;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
@@ -29,6 +30,7 @@ public class ScriptCallbackRequest {
     /**
      * 课件各页生成的讲稿内容列表
      */
+    @Valid
     private List<PageScriptDto> pages;
 
     @Data
@@ -44,6 +46,7 @@ public class ScriptCallbackRequest {
         /**
          * 讲稿切割的节点列表 
          */
+        @Valid
         private List<ScriptNodeDto> scripts;
     }
 
