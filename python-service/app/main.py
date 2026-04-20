@@ -7,35 +7,19 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.services.demo_edu import build_parse_payload
 
 logger = logging.getLogger(__name__)
+from app.api.v1 import script as script_router
 
 app = FastAPI(title="AI Interactive Lecture - Python Service")
 
-
-class ParseRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    courseware_id: str = Field(..., alias="coursewareId", description="课件唯一标识")
-    storage: str | None = Field(default=None, description="存储类型，如 local/minio")
-    key: str | None = Field(default=None, description="对象存储 key 或本地相对路径")
-    file_name: str | None = Field(default=None, alias="fileName", description="文件名")
-    content_type: str | None = Field(default=None, alias="contentType", description="文件 MIME 类型")
-    file_url: str | None = Field(default=None, alias="fileUrl", description="兼容文档里的 fileUrl")
-
-
-def success(data: Any) -> dict[str, Any]:
-    return {"code": 0, "message": "success", "data": data}
-
-
 @app.on_event("startup")
-async def startup_event() -> None:
+async def startup_event():
+    # Application startup: Initialize vector store connection
     try:
-        from app.services.vector_store import get_vector_store
-
-        get_vector_store()
-        logger.info("Vector store dependency is ready.")
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Vector store is unavailable in current environment: %s", exc)
-
+        # 建立数据库连接，首次启动可能下载权重模型（如果使用本地 embedding）
+        vector_store = get_vector_store()
+        print("Vector database is connected and ready.")
+    except Exception as e:
+        print(f"Error starting vector store dependency: {e}")
 
 @app.get("/")
 def read_root() -> dict[str, str]:
