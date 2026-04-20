@@ -14,6 +14,14 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL_NAME: str = "BAAI/bge-large-zh-v1.5" # 推荐使用 BGE 等中文友好的轻量级模型
     EMBEDDING_DIM_SIZE: int = 1024
 
+    # LLM Config
+    LLM_API_KEY: str = ""
+    LLM_API_BASE: str = "https://api.openai.com/v1"
+    LLM_MODEL_NAME: str = "gpt-4o"
+    LLM_TEMPERATURE: float = 0.7
+    LLM_MAX_TOKENS: int = 4096
+    LLM_TIMEOUT: int = 120
+
     class Config:
         env_file = ".env"
 
