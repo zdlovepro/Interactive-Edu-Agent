@@ -2,7 +2,8 @@
 PDF 解析服务
 ============
 使用 pdfplumber 读取 .pdf 文件，逐页提取文本内容。
-图片阶段一仅记录占位标识，阶段五集成 OCR 后补充。
+图片阶段二记录占位标识，公式阶段二同样记录占位标识。
+阶段五集成 OCR / LaTeX OCR 后补充实际内容。
 
 保存位置：python-service/app/services/pdf_parser.py
 """
@@ -19,6 +20,15 @@ def parse_pdf(file_path: str, courseware_id: str) -> ParseResult:
     """
     解析 .pdf 文件，返回结构化的 ParseResult。
 
+    处理逻辑
+    --------
+    1. 逐页遍历 PDF
+    2. 提取纯文本（pdfplumber.extract_text）
+    3. 检测页面中的图片对象，记录占位标识
+    4. 公式检测：pdfplumber 无法原生识别公式区域，
+       阶段二暂不做 PDF 公式检测，formula_placeholders 留空，
+       阶段五集成 LaTeX OCR（如 Pix2Tex / Nougat）后统一处理
+
     Parameters
     ----------
     file_path : str
@@ -29,7 +39,7 @@ def parse_pdf(file_path: str, courseware_id: str) -> ParseResult:
     Returns
     -------
     ParseResult
-        包含每页文本及图片占位符的解析结果。
+        包含每页文本、图片占位符及空公式占位符的解析结果。
 
     Raises
     ------
@@ -60,13 +70,22 @@ def parse_pdf(file_path: str, courseware_id: str) -> ParseResult:
             image_placeholders: list[str] = []
             if page.images:
                 for img_idx, _img in enumerate(page.images, start=1):
-                    image_placeholders.append(f"[图片：page_{idx}_img_{img_idx}]")
+                    image_placeholders.append(
+                        f"[图片：page_{idx}_img_{img_idx}]"
+                    )
 
+            # ---- 公式占位标识 ----
+            # pdfplumber 无法原生检测公式区域，阶段二留空，
+            # 阶段五集成 LaTeX OCR 后统一填充。
+            formula_placeholders: list[str] = []
+
+            # ---- 组装单页结果 ----
             page_content = PageContent(
                 page_index=idx,
                 text=text,
                 notes="",  # PDF 没有演讲者备注
                 image_placeholders=image_placeholders,
+                formula_placeholders=formula_placeholders,
             )
             pages.append(page_content)
 

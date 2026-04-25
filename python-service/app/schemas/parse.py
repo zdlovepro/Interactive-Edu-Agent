@@ -36,7 +36,7 @@ class BaseResponse(BaseModel):
 
 
 # ============================================================
-# 解析相关模型（阶段二任务 7 实际使用，阶段一先定义好结构）
+# 解析相关模型
 # ============================================================
 
 class PageContent(BaseModel):
@@ -52,15 +52,22 @@ class PageContent(BaseModel):
     notes : str
         备注 / 演讲者注释（仅 PPT 有，PDF 为空字符串）。
     image_placeholders : list[str]
-        图片占位标识列表。阶段一先返回空列表，
+        图片占位标识列表。阶段二先返回占位标识，
         阶段五集成 OCR 后填充图片内文字。
+    formula_placeholders : list[str]
+        公式占位标识列表。阶段二先返回占位标识，
+        阶段五集成公式识别（如 LaTeX OCR）后填充公式内容。
     """
     page_index: int = Field(..., ge=1, description="页码，从 1 开始")
     text: str = Field(default="", description="该页提取的纯文本内容")
     notes: str = Field(default="", description="备注/演讲者注释")
     image_placeholders: list[str] = Field(
         default_factory=list,
-        description="图片占位标识列表，阶段一为空",
+        description="图片占位标识列表",
+    )
+    formula_placeholders: list[str] = Field(
+        default_factory=list,
+        description="公式占位标识列表，阶段二为占位，阶段五填充实际内容",
     )
 
 
