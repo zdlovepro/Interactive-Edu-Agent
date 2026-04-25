@@ -13,6 +13,7 @@ from typing import Any
 from fastapi import FastAPI
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.parse import ParseRequest
 from app.services.demo_edu import build_parse_payload
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,9 @@ from app.api.v1 import script as script_router
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(title="AI Interactive Lecture - Python Service")
+app.include_router(script_router.router, prefix="/python/v1")
 
 from app.core.config import settings
 from app.services.vector_store import get_vector_store
