@@ -8,19 +8,15 @@ import java.time.Duration;
 @Data
 @ConfigurationProperties(prefix = "python.client")
 public class PythonClientProperties {
-    /**
-     * e.g. http://localhost:8001
-     */
+    /** Python service base URL, e.g. http://localhost:8001 */
     private String baseUrl = "http://localhost:8001";
 
-    /**
-     * e.g. /python/v1/parse
-     */
+    /** Parse API path, e.g. /python/v1/parse */
     private String parsePath = "/python/v1/parse";
 
-    /**
-     * connect/read timeout
-     */
+    /** HTTP connect timeout. */
     private Duration connectTimeout = Duration.ofSeconds(5);
+
+    /** HTTP read timeout. */
     private Duration readTimeout = Duration.ofSeconds(30);
 }

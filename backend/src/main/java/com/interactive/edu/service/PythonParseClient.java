@@ -3,7 +3,6 @@ package com.interactive.edu.service.python;
 import com.interactive.edu.config.PythonClientProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
-import java.time.Duration;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -23,11 +22,11 @@ public class PythonParseClient {
         this.props = props;
 
         HttpClient httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofMillis(props.getConnectTimeoutMs()))
+                .connectTimeout(props.getConnectTimeout())
                 .build();
 
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
-        requestFactory.setReadTimeout(Duration.ofMillis(props.getReadTimeoutMs()));
+        requestFactory.setReadTimeout(props.getReadTimeout());
 
         this.restClient = RestClient.builder()
                 .requestFactory(requestFactory)
@@ -44,8 +43,11 @@ public class PythonParseClient {
                 .retrieve()
                 .body(ParseEnvelope.class);
 
-        if (envelope == null || envelope.code() != 0 || envelope.data() == null) {
-            throw new IllegalStateException("Python 解析服务返回异常");
+        if (envelope == null) {
+            throw new IllegalStateException("Python parse service returned empty response");
+        }
+        if (envelope.code() != 0 || envelope.data() == null) {
+            throw new IllegalStateException("Python parse service failed: " + envelope.message());
         }
 
         log.info("Python parse called ok, coursewareId={}, pages={}",

@@ -5,6 +5,7 @@ import com.interactive.edu.service.python.PythonParseClient;
 import com.interactive.edu.service.python.PythonParseRequest;
 import com.interactive.edu.service.storage.StoredObject;
 import com.interactive.edu.service.storage.StorageServiceFactory;
+import com.interactive.edu.service.tts.TtsService;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +32,7 @@ public class CoursewareService {
     private final StorageServiceFactory storageServiceFactory;
     private final PythonParseClient pythonParseClient;
     private final TaskExecutor taskExecutor;
+    private final TtsService ttsService;
 
     private final ConcurrentMap<String, CoursewareState> coursewareStore = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, ParsedCourseware> parsedStore = new ConcurrentHashMap<>();
@@ -106,6 +108,7 @@ public class CoursewareService {
     public void triggerScriptGeneration(String coursewareId) {
         ensureCoursewareId(coursewareId);
         requireCourseware(coursewareId);
+
         if (scriptStore.containsKey(coursewareId)) {
             scriptStatusStore.put(coursewareId, "READY");
             return;
@@ -223,6 +226,8 @@ public class CoursewareService {
                 String nodeId = "node_" + String.format("%03d", index + 1);
                 String content = buildScriptContent(parsedSegment, index + 1, totalPages);
 
+                String audioUrl = ttsService.synthesizeToAudioUrl(content);
+
                 ScriptSegment scriptSegment = new ScriptSegment(
                         nodeId,
                         nodeId,
@@ -230,7 +235,7 @@ public class CoursewareService {
                         parsedSegment.title(),
                         content,
                         parsedSegment.knowledgePoints(),
-                        null
+                        audioUrl
                 );
                 segments.add(scriptSegment);
                 outline.add(new OutlineItem(nodeId, parsedSegment.title()));
@@ -438,59 +443,5 @@ public class CoursewareService {
         private void touch() {
             this.updatedAt = Instant.now();
         }
-    private MultipartFile withOriginalFilename(MultipartFile file, String originalFilename) {
-        return new MultipartFile() {
-            @Override
-            public String getName() {
-                return file.getName();
-            }
-
-            @Override
-            public String getOriginalFilename() {
-                return originalFilename;
-            }
-
-            @Override
-            public String getContentType() {
-                return file.getContentType();
-            }
-
-            @Override
-            public boolean isEmpty() {
-                return file.isEmpty();
-            }
-
-            @Override
-            public long getSize() {
-                return file.getSize();
-            }
-
-            @Override
-            public byte[] getBytes() throws IOException {
-                return file.getBytes();
-            }
-
-            @Override
-            public InputStream getInputStream() throws IOException {
-                return file.getInputStream();
-            }
-
-            @Override
-            public void transferTo(java.io.File dest) throws IOException, IllegalStateException {
-                file.transferTo(dest);
-            }
-
-            @Override
-            public org.springframework.core.io.Resource getResource() {
-                return file.getResource();
-            }
-
-            @Override
-            public void transferTo(java.nio.file.Path dest) throws IOException, IllegalStateException {
-                file.transferTo(dest);
-            }
-
-
-        };
     }
 }

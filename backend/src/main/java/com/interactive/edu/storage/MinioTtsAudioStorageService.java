@@ -1,5 +1,6 @@
 package com.interactive.edu.storage;
 
+import com.interactive.edu.client.TtsClient;
 import com.interactive.edu.config.MinioProperties;
 import com.interactive.edu.config.TtsProperties;
 import com.interactive.edu.exception.ErrorCode;
@@ -10,6 +11,8 @@ import io.minio.PutObjectArgs;
 import io.minio.http.Method;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
@@ -26,6 +29,8 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @Service
+@ConditionalOnProperty(prefix = "storage", name = "type", havingValue = "minio")
+@ConditionalOnBean(TtsClient.class)
 @RequiredArgsConstructor
 public class MinioTtsAudioStorageService implements TtsAudioStorageService {
 

@@ -1,6 +1,6 @@
 /**
  * 全局 main store（占位符）
- * 业务状态请使用 cours.js
+ * 业务状态请使用 course.js
  */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'

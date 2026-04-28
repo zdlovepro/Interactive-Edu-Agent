@@ -6,13 +6,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @Data
 @ConfigurationProperties(prefix = "storage")
 public class StorageProperties {
-    /**
-     * minio | local
-     */
+    /** Supported values: local, minio. */
     private String type = "local";
 
-    /**
-     * for local storage, e.g. ./data/courseware
-     */
+    /** Base directory used when storage.type=local. */
     private String localBaseDir = "./data/courseware";
 }

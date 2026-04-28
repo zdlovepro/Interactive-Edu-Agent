@@ -5,7 +5,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
-export const useCoursStore = defineStore('cours', () => {
+export const useCourseStore = defineStore('course', () => {
   // 课件信息
   const coursewareList = ref([])
   const currentCourseware = ref(null)

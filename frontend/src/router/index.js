@@ -69,7 +69,7 @@ const router = createRouter({
 
 // 全局前置守卫：每次路由切换时同步更新浏览器标签页标题
 router.beforeEach((to, from, next) => {
-  document.title = `${to.meta.title || 'SoftDesign'} - ${import.meta.env.VITE_APP_TITLE}`
+  document.title = `${to.meta.title || 'Interactive-Edu-Agent'} - ${import.meta.env.VITE_APP_TITLE}`
   next()
 })
 
