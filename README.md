@@ -1,92 +1,92 @@
 # Interactive-Edu-Agent
 
-Interactive-Edu-Agent is a multi-service project for courseware parsing, script generation, lecture playback, and Q&A integration. The default startup path is `local`, and the repository also keeps a `full` mode for MySQL/Redis/MinIO-backed persistence.
+Interactive-Edu-Agent 是一个多服务项目，提供课件解析、脚本生成、课堂播放以及问答集成等功能。默认启动路径为 `local`，仓库同时保留了 `full` 模式，支持 MySQL/Redis/MinIO 持久化存储。
 
-## Project Structure
+## 项目结构
 
 ```text
-backend/          Spring Boot backend
-python-service/   FastAPI parsing service
-frontend/         Vue 3 frontend
-docs/             Specifications and API docs
+backend/          Spring Boot 后端
+python-service/   FastAPI 解析服务
+frontend/         Vue 3 前端
+docs/             规格说明与 API 文档
 docker-compose-dev.yml
 ```
 
-## Environment Files
+## 环境变量文件
 
-### Root `.env`
+### 根目录 `.env`
 
-The repository root `.env` is used by:
+根目录下的 `.env` 用于：
 
 - `docker-compose-dev.yml`
-- backend placeholder values loaded from `backend/src/main/resources/application.yml`
+- 后端从 `backend/src/main/resources/application.yml` 加载的占位符值
 
-Create it from the sample:
+创建方式：
 
 ```powershell
-cd D:\205zd\Desktop\Interactive-Edu-Agent
+cd Interactive-Edu-Agent
 cp .env.example .env
 ```
 
-Important notes:
+重要说明：
 
-- `local` mode can run with the sample values as-is.
-- `full` mode requires you to review and fill the MySQL / Redis / MinIO values in `.env`.
-- `SPRING_PROFILES_ACTIVE` is included as a sample variable, but the safest way to switch the backend to `full` is still the startup argument shown below.
+- `local` 模式可以直接使用示例值运行。
+- `full` 模式需要你检查并填写 `.env` 中的 MySQL / Redis / MinIO 值。
+- `SPRING_PROFILES_ACTIVE` 作为示例变量包含在内，但将后端切换到 `full` 最安全的方式仍然是下面提到的启动参数。
 
-### Python `.env`
+### Python 服务的 `.env`
 
-The Python service reads `python-service/.env` directly.
+Python 服务直接读取 `python-service/.env`。
 
 ```powershell
-cd D:\205zd\Desktop\Interactive-Edu-Agent\python-service
+cd Interactive-Edu-Agent\python-service
 cp .env.example .env
 ```
 
-Important notes:
+重要说明：
 
-- Local minimal integration can leave `MILVUS_*` and `LLM_*` values empty.
-- Real Milvus retrieval requires `MILVUS_URI` and related credentials.
-- Real script generation or model calls require `LLM_API_KEY` and the matching `LLM_*` settings.
+- 本地最小集成可将 `MILVUS_*` 和 `LLM_*` 值留空。
+- 真正的 Milvus 检索需要 `MILVUS_URI` 及相关凭证。
+- 真正的脚本生成或模型调用需要 `LLM_API_KEY` 以及对应的 `LLM_*` 配置。
 
-### Frontend `.env`
+### 前端的 `.env`
 
-The frontend already has safe defaults in `frontend/.env.example`. If you want local overrides, copy it to `.env.local`:
+前端已经拥有安全的默认值在 `frontend/.env.example` 中。如果你想本地覆盖，复制为 `.env.local`：
 
 ```powershell
-cd D:\205zd\Desktop\Interactive-Edu-Agent\frontend
+cd Interactive-Edu-Agent\frontend
 cp .env.example .env.local
 ```
 
-## Modes
+## 运行模式
 
-### Local Minimal Integration Mode
+### 本地最小集成模式（Local）
 
-This is the default mode.
+这是默认模式。
 
 - Profile: `local`
-- No MySQL, Redis, or MinIO required
-- Storage path: `backend/data/courseware`
-- Python parse service: `http://localhost:8001/python/v1/parse`
-- `TTS_ENABLED=false` by default
+- 不需要 MySQL、Redis 或 MinIO
+- 存储路径: `backend/data/courseware`
+- Python 解析服务: `http://localhost:8001/python/v1/parse`
+- `TTS_ENABLED=false` 默认关闭
 
-Minimum variables that matter in this mode:
+在此模式下最重要的变量：
 
-- root `.env`: `PYTHON_CLIENT_BASE_URL`, optional `SPRING_PROFILES_ACTIVE`
-- `python-service/.env`: defaults are enough
-- `frontend/.env.example`: defaults are enough
+- 根目录 `.env`：`PYTHON_CLIENT_BASE_URL`，可选的 `SPRING_PROFILES_ACTIVE`
+- `python-service/.env`：默认值足够
+- `frontend/.env.example`：默认值足够
 
-### Full Persistence Mode
+### 完整持久化模式（Full）
 
-This mode enables the Repository / JPA / MinIO path.
+该模式启用 Repository / JPA / MinIO 存储路径。
 
 - Profile: `full`
-- Requires MySQL, Redis, and MinIO
-- Storage type: `minio`
-- `docker-compose-dev.yml` reads the root `.env`
-- `TTS_ENABLED=false` by default, so Aliyun keys are optional unless you enable TTS
+- 需要 MySQL、Redis 和 MinIO
+- 存储类型: `minio`
+- `docker-compose-dev.yml` 读取根目录 `.env`
+- `TTS_ENABLED=false` 默认关闭，因此除非你启用 TTS，否则阿里云密钥是可选的
 
-Required variables for full mode:
+完整模式所需的变量：
 
 - `MYSQL_HOST`
 - `MYSQL_PORT`
@@ -101,7 +101,7 @@ Required variables for full mode:
 - `MINIO_BUCKET`
 - `PYTHON_CLIENT_BASE_URL`
 
-Optional variables for full mode:
+完整模式可选的变量：
 
 - `REDIS_DATABASE`
 - `REDIS_PASSWORD`
@@ -111,120 +111,120 @@ Optional variables for full mode:
 - `TTS_ALIYUN_ACCESS_KEY_ID`
 - `TTS_ALIYUN_ACCESS_KEY_SECRET`
 
-## TTS
+## 文本转语音（TTS）
 
-TTS is disabled by default in both `local` and `full` modes.
+在 `local` 和 `full` 模式下 TTS 默认关闭。
 
-- `TTS_ENABLED=false`: the main parsing / script / lecture flow stays text-only, and `audioUrl` may be `null`
-- `TTS_ENABLED=true`: the backend will try to synthesize script audio and attach `audioUrl` to each script node
-- If synthesis or upload fails, the backend degrades to text-only and does not fail courseware parsing or script generation
+- `TTS_ENABLED=false`：主解析 / 脚本生成 / 课堂流程保持纯文本，`audioUrl` 可能为 `null`
+- `TTS_ENABLED=true`：后端将尝试合成脚本音频并为每个脚本节点附加 `audioUrl`
+- 如果合成或上传失败，后端会降级为纯文本，不会导致课件解析或脚本生成失败
 
-To enable TTS:
+启用 TTS 的步骤：
 
-1. Set `TTS_ENABLED=true` in the root `.env`
-2. Fill `TTS_ALIYUN_APP_KEY`
-3. Fill `TTS_ALIYUN_ACCESS_KEY_ID`
-4. Fill `TTS_ALIYUN_ACCESS_KEY_SECRET`
+1. 在根目录 `.env` 中设置 `TTS_ENABLED=true`
+2. 填写 `TTS_ALIYUN_APP_KEY`
+3. 填写 `TTS_ALIYUN_ACCESS_KEY_ID`
+4. 填写 `TTS_ALIYUN_ACCESS_KEY_SECRET`
 
-Storage behavior:
+存储行为：
 
-- `local` mode returns backend-served URLs like `/api/v1/tts/audio/tts-audio/...`
-- `full` mode returns MinIO-backed signed URLs when `storage.type=minio`
+- `local` 模式返回后端提供的 URL，例如 `/api/v1/tts/audio/tts-audio/...`
+- `full` 模式在 `storage.type=minio` 时返回 MinIO 签名的 URL
 
-## Start Local Minimal Integration
+## 启动本地最小集成模式
 
-1. Prepare environment files.
+1. 准备环境文件。
 
 ```powershell
-cd D:\205zd\Desktop\Interactive-Edu-Agent
+cd Interactive-Edu-Agent
 cp .env.example .env
 cd python-service
 cp .env.example .env
 ```
 
-2. Start the Python service.
+2. 启动 Python 服务。
 
 ```powershell
-cd D:\205zd\Desktop\Interactive-Edu-Agent\python-service
-py -3 -m venv .venv
+cd Interactive-Edu-Agent\python-service
+py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
 ```
 
-3. Start the backend.
+3. 启动后端。
 
 ```powershell
-cd D:\205zd\Desktop\Interactive-Edu-Agent\backend
+cd Interactive-Edu-Agent\backend
 mvn spring-boot:run
 ```
 
-4. Start the frontend.
+4. 启动前端。
 
 ```powershell
-cd D:\205zd\Desktop\Interactive-Edu-Agent\frontend
+cd Interactive-Edu-Agent\frontend
 npm install
 npm run dev
 ```
 
-URLs:
+访问地址：
 
-- Frontend: `http://localhost:5173`
-- Backend health: `http://localhost:8080/api/v1/health`
-- Python health: `http://localhost:8001/python/v1/health`
-- Python docs: `http://localhost:8001/docs`
+- 前端：`http://localhost:5173`
+- 后端健康检查：`http://localhost:8080/api/v1/health`
+- Python 健康检查：`http://localhost:8001/python/v1/health`
+- Python API 文档：`http://localhost:8001/docs`
 
-## Start Full Persistence Mode
+## 启动完整持久化模式
 
-1. Prepare the root `.env` and fill the required MySQL / Redis / MinIO values.
+1. 准备根目录 `.env` 并填写所需的 MySQL / Redis / MinIO 值。
 
 ```powershell
-cd D:\205zd\Desktop\Interactive-Edu-Agent
+cd Interactive-Edu-Agent
 cp .env.example .env
 ```
 
-2. Start MySQL, Redis, and MinIO.
+2. 启动 MySQL、Redis 和 MinIO。
 
 ```powershell
-cd D:\205zd\Desktop\Interactive-Edu-Agent
+cd Interactive-Edu-Agent
 docker compose -f docker-compose-dev.yml up -d
 ```
 
-3. Prepare and start the Python service.
+3. 准备并启动 Python 服务。
 
 ```powershell
-cd D:\205zd\Desktop\Interactive-Edu-Agent\python-service
+cd Interactive-Edu-Agent\python-service
 cp .env.example .env
-py -3 -m venv .venv
+py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
 ```
 
-4. Start the backend with the `full` profile.
+4. 使用 `full` profile 启动后端。
 
 ```powershell
-cd D:\205zd\Desktop\Interactive-Edu-Agent\backend
+cd Interactive-Edu-Agent\backend
 mvn spring-boot:run "-Dspring-boot.run.profiles=full"
 ```
 
-5. Start the frontend.
+5. 启动前端。
 
 ```powershell
-cd D:\205zd\Desktop\Interactive-Edu-Agent\frontend
+cd Interactive-Edu-Agent\frontend
 npm install
 npm run dev
 ```
 
-## Integration Checklist
+## 集成验证清单
 
-1. Upload a `pptx` or `pdf` from the frontend.
-2. Confirm the backend calls `POST /python/v1/parse`.
-3. Wait for the courseware status to move into the lecture-ready path.
-4. Verify text Q&A from the lecture page.
+1. 从前端上传一个 `pptx` 或 `pdf` 文件。
+2. 确认后端调用了 `POST /python/v1/parse`。
+3. 等待课件状态进入可播放的路径。
+4. 在课堂页面验证文本问答功能。
 
-## References
+## 参考
 
-- API contract: `docs/05-接口与API通信规约.md`
-- Frontend env sample: `frontend/.env.example`
-- Python env sample: `python-service/.env.example`
+- API 约定：`docs/05-接口与API通信规约.md`
+- 前端环境示例：`frontend/.env.example`
+- Python 环境示例：`python-service/.env.example`
