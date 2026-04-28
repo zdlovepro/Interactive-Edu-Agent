@@ -7,8 +7,11 @@ import com.interactive.edu.entity.LectureScript;
 import com.interactive.edu.repository.CoursewarePageRepository;
 import com.interactive.edu.repository.CoursewareRepository;
 import com.interactive.edu.repository.LectureScriptRepository;
+import com.interactive.edu.service.tts.TtsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +25,12 @@ import java.util.UUID;
  */
 @Slf4j
 @Service
+@Profile({"full", "prod"})
+@ConditionalOnBean({
+        CoursewareRepository.class,
+        CoursewarePageRepository.class,
+        LectureScriptRepository.class
+})
 @RequiredArgsConstructor
 public class ScriptCallbackService {
 
@@ -31,6 +40,7 @@ public class ScriptCallbackService {
     private final CoursewareRepository coursewareRepository;
     private final CoursewarePageRepository coursewarePageRepository;
     private final LectureScriptRepository lectureScriptRepository;
+    private final TtsService ttsService;
 
     @Transactional(rollbackFor = Exception.class)
     public void processScriptCallback(ScriptCallbackRequest request) {
@@ -88,6 +98,7 @@ public class ScriptCallbackService {
                         script.setPageIndex(page.getPageIndex());
                         script.setNodeId(buildScopedNodeId(courseware.getId(), page.getPageIndex(), node.getNodeId()));
                         script.setContent(node.getContent());
+                        script.setAudioUrl(ttsService.synthesizeToAudioUrl(node.getContent()));
                         script.setEditStatus("AUTO");
                         lectureScriptRepository.save(script);
                     }

@@ -87,13 +87,13 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useCoursStore } from '@/stores/cours'
+import { useCourseStore } from '@/stores/course'
 import request from '@/utils/request'
-import { SCRIPT_API } from '@/constans/api'
+import { SCRIPT_API } from '@/constants/api'
 
 const router = useRouter()
 const route = useRoute()
-const coursStore = useCoursStore()
+const courseStore = useCourseStore()
 
 /** 讲稿数据加载中状态 */
 const loading = ref(true)
@@ -196,7 +196,7 @@ const scrollToSegment = segmentId => {
 
 /** 将讲稿片段写入 store，跳转到讲课页 */
 const startLecture = () => {
-  coursStore.createSession({
+  courseStore.createSession({
     coursewareId,
     type: 'lecture',
   })

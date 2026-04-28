@@ -12,7 +12,7 @@ export default defineConfig({
       '@stores': path.resolve(__dirname, './src/stores'),
       '@utils': path.resolve(__dirname, './src/utils'),
       '@assets': path.resolve(__dirname, './src/assets'),
-      '@constans': path.resolve(__dirname, './src/constans'),
+      '@constants': path.resolve(__dirname, './src/constants'),
     },
   },
   server: {

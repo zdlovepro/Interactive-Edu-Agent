@@ -99,15 +99,15 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useCoursStore } from '@/stores/cours'
+import { useCourseStore } from '@/stores/course'
 import request from '@/utils/request'
-import { LECTURE_API, QA_API, SCRIPT_API } from '@/constans/api'
-import { LECTURE_STATE } from '@/constans/lecture'
+import { LECTURE_API, QA_API, SCRIPT_API } from '@/constants/api'
+import { LECTURE_STATE } from '@/constants/lecture'
 import { marked } from 'marked'
 
 const route = useRoute()
 const router = useRouter()
-const coursStore = useCoursStore()
+const courseStore = useCourseStore()
 
 const coursewareId = route.params.coursewareId
 
@@ -192,7 +192,7 @@ const pauseLecture = async () => {
     // 即使网络失败也允许本地暂停
   }
   lectureState.value = LECTURE_STATE.PAUSED
-  coursStore.currentSession && (coursStore.currentSession.status = 'paused')
+  courseStore.currentSession && (courseStore.currentSession.status = 'paused')
 }
 
 /**
@@ -208,7 +208,7 @@ const resumeLecture = async () => {
     // 网络失败时本地恢复
   }
   lectureState.value = LECTURE_STATE.PLAYING
-  coursStore.currentSession && (coursStore.currentSession.status = 'playing')
+  courseStore.currentSession && (courseStore.currentSession.status = 'playing')
 }
 
 // ========== 翻页 ==========
@@ -294,7 +294,7 @@ const submitQuestion = async () => {
     qaItem.answer = '网络错误，请稍后重试'
   } finally {
     isAsking.value = false
-    coursStore.addQARecord({ question: q, answer: qaItem.answer })
+    courseStore.addQARecord({ question: q, answer: qaItem.answer })
     scrollQAToBottom()
   }
 }

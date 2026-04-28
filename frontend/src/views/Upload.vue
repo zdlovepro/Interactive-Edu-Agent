@@ -47,14 +47,14 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import FileUpload from '@/components/Upload/FileUpload.vue'
-import { useCoursStore } from '@/stores/cours'
+import { useCourseStore } from '@/stores/course'
 import { useRouter } from 'vue-router'
 import { formatDate } from '@/utils'
 import request from '@/utils/request'
-import { COURSEWARE_API } from '@/constans/api'
+import { COURSEWARE_API } from '@/constants/api'
 
 const router = useRouter()
-const coursStore = useCoursStore()
+const courseStore = useCourseStore()
 
 /** 当前上传状态（status / message / progress），为 null 时不展示任何状态提示 */
 const uploadStatus = ref(null)
@@ -199,7 +199,7 @@ const handleFileSelected = async file => {
     }
 
     uploadedCourseware.value.unshift(coursewareItem)
-    coursStore.addCourseware(coursewareItem)
+    courseStore.addCourseware(coursewareItem)
 
     uploadStatus.value = { status: 'success', message: '上传成功，正在解析...', progress: 100 }
 
@@ -217,7 +217,7 @@ const handleError = error => {
 
 /** 跳转到请中课件的讲稿预览页 */
 const openCourseware = courseware => {
-  coursStore.setCourseware(courseware)
+  courseStore.setCourseware(courseware)
   router.push({ name: 'Script', params: { coursewareId: courseware.id } })
 }
 

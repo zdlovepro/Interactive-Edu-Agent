@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
@@ -45,6 +46,7 @@ import java.util.concurrent.CompletableFuture;
  */
 @Slf4j
 @Component
+@ConditionalOnProperty(prefix = "tts", name = "enabled", havingValue = "true")
 public class AliyunTtsClient implements TtsClient {
 
     /** 提前刷新 Token 的秒数（防止 Token 在请求途中过期）*/

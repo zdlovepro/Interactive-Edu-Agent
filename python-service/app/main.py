@@ -1,33 +1,18 @@
+from __future__ import annotations
 
-"""
-FastAPI 应用入口
-================
-注册路由、配置 CORS、启动日志。
-遵照规约 3.2：路径前缀 /python/v1，FastAPI 自动生成 Swagger 文档（/docs）。
-
-保存位置：python-service/app/main.py
-"""
 import logging
-from typing import Any
-
-from fastapi import FastAPI
-from pydantic import BaseModel, ConfigDict, Field
-
-from app.services.demo_edu import build_parse_payload
-
-logger = logging.getLogger(__name__)
-from app.api.v1 import script as script_router
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.v1 import router as api_v1_router
 from app.core.config import settings
-from app.services.vector_store import get_vector_store
-from app.utils.logger import logger
+from app.schemas.parse import BaseResponse, success_response
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title=settings.PROJECT_NAME)
 
-# ---- CORS 配置（开发阶段允许所有来源，生产环境应收紧） ----
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -36,40 +21,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---- 注册路由，前缀遵照规约 /python/v1 ----
-from app.routers import parse
-app.include_router(parse.router, prefix="/python/v1", tags=["解析服务"])
+app.include_router(api_v1_router, prefix="/python/v1")
 
-# ---- 启动事件 ----
+
 @app.on_event("startup")
-async def startup_event():
-    """应用启动时初始化向量库连接"""
-    logger.info("=" * 60)
-    logger.info("服务启动：%s", settings.PROJECT_NAME)
-    logger.info("Swagger 文档：http://localhost:8100/docs")
-    logger.info("=" * 60)
+async def startup_event() -> None:
+    logger.info("Starting %s", settings.PROJECT_NAME)
     try:
-        vector_store = get_vector_store()
-        logger.info("Vector database is connected and ready.")
-    except Exception as e:
-        logger.warning("Vector store 未就绪（不影响解析功能）：%s", e)
+        from app.services.vector_store import get_vector_store
+
+        get_vector_store()
+        logger.info("Vector store dependency is ready.")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Vector store is not ready; continuing without it: %s", exc)
 
 
-@app.get("/")
-def read_root() -> dict[str, str]:
-    return {"message": "Welcome to Python AI Service API"}
+@app.get("/", response_model=BaseResponse, tags=["system"])
+def read_root() -> BaseResponse:
+    return success_response({"service": settings.PROJECT_NAME})
 
 
-@app.get("/python/v1/health")
-def health() -> dict[str, str]:
-    return {"status": "UP"}
-
-
-@app.post("/python/v1/parse")
-def parse_courseware(request: ParseRequest) -> dict[str, Any]:
-    payload = build_parse_payload(
-        courseware_id=request.courseware_id,
-        file_name=request.file_name,
-        content_type=request.content_type,
-    )
-    return success(payload)
+@app.get("/python/v1/health", response_model=BaseResponse, tags=["system"])
+def health() -> BaseResponse:
+    return success_response({"service": settings.PROJECT_NAME, "status": "UP"})
