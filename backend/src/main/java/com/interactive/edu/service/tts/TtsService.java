@@ -40,7 +40,7 @@ public class TtsService {
         }
 
         if (!hasAliyunCredentials()) {
-            log.warn("TTS is enabled but Aliyun credentials are incomplete. Skip audio generation.");
+            log.warn("TTS is enabled but DashScope API key is missing. Skip audio generation.");
             return null;
         }
 
@@ -64,7 +64,9 @@ public class TtsService {
 
             String format = StringUtils.hasText(result.getFormat()) ? result.getFormat() : "wav";
             String objectKey = storageService.generateObjectKey(format);
-            return storageService.uploadAndSign(objectKey, result.getAudioData(), format, null);
+            String audioUrl = storageService.uploadAndSign(objectKey, result.getAudioData(), format, null);
+            log.info("TTS generation succeeded. format={}, audioBytes={}", format, result.getAudioData().length);
+            return audioUrl;
         } catch (Exception ex) {
             log.warn("TTS generation failed, degrade to text-only flow. reason={}", ex.getMessage());
             log.debug("TTS generation failure details", ex);
@@ -75,9 +77,7 @@ public class TtsService {
     private boolean hasAliyunCredentials() {
         TtsProperties.Aliyun aliyun = ttsProperties.getAliyun();
         return aliyun != null
-                && StringUtils.hasText(aliyun.getAppKey())
-                && StringUtils.hasText(aliyun.getAccessKeyId())
-                && StringUtils.hasText(aliyun.getAccessKeySecret());
+                && StringUtils.hasText(aliyun.getApiKey());
     }
 
     private String normalizeText(String text) {
