@@ -23,8 +23,13 @@
               <div class="script-card__header">
                 <div class="script-card__label-group">
                   <span class="pill">课堂讲稿</span>
+<<<<<<< HEAD
                   <span class="audio-tag" :class="{ ready: Boolean(currentSlide.audioUrl) }">
                     {{ currentSlide.audioUrl ? '优先使用后端音频资源' : '当前页使用文本朗读兜底' }}
+=======
+                  <span class="audio-tag" :class="{ ready: useAudioPlayback }">
+                    {{ useAudioPlayback ? '优先使用后端音频资源' : '当前页使用文本朗读兜底' }}
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
                   </span>
                 </div>
                 <div class="page-progress">
@@ -90,13 +95,36 @@
                   >
                     继续课堂
                   </AppButton>
-                  <AppButton
-                    v-else
-                    variant="secondary"
-                    :disabled="true"
-                  >
+                  <AppButton v-else variant="secondary" :disabled="true">
                     {{ statusMeta.text }}
                   </AppButton>
+                </div>
+              </div>
+              <div class="control-group control-group--voice">
+                <span class="control-label">语音打断</span>
+                <div class="control-row">
+                  <AppButton
+                    v-if="!voiceInterruptEnabled"
+                    variant="secondary"
+                    :disabled="!canUseVoiceInterrupt || lectureStore.isLoading"
+                    @click="enableVoiceInterrupt"
+                  >
+                    开启语音打断
+                  </AppButton>
+                  <AppButton v-else variant="secondary" @click="disableVoiceInterrupt">
+                    关闭语音打断
+                  </AppButton>
+                </div>
+
+                <div class="voice-status-row">
+                  <span class="voice-status-pill" :class="voiceStatusClass">
+                    {{ voiceStatusText }}
+                  </span>
+                  <span class="voice-status-hint">{{ voiceStatusHint }}</span>
+                </div>
+
+                <div class="voice-volume-meter" :class="{ active: voiceInterruptEnabled }">
+                  <span class="voice-volume-bar" :style="{ transform: `scaleX(${voiceVolumeScale})` }"></span>
                 </div>
               </div>
             </div>
@@ -125,8 +153,14 @@
               </button>
 
               <div class="timeline-meta">
+<<<<<<< HEAD
                 <span>页进度 {{ currentPage }} / {{ totalPages || 0 }}</span>
                 <span>{{ currentSlide?.audioUrl ? '音频播放' : '文本朗读' }}</span>
+=======
+                <span>当前页进度 {{ currentPage }} / {{ totalPages || 0 }}</span>
+                <span>{{ isContinuousPlayback ? '连续播放中' : '单页预览' }}</span>
+                <span v-if="lectureStatus === LECTURE_STATE.ENDED">课程已结束</span>
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
               </div>
             </div>
           </AppCard>
@@ -160,7 +194,11 @@
                 <details v-if="qa.evidence?.length" class="evidence-panel">
                   <summary>查看 evidence（{{ qa.evidence.length }}）</summary>
                   <div class="evidence-list">
-                    <div v-for="(evidence, index) in qa.evidence" :key="`${qa.id}-${index}`" class="evidence-item">
+                    <div
+                      v-for="(evidence, index) in qa.evidence"
+                      :key="`${qa.id}-${index}`"
+                      class="evidence-item"
+                    >
                       <div class="evidence-item__meta">
                         <span>{{ evidence.source || 'courseware' }}</span>
                         <span v-if="evidence.pageIndex">第 {{ evidence.pageIndex }} 页</span>
@@ -213,6 +251,12 @@ import { askText } from '@/api/qa'
 import { LECTURE_STATE, LECTURE_STATUS_MAP, normalizeLectureStatus } from '@/constants/lecture'
 import { useLectureStore } from '@/stores/lecture'
 import audioPlayer from '@/utils/audioPlayer'
+<<<<<<< HEAD
+=======
+import { createLecturePlaybackEngine } from '@/utils/lecturePlaybackEngine'
+import { createRecorder } from '@/utils/recorder'
+import { createVAD } from '@/utils/vad'
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
 import { getErrorMessage } from '@/utils'
 
 const route = useRoute()
@@ -231,11 +275,41 @@ const audioCurrentTime = ref(0)
 const audioDuration = ref(0)
 const isAudioPaused = ref(false)
 const isSpeechPaused = ref(false)
+<<<<<<< HEAD
 
 const failedAudioUrls = new Set()
 const audioUnsubscribers = []
 
 let speechUtterance = null
+=======
+const isContinuousPlayback = ref(false)
+const voiceInterruptEnabled = ref(false)
+const canUseVoiceInterrupt = ref(false)
+const voiceInterruptState = ref('off')
+const voiceInterruptHint = ref('开启后会在检测到学生说话后自动打断课堂')
+const voiceVolume = ref(0)
+const recordedAudioBlob = ref(null)
+const interruptBreakpointTime = ref(0)
+const isVadListening = ref(false)
+const isVoiceRecording = ref(false)
+
+const VOICE_INTERRUPT_STATE = {
+  OFF: 'off',
+  LISTENING: 'listening',
+  RECORDING: 'recording',
+  COMPLETED: 'completed',
+  UNAVAILABLE: 'unavailable',
+}
+
+const failedAudioUrls = new Set()
+const audioUnsubscribers = []
+const recorder = createRecorder()
+
+let speechUtterance = null
+let manualSpeechStopRequested = false
+let playbackEngine = null
+let vad = null
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
 
 const lectureStatus = computed(() => normalizeLectureStatus(lectureStore.status))
 const statusMeta = computed(
@@ -258,6 +332,12 @@ const progressPercent = computed(() => {
   return Math.round((currentPage.value / totalPages.value) * 100)
 })
 const errorMsg = computed(() => lectureStore.errorMessage)
+<<<<<<< HEAD
+=======
+const useAudioPlayback = computed(
+  () => Boolean(currentSlide.value?.audioUrl) && !failedAudioUrls.has(currentSlide.value.audioUrl),
+)
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
 const playbackModeLabel = computed(() => (playbackMode.value === 'audio' ? '音频播放' : '文本朗读'))
 const audioProgressPercent = computed(() => {
   if (!audioDuration.value || playbackMode.value !== 'audio') {
@@ -269,11 +349,41 @@ const audioProgressPercent = computed(() => {
 const canSeek = computed(() => playbackMode.value === 'audio' && audioDuration.value > 0)
 const formattedCurrentTime = computed(() => formatDuration(audioCurrentTime.value))
 const formattedDuration = computed(() => {
+<<<<<<< HEAD
   if (!audioDuration.value) {
+=======
+  if (playbackMode.value !== 'audio' || !audioDuration.value) {
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
     return '--:--'
   }
   return formatDuration(audioDuration.value)
 })
+<<<<<<< HEAD
+=======
+const voiceStatusText = computed(() => {
+  switch (voiceInterruptState.value) {
+    case VOICE_INTERRUPT_STATE.LISTENING:
+      return '正在倾听'
+    case VOICE_INTERRUPT_STATE.RECORDING:
+      return '正在录音'
+    case VOICE_INTERRUPT_STATE.COMPLETED:
+      return '录音完成'
+    case VOICE_INTERRUPT_STATE.UNAVAILABLE:
+      return '麦克风不可用'
+    default:
+      return voiceInterruptEnabled.value ? '已开启' : '未开启'
+  }
+})
+const voiceStatusHint = computed(() => voiceInterruptHint.value)
+const voiceStatusClass = computed(() => `voice-status-pill--${voiceInterruptState.value}`)
+const voiceVolumeScale = computed(() => {
+  if (!voiceInterruptEnabled.value) {
+    return 0.04
+  }
+
+  return Math.min(1, Math.max(0.06, voiceVolume.value * 14))
+})
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
 
 const formatDuration = seconds => {
   const value = Number(seconds)
@@ -302,6 +412,134 @@ const showError = (error, fallback) => {
   lectureStore.setErrorMessage(getErrorMessage(error, fallback))
 }
 
+<<<<<<< HEAD
+=======
+const supportsVoiceInterrupt = () =>
+  Boolean(globalThis.navigator?.mediaDevices?.getUserMedia) &&
+  typeof globalThis.MediaRecorder !== 'undefined' &&
+  Boolean(globalThis.AudioContext || globalThis.webkitAudioContext)
+
+const updateVoiceInterruptState = (state, hint) => {
+  voiceInterruptState.value = state
+  if (hint !== undefined) {
+    voiceInterruptHint.value = hint
+  }
+}
+
+const stopVadMonitoring = () => {
+  vad?.stop()
+  isVadListening.value = false
+  voiceVolume.value = 0
+}
+
+const handleMicrophoneError = error => {
+  const permissionDenied =
+    error?.name === 'NotAllowedError' ||
+    error?.name === 'PermissionDeniedError' ||
+    error?.message?.includes('权限')
+
+  const unsupported = error?.message?.includes('不支持')
+  const message = permissionDenied
+    ? '无法访问麦克风，请检查浏览器权限，或手动输入问题。'
+    : unsupported
+      ? '当前浏览器不支持语音打断，请改用手动输入问题。'
+      : getErrorMessage(error, '无法启用语音打断，请稍后重试。')
+
+  updateVoiceInterruptState(
+    unsupported ? VOICE_INTERRUPT_STATE.UNAVAILABLE : VOICE_INTERRUPT_STATE.OFF,
+    message,
+  )
+  voiceInterruptEnabled.value = false
+  showError(message, message)
+}
+
+const ensureVad = () => {
+  if (vad) {
+    return vad
+  }
+
+  vad = createVAD({
+    threshold: 0.04,
+    silenceDurationMs: 2000,
+    minSpeechDurationMs: 160,
+    getStream: () => recorder.requestMicrophone(),
+    onSpeechStart: () => {
+      void handleSpeechStart()
+    },
+    onSpeechEnd: () => {
+      void handleSpeechEnd()
+    },
+    onVolumeChange: volume => {
+      voiceVolume.value = volume
+    },
+  })
+
+  return vad
+}
+
+const beginVoiceInterruptMonitoring = async ({ force = false } = {}) => {
+  if (!voiceInterruptEnabled.value || !canUseVoiceInterrupt.value || lectureStatus.value === LECTURE_STATE.ENDED) {
+    return false
+  }
+
+  if (isVoiceRecording.value) {
+    return false
+  }
+
+  if (force && voiceInterruptState.value === VOICE_INTERRUPT_STATE.COMPLETED) {
+    updateVoiceInterruptState(VOICE_INTERRUPT_STATE.OFF, '语音打断已恢复，正在重新倾听')
+  }
+
+  try {
+    await recorder.requestMicrophone()
+    await ensureVad().start()
+    isVadListening.value = true
+    if (!isVoiceRecording.value) {
+      updateVoiceInterruptState(
+        VOICE_INTERRUPT_STATE.LISTENING,
+        '正在倾听，检测到说话后会自动打断课堂',
+      )
+    }
+    return true
+  } catch (error) {
+    stopVadMonitoring()
+    handleMicrophoneError(error)
+    return false
+  }
+}
+
+const enableVoiceInterrupt = async () => {
+  clearError()
+
+  if (!canUseVoiceInterrupt.value) {
+    handleMicrophoneError(new Error('当前浏览器不支持语音打断，请改用手动输入问题。'))
+    return
+  }
+
+  voiceInterruptEnabled.value = true
+  recordedAudioBlob.value = null
+  interruptBreakpointTime.value = 0
+  await beginVoiceInterruptMonitoring({ force: true })
+}
+
+const disableVoiceInterrupt = async () => {
+  voiceInterruptEnabled.value = false
+  stopVadMonitoring()
+
+  if (isVoiceRecording.value) {
+    try {
+      await recorder.stopRecording()
+    } catch (error) {
+      showError(error, '关闭语音打断时停止录音失败，请稍后重试。')
+    }
+  }
+
+  isVoiceRecording.value = false
+  recordedAudioBlob.value = null
+  updateVoiceInterruptState(VOICE_INTERRUPT_STATE.OFF, '语音打断已关闭')
+}
+
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
 const resetAudioProgress = () => {
   audioCurrentTime.value = 0
   audioDuration.value = 0
@@ -312,11 +550,22 @@ const resetPauseFlags = () => {
   isSpeechPaused.value = false
 }
 
+<<<<<<< HEAD
 const stopCurrentPlayback = () => {
   audioPlayer.stop()
 
   if (globalThis.speechSynthesis) {
     globalThis.speechSynthesis.cancel()
+=======
+const haltPlayback = () => {
+  audioPlayer.stop()
+
+  if (globalThis.speechSynthesis) {
+    if (globalThis.speechSynthesis.speaking || globalThis.speechSynthesis.pending || globalThis.speechSynthesis.paused) {
+      manualSpeechStopRequested = true
+      globalThis.speechSynthesis.cancel()
+    }
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
   }
 
   speechUtterance = null
@@ -340,6 +589,61 @@ const pauseCurrentPlayback = () => {
   }
 }
 
+<<<<<<< HEAD
+=======
+const handleSpeechStart = async () => {
+  if (!voiceInterruptEnabled.value || isVoiceRecording.value || !currentSlide.value) {
+    return
+  }
+
+  if (lectureStatus.value === LECTURE_STATE.ENDED || lectureStatus.value === LECTURE_STATE.ANSWERING) {
+    return
+  }
+
+  stopVadMonitoring()
+  interruptBreakpointTime.value =
+    playbackMode.value === 'audio' ? audioPlayer.getCurrentTime() : audioCurrentTime.value
+  pauseCurrentPlayback()
+  lectureStore.setStatus(LECTURE_STATE.INTERRUPTED)
+
+  try {
+    await recorder.startRecording()
+    isVoiceRecording.value = true
+    updateVoiceInterruptState(
+      VOICE_INTERRUPT_STATE.RECORDING,
+      '正在倾听，请继续说出你的问题',
+    )
+  } catch (error) {
+    voiceInterruptEnabled.value = false
+    updateVoiceInterruptState(VOICE_INTERRUPT_STATE.OFF, '语音打断已关闭')
+    showError(error, '录音启动失败，请稍后重试。')
+  }
+}
+
+const handleSpeechEnd = async () => {
+  if (!isVoiceRecording.value) {
+    return
+  }
+
+  try {
+    const blob = await recorder.stopRecording()
+    recordedAudioBlob.value = blob
+    updateVoiceInterruptState(
+      VOICE_INTERRUPT_STATE.COMPLETED,
+      blob?.size ? '录音完成，等待识别' : '未采集到有效音频，请重试',
+    )
+  } catch (error) {
+    voiceInterruptEnabled.value = false
+    updateVoiceInterruptState(VOICE_INTERRUPT_STATE.OFF, '语音打断已关闭')
+    showError(error, '录音停止失败，请稍后重试。')
+  } finally {
+    isVoiceRecording.value = false
+    isVadListening.value = false
+    voiceVolume.value = 0
+  }
+}
+
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
 const resumeCurrentPlayback = async () => {
   if (playbackMode.value === 'audio' && isAudioPaused.value) {
     try {
@@ -347,10 +651,17 @@ const resumeCurrentPlayback = async () => {
       isAudioPaused.value = false
       isSpeaking.value = true
       lectureStore.setStatus(LECTURE_STATE.PLAYING)
+<<<<<<< HEAD
       return
     } catch (error) {
       showError(error, '浏览器阻止了自动播放，请点击“开始朗读”继续。')
       return
+=======
+      return true
+    } catch (error) {
+      showError(error, '浏览器阻止了自动播放，请点击“开始朗读”继续。')
+      return false
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
     }
   }
 
@@ -359,6 +670,7 @@ const resumeCurrentPlayback = async () => {
     isSpeechPaused.value = false
     isSpeaking.value = true
     lectureStore.setStatus(LECTURE_STATE.PLAYING)
+<<<<<<< HEAD
   }
 }
 
@@ -461,6 +773,13 @@ const normalizeSlide = (segment, index) => ({
   knowledgePoints: Array.isArray(segment?.knowledgePoints) ? segment.knowledgePoints : [],
   audioUrl: segment?.audioUrl || null,
 })
+=======
+    return true
+  }
+
+  return false
+}
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
 
 const syncCurrentNodeWithSlide = page => {
   const slide = slides.value[page - 1]
@@ -476,6 +795,104 @@ const syncCurrentNodeWithSlide = page => {
   })
 }
 
+<<<<<<< HEAD
+=======
+const syncToPage = page => {
+  lectureStore.setCurrentPage(page)
+  syncCurrentNodeWithSlide(page)
+  playbackMode.value = slides.value[page - 1]?.audioUrl ? 'audio' : 'speech'
+}
+
+const speakWithBrowser = text => {
+  if (!text || !globalThis.speechSynthesis) {
+    return
+  }
+
+  playbackMode.value = 'speech'
+  resetAudioProgress()
+  resetPauseFlags()
+  manualSpeechStopRequested = false
+
+  speechUtterance = new SpeechSynthesisUtterance(text)
+  speechUtterance.lang = 'zh-CN'
+  speechUtterance.rate = 1
+  speechUtterance.onend = async () => {
+    const manualStop = manualSpeechStopRequested
+    manualSpeechStopRequested = false
+    isSpeaking.value = false
+    resetPauseFlags()
+
+    if (manualStop) {
+      return
+    }
+
+    await playbackEngine?.handlePlaybackEnded()
+  }
+  speechUtterance.onerror = () => {
+    manualSpeechStopRequested = false
+    isSpeaking.value = false
+    resetPauseFlags()
+  }
+
+  globalThis.speechSynthesis.speak(speechUtterance)
+  isSpeaking.value = true
+  lectureStore.setStatus(LECTURE_STATE.PLAYING)
+}
+
+const fallbackToSpeech = text => {
+  haltPlayback()
+  speakWithBrowser(text)
+}
+
+const playCurrentSlideByPageIndex = async pageIndex => {
+  const slide = slides.value[pageIndex - 1]
+  if (!slide?.content) {
+    return false
+  }
+
+  haltPlayback()
+
+  if (!slide.audioUrl || failedAudioUrls.has(slide.audioUrl)) {
+    fallbackToSpeech(slide.content)
+    return true
+  }
+
+  playbackMode.value = 'audio'
+  resetPauseFlags()
+
+  try {
+    await audioPlayer.load(slide.audioUrl)
+    audioDuration.value = audioPlayer.getDuration()
+    audioCurrentTime.value = audioPlayer.getCurrentTime()
+    await audioPlayer.play()
+    isSpeaking.value = true
+    lectureStore.setStatus(LECTURE_STATE.PLAYING)
+    return true
+  } catch (error) {
+    if (error?.name === 'NotAllowedError') {
+      showError(error, '浏览器阻止了自动播放，请点击“开始朗读”继续。')
+      haltPlayback()
+      return false
+    }
+
+    failedAudioUrls.add(slide.audioUrl)
+    showError('音频加载失败，已切换文本朗读', '音频加载失败，已切换文本朗读')
+    fallbackToSpeech(slide.content)
+    return true
+  }
+}
+
+const normalizeSlide = (segment, index) => ({
+  id: segment?.id || segment?.nodeId || `segment-${index + 1}`,
+  nodeId: segment?.nodeId || segment?.id || `node-${index + 1}`,
+  pageIndex: Number(segment?.pageIndex || index + 1),
+  title: segment?.title || `第 ${index + 1} 页`,
+  content: segment?.content || '',
+  knowledgePoints: Array.isArray(segment?.knowledgePoints) ? segment.knowledgePoints : [],
+  audioUrl: segment?.audioUrl || null,
+})
+
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
 const loadSlides = async () => {
   lectureStore.setLoading(true)
   clearError()
@@ -491,9 +908,14 @@ const loadSlides = async () => {
     }
 
     slides.value = segments.map(normalizeSlide)
+<<<<<<< HEAD
     lectureStore.setCurrentPage(1)
     syncCurrentNodeWithSlide(1)
     playbackMode.value = slides.value[0]?.audioUrl ? 'audio' : 'speech'
+=======
+    syncToPage(1)
+    lectureStore.setStatus(LECTURE_STATE.IDLE)
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
     return true
   } catch (error) {
     slides.value = []
@@ -525,6 +947,28 @@ const startLectureSession = async () => {
   }
 }
 
+const togglePlayback = async () => {
+  if (!currentSlide.value) {
+    return
+  }
+
+  if (isSpeaking.value || isAudioPaused.value || isSpeechPaused.value) {
+    playbackEngine?.stopCurrentPage()
+    stopVadMonitoring()
+    if (voiceInterruptEnabled.value) {
+      updateVoiceInterruptState(VOICE_INTERRUPT_STATE.OFF, '语音打断已开启，等待继续播放')
+    }
+    lectureStore.setStatus(LECTURE_STATE.IDLE)
+    return
+  }
+
+  lectureStore.setStatus(LECTURE_STATE.PLAYING)
+  await playbackEngine?.playPage(currentPage.value)
+  if (voiceInterruptEnabled.value) {
+    await beginVoiceInterruptMonitoring({ force: true })
+  }
+}
+
 const handlePauseLecture = async () => {
   if (!lectureStore.sessionId) {
     return
@@ -532,15 +976,29 @@ const handlePauseLecture = async () => {
 
   lectureStore.setLoading(true)
   clearError()
+<<<<<<< HEAD
   const shouldResumeAfterFailure = isSpeaking.value
   pauseCurrentPlayback()
+=======
+  const hadActivePlayback =
+    isSpeaking.value || isAudioPaused.value || isSpeechPaused.value || audioCurrentTime.value > 0
+  pauseCurrentPlayback()
+  stopVadMonitoring()
+  if (voiceInterruptEnabled.value) {
+    updateVoiceInterruptState(VOICE_INTERRUPT_STATE.OFF, '课堂已暂停，恢复后会重新倾听')
+  }
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
 
   try {
     const response = await pauseLecture(lectureStore.sessionId)
     lectureStore.setStatus(response.data?.status)
   } catch (error) {
     showError(error, '暂停课堂失败，请稍后重试。')
+<<<<<<< HEAD
     if (shouldResumeAfterFailure) {
+=======
+    if (hadActivePlayback) {
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
       await resumeCurrentPlayback()
     }
   } finally {
@@ -566,6 +1024,12 @@ const handleResumeLecture = async () => {
       syncCurrentNodeWithSlide(currentPage.value)
     }
     await resumeCurrentPlayback()
+<<<<<<< HEAD
+=======
+    if (voiceInterruptEnabled.value) {
+      await beginVoiceInterruptMonitoring({ force: true })
+    }
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
   } catch (error) {
     showError(error, '继续课堂失败，请稍后重试。')
   } finally {
@@ -573,18 +1037,33 @@ const handleResumeLecture = async () => {
   }
 }
 
-const previousSlide = () => {
+const previousSlide = async () => {
   if (currentPage.value <= 1) {
     return
   }
 
+<<<<<<< HEAD
   stopCurrentPlayback()
   lectureStore.setCurrentPage(currentPage.value - 1)
   syncCurrentNodeWithSlide(currentPage.value)
+=======
+  const autoPlay = Boolean(playbackEngine?.isContinuousPlayback())
+  await playbackEngine?.previousPage(autoPlay)
+  if (!autoPlay) {
+    stopVadMonitoring()
+    if (voiceInterruptEnabled.value) {
+      updateVoiceInterruptState(VOICE_INTERRUPT_STATE.OFF, '已切换页面，开始播放后会继续倾听')
+    }
+    lectureStore.setStatus(LECTURE_STATE.IDLE)
+  } else if (voiceInterruptEnabled.value) {
+    await beginVoiceInterruptMonitoring()
+  }
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
 }
 
-const nextSlide = () => {
+const nextSlide = async () => {
   if (currentPage.value >= totalPages.value) {
+<<<<<<< HEAD
     stopCurrentPlayback()
     return
   }
@@ -592,6 +1071,27 @@ const nextSlide = () => {
   stopCurrentPlayback()
   lectureStore.setCurrentPage(currentPage.value + 1)
   syncCurrentNodeWithSlide(currentPage.value)
+=======
+    stopVadMonitoring()
+    if (voiceInterruptEnabled.value) {
+      updateVoiceInterruptState(VOICE_INTERRUPT_STATE.OFF, '课程已结束')
+    }
+    playbackEngine?.finishLecture()
+    return
+  }
+
+  const autoPlay = Boolean(playbackEngine?.isContinuousPlayback())
+  await playbackEngine?.nextPage(autoPlay)
+  if (!autoPlay) {
+    stopVadMonitoring()
+    if (voiceInterruptEnabled.value) {
+      updateVoiceInterruptState(VOICE_INTERRUPT_STATE.OFF, '已切换页面，开始播放后会继续倾听')
+    }
+    lectureStore.setStatus(LECTURE_STATE.IDLE)
+  } else if (voiceInterruptEnabled.value) {
+    await beginVoiceInterruptMonitoring()
+  }
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
 }
 
 const handleSeek = event => {
@@ -653,17 +1153,54 @@ const scrollQAToBottom = () => {
 watch(
   () => currentSlide.value?.id,
   () => {
+<<<<<<< HEAD
     stopCurrentPlayback()
     playbackMode.value = currentSlide.value?.audioUrl ? 'audio' : 'speech'
+=======
+    resetAudioProgress()
+    resetPauseFlags()
+    isSpeaking.value = false
+    playbackMode.value = useAudioPlayback.value ? 'audio' : 'speech'
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
   },
 )
 
 onMounted(async () => {
+<<<<<<< HEAD
   audioUnsubscribers.push(
     audioPlayer.onEnded(() => {
       isSpeaking.value = false
       isAudioPaused.value = false
       audioCurrentTime.value = audioPlayer.getCurrentTime()
+=======
+  canUseVoiceInterrupt.value = supportsVoiceInterrupt()
+  updateVoiceInterruptState(
+    canUseVoiceInterrupt.value ? VOICE_INTERRUPT_STATE.OFF : VOICE_INTERRUPT_STATE.UNAVAILABLE,
+    canUseVoiceInterrupt.value
+      ? '开启后会在检测到学生说话后自动打断课堂'
+      : '当前浏览器不支持语音打断，请改用手动输入问题。',
+  )
+
+  playbackEngine = createLecturePlaybackEngine({
+    getSlides: () => slides.value,
+    getCurrentPage: () => currentPage.value,
+    syncToPage,
+    playCurrentPage: playCurrentSlideByPageIndex,
+    stopPlayback: haltPlayback,
+    setLectureStatus: status => lectureStore.setStatus(status),
+    endedStatus: LECTURE_STATE.ENDED,
+    onContinuousPlaybackChange: enabled => {
+      isContinuousPlayback.value = enabled
+    },
+  })
+
+  audioUnsubscribers.push(
+    audioPlayer.onEnded(async () => {
+      isSpeaking.value = false
+      isAudioPaused.value = false
+      audioCurrentTime.value = audioPlayer.getCurrentTime()
+      await playbackEngine?.handlePlaybackEnded()
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
     }),
   )
   audioUnsubscribers.push(
@@ -696,9 +1233,18 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+<<<<<<< HEAD
   stopCurrentPlayback()
   audioUnsubscribers.forEach(unsubscribe => unsubscribe())
   audioPlayer.destroy()
+=======
+  playbackEngine?.stopCurrentPage()
+  stopVadMonitoring()
+  audioUnsubscribers.forEach(unsubscribe => unsubscribe())
+  audioPlayer.destroy()
+  recorder.destroy()
+  void vad?.destroy()
+>>>>>>> 0f4123626b30585b8840b521e4e10dfa5baae026
   lectureStore.reset()
 })
 </script>
@@ -868,6 +1414,73 @@ onUnmounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
+}
+
+.voice-status-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.voice-status-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 1.9rem;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(126, 136, 166, 0.12);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+}
+
+.voice-status-pill--listening {
+  background: rgba(95, 104, 255, 0.12);
+  color: var(--primary-color);
+}
+
+.voice-status-pill--recording {
+  background: rgba(31, 157, 103, 0.14);
+  color: var(--success-color);
+}
+
+.voice-status-pill--completed {
+  background: rgba(228, 156, 49, 0.14);
+  color: var(--warning-color);
+}
+
+.voice-status-pill--unavailable {
+  background: rgba(203, 65, 94, 0.14);
+  color: var(--error-color);
+}
+
+.voice-status-hint {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+}
+
+.voice-volume-meter {
+  position: relative;
+  width: 100%;
+  height: 0.55rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(126, 136, 166, 0.12);
+}
+
+.voice-volume-meter.active {
+  background: rgba(95, 104, 255, 0.12);
+}
+
+.voice-volume-bar {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: left center;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
 }
 
 .timeline {
