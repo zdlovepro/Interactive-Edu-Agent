@@ -1,105 +1,267 @@
 <template>
   <div class="lecture-page">
-    <div class="lecture-content">
-      <div class="slide-section">
-        <div class="slide-header">
-          <h2>{{ currentSlide?.title || '加载中...' }}</h2>
-          <span class="state-badge" :class="statusMeta.className">{{ statusMeta.text }}</span>
-        </div>
-        <div class="slide-body">
-          {{ currentSlide?.content || '' }}
-        </div>
-        <div class="knowledge-tags" v-if="currentSlide?.knowledgePoints?.length">
-          <span class="tag" v-for="kp in currentSlide.knowledgePoints" :key="kp">{{ kp }}</span>
-        </div>
-      </div>
+    <section class="page-shell page-shell--wide page-section">
+      <div class="lecture-layout">
+        <div class="lecture-main">
+          <div class="lecture-topbar">
+            <div>
+              <span class="eyebrow">AI 互动课堂</span>
+              <h1>{{ currentSlide?.title || '正在准备课堂内容' }}</h1>
+              <p class="lecture-subtitle">
+                当前页 {{ currentPage }} / {{ totalPages }} · {{ playbackModeLabel }}
+              </p>
+            </div>
 
-      <div class="controls">
-        <button class="btn btn-control" @click="previousSlide" :disabled="currentPage <= 1">
-          猬咃笍 上一页
-        </button>
-
-        <div class="center-controls">
-          <button class="btn btn-tts" @click="toggleSpeech" :class="{ speaking: isSpeaking }">
-            {{ isSpeaking ? '馃攰 朗读中' : '馃攬 朗读' }}
-          </button>
-
-          <button
-            v-if="lectureStatus === LECTURE_STATE.PLAYING"
-            class="btn btn-pause"
-            @click="handlePauseLecture"
-            :disabled="lectureStore.isLoading || !lectureStore.sessionId"
-          >
-            鈴革笍 暂停
-          </button>
-          <button
-            v-else-if="lectureStatus === LECTURE_STATE.INTERRUPTED"
-            class="btn btn-resume"
-            @click="handleResumeLecture"
-            :disabled="lectureStore.isLoading || !lectureStore.sessionId"
-          >
-            鈻讹笍 继续
-          </button>
-
-          <span class="progress">{{ currentPage }} / {{ totalPages }}</span>
-        </div>
-
-        <button class="btn btn-control" @click="nextSlide" :disabled="currentPage >= totalPages">
-          下一页 鉃★笍
-        </button>
-      </div>
-
-      <div class="progress-bar">
-        <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
-      </div>
-    </div>
-
-    <div class="qa-section">
-      <h3>馃挰 学生问答</h3>
-      <div class="qa-input">
-        <input
-          v-model="question"
-          type="text"
-          placeholder="输入您的问题..."
-          :disabled="isAsking"
-          @keyup.enter="submitQuestion"
-        />
-        <button class="btn btn-small" @click="submitQuestion" :disabled="!question.trim() || isAsking">
-          {{ isAsking ? '...' : '提问' }}
-        </button>
-      </div>
-
-      <div class="qa-history" ref="qaHistoryRef">
-        <div v-for="qa in qaList" :key="qa.id" class="qa-item">
-          <div class="qa-question">Q: {{ qa.question }}</div>
-          <div class="qa-answer" v-html="renderMd(qa.answer)"></div>
-          <div class="qa-evidence" v-if="qa.evidence?.length">
-            <details>
-              <summary>馃搸 参考来源 ({{ qa.evidence.length }})</summary>
-              <div v-for="(ev, i) in qa.evidence" :key="i" class="evidence-item">
-                <span class="evidence-source">{{ ev.source }}</span>
-                {{ ev.text }}
-              </div>
-            </details>
+            <div class="lecture-topbar__meta">
+              <StatusBadge :label="statusMeta.text" :tone="statusTone" />
+              <span class="lecture-page-pill">第 {{ currentPage }} 页</span>
+            </div>
           </div>
-        </div>
-        <div v-if="qaList.length === 0" class="qa-empty">暂无问答记录，试试问一个问题吧</div>
-      </div>
-    </div>
 
-    <div v-if="errorMsg" class="error-toast" @click="clearError">鈿狅笍 {{ errorMsg }}</div>
+          <AppCard class="lecture-script-card" tone="glass">
+            <template v-if="currentSlide">
+              <div class="script-card__header">
+                <div class="script-card__label-group">
+                  <span class="pill">课堂讲稿</span>
+                  <span class="audio-tag" :class="{ ready: useAudioPlayback }">
+                    {{ useAudioPlayback ? '优先使用后端音频资源' : '当前页使用文本朗读兜底' }}
+                  </span>
+                </div>
+                <div class="page-progress">
+                  <span>{{ progressPercent }}%</span>
+                </div>
+              </div>
+
+              <div class="script-card__content">
+                <p>{{ currentSlide.content }}</p>
+              </div>
+
+              <div v-if="currentSlide.knowledgePoints?.length" class="knowledge-list">
+                <span v-for="point in currentSlide.knowledgePoints" :key="point" class="knowledge-tag">
+                  {{ point }}
+                </span>
+              </div>
+            </template>
+
+            <EmptyState
+              v-else
+              title="讲稿暂未加载完成"
+              description="请稍候或先检查课件是否已经生成讲稿。"
+            />
+          </AppCard>
+
+          <AppCard class="lecture-control-card" tone="subtle">
+            <div class="control-grid">
+              <div class="control-group">
+                <span class="control-label">页码切换</span>
+                <div class="control-row">
+                  <AppButton variant="secondary" @click="previousSlide" :disabled="currentPage <= 1">
+                    上一页
+                  </AppButton>
+                  <AppButton
+                    variant="secondary"
+                    @click="nextSlide"
+                    :disabled="currentPage >= totalPages"
+                  >
+                    下一页
+                  </AppButton>
+                </div>
+              </div>
+
+              <div class="control-group">
+                <span class="control-label">讲解控制</span>
+                <div class="control-row">
+                  <AppButton @click="togglePlayback" :disabled="!currentSlide">
+                    {{ isSpeaking ? '停止朗读' : '开始朗读' }}
+                  </AppButton>
+                  <AppButton
+                    v-if="lectureStatus === LECTURE_STATE.PLAYING"
+                    variant="secondary"
+                    :disabled="lectureStore.isLoading || !lectureStore.sessionId"
+                    @click="handlePauseLecture"
+                  >
+                    暂停课堂
+                  </AppButton>
+                  <AppButton
+                    v-else-if="
+                      lectureStatus === LECTURE_STATE.INTERRUPTED ||
+                      lectureStatus === LECTURE_STATE.ANSWERING
+                    "
+                    variant="secondary"
+                    :disabled="
+                      lectureStore.isLoading || !lectureStore.sessionId || lectureStore.isStreamingAnswer
+                    "
+                    @click="handleResumeLecture"
+                  >
+                    继续课堂
+                  </AppButton>
+                  <AppButton v-else variant="secondary" :disabled="true">
+                    {{ statusMeta.text }}
+                  </AppButton>
+                </div>
+              </div>
+              <div class="control-group control-group--voice">
+                <span class="control-label">语音打断</span>
+                <div class="control-row">
+                  <AppButton
+                    v-if="!voiceInterruptEnabled"
+                    variant="secondary"
+                    :disabled="!canUseVoiceInterrupt || lectureStore.isLoading"
+                    @click="enableVoiceInterrupt"
+                  >
+                    开启语音打断
+                  </AppButton>
+                  <AppButton v-else variant="secondary" @click="disableVoiceInterrupt">
+                    关闭语音打断
+                  </AppButton>
+                </div>
+
+                <div class="voice-status-row">
+                  <span class="voice-status-pill" :class="voiceStatusClass">
+                    {{ voiceStatusText }}
+                  </span>
+                  <span class="voice-status-hint">{{ voiceStatusHint }}</span>
+                  <span class="voice-status-hint">
+                    {{ wsConnected ? '信令已连接，可自动同步打断状态' : '信令未连接，仍可手动提问' }}
+                  </span>
+                </div>
+
+                <div class="voice-volume-meter" :class="{ active: voiceInterruptEnabled }">
+                  <span class="voice-volume-bar" :style="{ transform: `scaleX(${voiceVolumeScale})` }"></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="timeline">
+              <div class="audio-progress-header">
+                <div>
+                  <span class="control-label">播放进度</span>
+                  <strong>{{ playbackModeLabel }}</strong>
+                </div>
+                <div class="audio-time">
+                  <span>{{ formattedCurrentTime }}</span>
+                  <span>/</span>
+                  <span>{{ formattedDuration }}</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                class="audio-progress-track"
+                :class="{ disabled: !canSeek }"
+                :disabled="!canSeek"
+                @click="handleSeek"
+              >
+                <span class="audio-progress-fill" :style="{ width: `${audioProgressPercent}%` }"></span>
+              </button>
+
+              <div class="timeline-meta">
+                <span>当前页进度 {{ currentPage }} / {{ totalPages || 0 }}</span>
+                <span>{{ isContinuousPlayback ? '连续播放中' : '单页预览' }}</span>
+                <span v-if="breakpointHint">{{ breakpointHint }}</span>
+                <span v-if="lectureStatus === LECTURE_STATE.ENDED">课程已结束</span>
+              </div>
+            </div>
+          </AppCard>
+        </div>
+
+        <AppCard class="lecture-chat-panel" tone="glass">
+          <div class="chat-header">
+            <div>
+              <span class="eyebrow">AI 助教问答</span>
+              <h2>你可以针对当前课件内容提问</h2>
+            </div>
+            <span class="chat-header__status">{{ qaStatusText }}</span>
+          </div>
+
+          <div class="chat-history" ref="qaHistoryRef">
+            <div v-if="qaList.length === 0" class="chat-empty">
+              <h3>暂无问答记录，试着问一个问题吧。</h3>
+              <p>系统会优先结合当前页与相邻页内容进行回答，并展示参考 evidence。</p>
+            </div>
+
+            <div v-for="qa in qaList" :key="qa.id" class="chat-turn">
+              <div class="bubble bubble--user">
+                <span class="bubble-role">学生</span>
+                <p>{{ qa.question }}</p>
+              </div>
+
+              <div class="bubble bubble--assistant">
+                <span class="bubble-role">AI 助教</span>
+                <div class="bubble-answer" v-html="renderMd(qa.answer)"></div>
+                <div v-if="qa.streaming" class="bubble-streaming">
+                  <span class="bubble-streaming__dot"></span>
+                  <span>正在生成回答</span>
+                </div>
+
+                <details v-if="qa.evidence?.length" class="evidence-panel">
+                  <summary>查看 evidence（{{ qa.evidence.length }}）</summary>
+                  <div class="evidence-list">
+                    <div
+                      v-for="(evidence, index) in qa.evidence"
+                      :key="`${qa.id}-${index}`"
+                      class="evidence-item"
+                    >
+                      <div class="evidence-item__meta">
+                        <span>{{ evidence.source || 'courseware' }}</span>
+                        <span v-if="evidence.pageIndex">第 {{ evidence.pageIndex }} 页</span>
+                      </div>
+                      <p>{{ evidence.text }}</p>
+                    </div>
+                  </div>
+                </details>
+              </div>
+            </div>
+          </div>
+
+          <div class="chat-composer">
+            <label for="question-input" class="visually-hidden">输入问题</label>
+            <input
+              id="question-input"
+              v-model="question"
+              class="app-input"
+              type="text"
+              :disabled="isAsking"
+              placeholder="输入你的问题，按 Enter 发送"
+              @keyup.enter="submitQuestion"
+            />
+            <AppButton v-if="isStreamingAnswer" variant="secondary" @click="stopStreamingAnswer">
+              停止生成
+            </AppButton>
+            <AppButton :disabled="!question.trim() || isAsking" @click="submitQuestion">
+              {{ isAsking ? '思考中...' : '发送问题' }}
+            </AppButton>
+          </div>
+        </AppCard>
+      </div>
+    </section>
+
+    <div v-if="errorMsg" class="toast">
+      <span>{{ errorMsg }}</span>
+      <button @click="clearError">关闭</button>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { marked } from 'marked'
+import AppButton from '@/components/ui/AppButton.vue'
+import AppCard from '@/components/ui/AppCard.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
+import { recognizeAudio } from '@/api/asr'
 import { getCoursewareScript } from '@/api/courseware'
 import { pauseLecture, resumeLecture, startLecture } from '@/api/lecture'
-import { askText } from '@/api/qa'
+import { askText, streamAskText } from '@/api/qa'
 import { LECTURE_STATE, LECTURE_STATUS_MAP, normalizeLectureStatus } from '@/constants/lecture'
 import { useLectureStore } from '@/stores/lecture'
+import audioPlayer from '@/utils/audioPlayer'
+import { createLecturePlaybackEngine } from '@/utils/lecturePlaybackEngine'
+import { createLectureSocket } from '@/utils/lectureSocket'
+import { createRecorder } from '@/utils/recorder'
+import { createVAD } from '@/utils/vad'
 import { getErrorMessage } from '@/utils'
 
 const route = useRoute()
@@ -113,14 +275,60 @@ const isAsking = ref(false)
 const qaList = ref([])
 const qaHistoryRef = ref(null)
 const isSpeaking = ref(false)
+const audioCurrentTime = ref(0)
+const audioDuration = ref(0)
+const isAudioPaused = ref(false)
+const isSpeechPaused = ref(false)
+const isContinuousPlayback = ref(false)
+const canUseVoiceInterrupt = ref(false)
+const voiceInterruptState = ref('off')
+const voiceInterruptHint = ref('开启后会在检测到学生说话后自动打断课堂')
+const voiceVolume = ref(0)
+const recordedAudioBlob = ref(null)
+const isVadListening = ref(false)
+
+const VOICE_INTERRUPT_STATE = {
+  OFF: 'off',
+  LISTENING: 'listening',
+  RECORDING: 'recording',
+  COMPLETED: 'completed',
+  UNAVAILABLE: 'unavailable',
+}
+
+const failedAudioUrls = new Set()
+const audioUnsubscribers = []
+const recorder = createRecorder()
 
 let speechUtterance = null
+let manualSpeechStopRequested = false
+let playbackEngine = null
+let lectureSocket = null
+let socketMessageUnsubscribe = null
+let socketErrorUnsubscribe = null
+let hasShownSocketError = false
+let vad = null
+let qaStreamClient = null
+let activeStreamingQaItemId = null
 
 const lectureStatus = computed(() => normalizeLectureStatus(lectureStore.status))
-const statusMeta = computed(() => LECTURE_STATUS_MAP[lectureStatus.value] || LECTURE_STATUS_MAP[LECTURE_STATE.IDLE])
+const statusMeta = computed(
+  () => LECTURE_STATUS_MAP[lectureStatus.value] || LECTURE_STATUS_MAP[LECTURE_STATE.IDLE],
+)
+const statusTone = computed(() => {
+  const color = statusMeta.value.color
+  if (color === 'default') {
+    return 'neutral'
+  }
+  return color
+})
+const playbackMode = computed(() => lectureStore.audioMode)
 const currentPage = computed(() => lectureStore.currentPage)
 const totalPages = computed(() => slides.value.length)
 const currentSlide = computed(() => slides.value[currentPage.value - 1] || null)
+const voiceInterruptEnabled = computed(() => lectureStore.vadEnabled)
+const isVoiceRecording = computed(() => lectureStore.isRecording)
+const isStreamingAnswer = computed(() => lectureStore.isStreamingAnswer)
+const wsConnected = computed(() => lectureStore.wsConnected)
 const progressPercent = computed(() => {
   if (!totalPages.value) {
     return 0
@@ -128,9 +336,93 @@ const progressPercent = computed(() => {
   return Math.round((currentPage.value / totalPages.value) * 100)
 })
 const errorMsg = computed(() => lectureStore.errorMessage)
+const useAudioPlayback = computed(
+  () => Boolean(currentSlide.value?.audioUrl) && !failedAudioUrls.has(currentSlide.value.audioUrl),
+)
+const playbackModeLabel = computed(() => (playbackMode.value === 'audio' ? '音频播放' : '文本朗读'))
+const audioProgressPercent = computed(() => {
+  if (!audioDuration.value || playbackMode.value !== 'audio') {
+    return 0
+  }
+
+  return Math.min(100, Math.max(0, (audioCurrentTime.value / audioDuration.value) * 100))
+})
+const canSeek = computed(() => playbackMode.value === 'audio' && audioDuration.value > 0)
+const formattedCurrentTime = computed(() => formatDuration(audioCurrentTime.value))
+const formattedDuration = computed(() => {
+  if (playbackMode.value !== 'audio' || !audioDuration.value) {
+    return '--:--'
+  }
+  return formatDuration(audioDuration.value)
+})
+const breakpointHint = computed(() => {
+  if (!lectureStore.breakpointPage) {
+    return ''
+  }
+
+  const breakpointLabel = formatDuration(lectureStore.breakpointTime)
+  return lectureStatus.value === LECTURE_STATE.RESUMING
+    ? `从 ${breakpointLabel} 继续讲解`
+    : `已保存断点 ${breakpointLabel}`
+})
+const qaStatusText = computed(() => (isStreamingAnswer.value ? '生成中' : '等待提问'))
+const voiceStatusText = computed(() => {
+  switch (voiceInterruptState.value) {
+    case VOICE_INTERRUPT_STATE.LISTENING:
+      return '正在倾听'
+    case VOICE_INTERRUPT_STATE.RECORDING:
+      return '正在录音'
+    case VOICE_INTERRUPT_STATE.COMPLETED:
+      return '录音完成'
+    case VOICE_INTERRUPT_STATE.UNAVAILABLE:
+      return '麦克风不可用'
+    default:
+      return voiceInterruptEnabled.value ? '已开启' : '未开启'
+  }
+})
+const voiceStatusHint = computed(() => voiceInterruptHint.value)
+const voiceStatusClass = computed(() => `voice-status-pill--${voiceInterruptState.value}`)
+const voiceVolumeScale = computed(() => {
+  if (!voiceInterruptEnabled.value) {
+    return 0.04
+  }
+
+  return Math.min(1, Math.max(0.06, voiceVolume.value * 14))
+})
+
+const formatDuration = seconds => {
+  const value = Number(seconds)
+  if (!Number.isFinite(value) || value < 0) {
+    return '00:00'
+  }
+
+  const totalSeconds = Math.floor(value)
+  const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0')
+  const remainSeconds = String(totalSeconds % 60).padStart(2, '0')
+  return `${minutes}:${remainSeconds}`
+}
+
+const clampBreakpointTime = (seconds, duration = 0) => {
+  const value = Number(seconds)
+  if (!Number.isFinite(value) || value < 0) {
+    return 0
+  }
+
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return value
+  }
+
+  if (value > duration) {
+    return Math.max(duration - 0.5, 0)
+  }
+
+  return value
+}
 
 const renderMd = text => {
-  if (!text) return ''
+  if (!text) {
+    return ''
+  }
   return marked.parse(text, { breaks: true })
 }
 
@@ -140,6 +432,464 @@ const clearError = () => {
 
 const showError = (error, fallback) => {
   lectureStore.setErrorMessage(getErrorMessage(error, fallback))
+}
+
+const handleSocketMessage = message => {
+  if (!message || typeof message !== 'object') {
+    return
+  }
+
+  if (message.type === 'connection') {
+    const isOpen = message.payload?.status === 'open'
+    lectureStore.setWsConnected(isOpen)
+    if (isOpen) {
+      hasShownSocketError = false
+    }
+    return
+  }
+
+  lectureStore.setWsConnected(true)
+
+  if (message.type === 'ack') {
+    const payload = message.payload || {}
+    const breakpointTime = payload.currentTime ?? payload.breakpointTime
+
+    if (payload.status) {
+      lectureStore.setStatus(payload.status)
+    }
+
+    if (payload.pageIndex) {
+      lectureStore.setCurrentPage(payload.pageIndex)
+    }
+
+    if (breakpointTime !== undefined && payload.pageIndex) {
+      lectureStore.setBreakpoint(payload.pageIndex, breakpointTime)
+    }
+
+    if (payload.status === LECTURE_STATE.INTERRUPTED) {
+      updateVoiceInterruptState(VOICE_INTERRUPT_STATE.RECORDING, '已暂停讲解，正在倾听')
+    }
+    return
+  }
+
+  if (message.type === 'state') {
+    const payload = message.payload || {}
+
+    if (payload.status) {
+      lectureStore.setStatus(payload.status)
+    }
+
+    if (payload.currentNode) {
+      lectureStore.setCurrentNode(payload.currentNode)
+    } else if (payload.pageIndex) {
+      syncCurrentNodeWithSlide(payload.pageIndex)
+    }
+
+    if (payload.currentTime !== undefined && payload.pageIndex) {
+      lectureStore.setBreakpoint(payload.pageIndex, payload.currentTime)
+    }
+    return
+  }
+
+  if (message.type === 'error') {
+    const messageText = message.payload?.message || '信令连接失败，可继续手动提问。'
+    showError(messageText, messageText)
+  }
+}
+
+const handleSocketError = error => {
+  lectureStore.setWsConnected(false)
+  if (hasShownSocketError) {
+    return
+  }
+
+  hasShownSocketError = true
+  showError(error, '信令连接失败，可继续手动提问。')
+}
+
+const ensureLectureSocket = () => {
+  if (lectureSocket) {
+    return lectureSocket
+  }
+
+  lectureSocket = createLectureSocket()
+  socketMessageUnsubscribe = lectureSocket.onMessage(handleSocketMessage)
+  socketErrorUnsubscribe = lectureSocket.onError(handleSocketError)
+  return lectureSocket
+}
+
+const connectLectureSocket = async sessionId => {
+  if (!sessionId) {
+    return false
+  }
+
+  try {
+    await ensureLectureSocket().connect(sessionId)
+    lectureStore.setWsConnected(true)
+    hasShownSocketError = false
+    return true
+  } catch (error) {
+    handleSocketError(error)
+    return false
+  }
+}
+
+const disconnectLectureSocket = () => {
+  lectureStore.setWsConnected(false)
+  socketMessageUnsubscribe?.()
+  socketErrorUnsubscribe?.()
+  socketMessageUnsubscribe = null
+  socketErrorUnsubscribe = null
+  lectureSocket?.close()
+  lectureSocket = null
+}
+
+const sendLectureSignal = (type, payload = {}) => {
+  if (!lectureStore.sessionId) {
+    return false
+  }
+
+  try {
+    return ensureLectureSocket().send(type, {
+      sessionId: lectureStore.sessionId,
+      ...payload,
+    })
+  } catch (error) {
+    handleSocketError(error)
+    return false
+  }
+}
+
+const createRecordedAudioFile = blob => {
+  const mimeType = blob?.type || 'audio/webm'
+  const extension = mimeType.includes('wav')
+    ? 'wav'
+    : mimeType.includes('mpeg') || mimeType.includes('mp3')
+      ? 'mp3'
+      : mimeType.includes('mp4') || mimeType.includes('m4a')
+        ? 'm4a'
+        : 'webm'
+
+  return new File([blob], `lecture-question-${Date.now()}.${extension}`, {
+    type: mimeType,
+  })
+}
+
+const supportsVoiceInterrupt = () =>
+  Boolean(globalThis.navigator?.mediaDevices?.getUserMedia) &&
+  typeof globalThis.MediaRecorder !== 'undefined' &&
+  Boolean(globalThis.AudioContext || globalThis.webkitAudioContext)
+
+const updateVoiceInterruptState = (state, hint) => {
+  voiceInterruptState.value = state
+  if (hint !== undefined) {
+    voiceInterruptHint.value = hint
+  }
+}
+
+const stopVadMonitoring = () => {
+  vad?.stop()
+  isVadListening.value = false
+  voiceVolume.value = 0
+}
+
+const handleMicrophoneError = error => {
+  const permissionDenied =
+    error?.name === 'NotAllowedError' ||
+    error?.name === 'PermissionDeniedError' ||
+    error?.message?.includes('权限')
+
+  const unsupported = error?.message?.includes('不支持')
+  const message = permissionDenied
+    ? '无法访问麦克风，请检查浏览器权限，或手动输入问题。'
+    : unsupported
+      ? '当前浏览器不支持语音打断，请改用手动输入问题。'
+      : getErrorMessage(error, '无法启用语音打断，请稍后重试。')
+
+  updateVoiceInterruptState(
+    unsupported ? VOICE_INTERRUPT_STATE.UNAVAILABLE : VOICE_INTERRUPT_STATE.OFF,
+    message,
+  )
+  lectureStore.setVadEnabled(false)
+  lectureStore.setRecording(false)
+  showError(message, message)
+}
+
+const ensureVad = () => {
+  if (vad) {
+    return vad
+  }
+
+  vad = createVAD({
+    threshold: 0.04,
+    silenceDurationMs: 2000,
+    minSpeechDurationMs: 160,
+    getStream: () => recorder.requestMicrophone(),
+    onSpeechStart: () => {
+      void handleSpeechStart()
+    },
+    onSpeechEnd: () => {
+      void handleSpeechEnd()
+    },
+    onVolumeChange: volume => {
+      voiceVolume.value = volume
+    },
+  })
+
+  return vad
+}
+
+const beginVoiceInterruptMonitoring = async ({ force = false } = {}) => {
+  if (!voiceInterruptEnabled.value || !canUseVoiceInterrupt.value || lectureStatus.value === LECTURE_STATE.ENDED) {
+    return false
+  }
+
+  if (isVoiceRecording.value) {
+    return false
+  }
+
+  if (force && voiceInterruptState.value === VOICE_INTERRUPT_STATE.COMPLETED) {
+    updateVoiceInterruptState(VOICE_INTERRUPT_STATE.OFF, '语音打断已恢复，正在重新倾听')
+  }
+
+  try {
+    await recorder.requestMicrophone()
+    await ensureVad().start()
+    isVadListening.value = true
+    if (!isVoiceRecording.value) {
+      updateVoiceInterruptState(
+        VOICE_INTERRUPT_STATE.LISTENING,
+        '正在倾听，检测到说话后会自动打断课堂',
+      )
+    }
+    return true
+  } catch (error) {
+    stopVadMonitoring()
+    handleMicrophoneError(error)
+    return false
+  }
+}
+
+const enableVoiceInterrupt = async () => {
+  clearError()
+
+  if (!canUseVoiceInterrupt.value) {
+    handleMicrophoneError(new Error('当前浏览器不支持语音打断，请改用手动输入问题。'))
+    return
+  }
+
+  lectureStore.setVadEnabled(true)
+  recordedAudioBlob.value = null
+  lectureStore.clearBreakpoint()
+  lectureStore.setLastRecognizedText('')
+  await beginVoiceInterruptMonitoring({ force: true })
+}
+
+const disableVoiceInterrupt = async () => {
+  lectureStore.setVadEnabled(false)
+  stopVadMonitoring()
+
+  if (isVoiceRecording.value) {
+    try {
+      await recorder.stopRecording()
+    } catch (error) {
+      showError(error, '关闭语音打断时停止录音失败，请稍后重试。')
+    }
+  }
+
+  lectureStore.setRecording(false)
+  recordedAudioBlob.value = null
+  updateVoiceInterruptState(VOICE_INTERRUPT_STATE.OFF, '语音打断已关闭')
+}
+
+const resetAudioProgress = () => {
+  audioCurrentTime.value = 0
+  audioDuration.value = 0
+}
+
+const resetPauseFlags = () => {
+  isAudioPaused.value = false
+  isSpeechPaused.value = false
+}
+
+const haltPlayback = () => {
+  audioPlayer.stop()
+
+  if (globalThis.speechSynthesis) {
+    if (globalThis.speechSynthesis.speaking || globalThis.speechSynthesis.pending || globalThis.speechSynthesis.paused) {
+      manualSpeechStopRequested = true
+      globalThis.speechSynthesis.cancel()
+    }
+  }
+
+  speechUtterance = null
+  isSpeaking.value = false
+  resetPauseFlags()
+  resetAudioProgress()
+}
+
+const pauseCurrentPlayback = () => {
+  if (playbackMode.value === 'audio' && (isSpeaking.value || audioCurrentTime.value > 0)) {
+    audioPlayer.pause()
+    isAudioPaused.value = true
+    isSpeaking.value = false
+    return
+  }
+
+  if (playbackMode.value === 'speech' && globalThis.speechSynthesis?.speaking) {
+    globalThis.speechSynthesis.pause()
+    isSpeechPaused.value = true
+    isSpeaking.value = false
+  }
+}
+
+const handleSpeechStart = async () => {
+  if (!voiceInterruptEnabled.value || isVoiceRecording.value || !currentSlide.value) {
+    return
+  }
+
+  if (lectureStatus.value === LECTURE_STATE.ENDED || lectureStatus.value === LECTURE_STATE.ANSWERING) {
+    return
+  }
+
+  stopVadMonitoring()
+  const breakpointTime =
+    playbackMode.value === 'audio' ? audioPlayer.getCurrentTime() : audioCurrentTime.value
+  pauseCurrentPlayback()
+  lectureStore.pauseForInterrupt(breakpointTime, currentPage.value)
+
+  try {
+    await recorder.startRecording()
+    lectureStore.setRecording(true)
+    sendLectureSignal('interrupt', {
+      pageIndex: currentPage.value,
+      currentTime: breakpointTime,
+    })
+    updateVoiceInterruptState(
+      VOICE_INTERRUPT_STATE.RECORDING,
+      '正在倾听，请继续说出你的问题',
+    )
+  } catch (error) {
+    lectureStore.setVadEnabled(false)
+    lectureStore.setRecording(false)
+    updateVoiceInterruptState(VOICE_INTERRUPT_STATE.OFF, '语音打断已关闭')
+    showError(error, '录音启动失败，请稍后重试。')
+  }
+}
+
+const handleSpeechEnd = async () => {
+  if (!isVoiceRecording.value) {
+    return
+  }
+
+  try {
+    const blob = await recorder.stopRecording()
+    lectureStore.setRecording(false)
+    isVadListening.value = false
+    voiceVolume.value = 0
+    recordedAudioBlob.value = blob
+    await processRecordedQuestion(blob)
+  } catch (error) {
+    lectureStore.setVadEnabled(false)
+    updateVoiceInterruptState(VOICE_INTERRUPT_STATE.OFF, '语音打断已关闭')
+    showError(error, '录音停止失败，请稍后重试。')
+  } finally {
+    lectureStore.setRecording(false)
+    isVadListening.value = false
+    voiceVolume.value = 0
+  }
+}
+
+const resumeCurrentPlayback = async () => {
+  if (playbackMode.value === 'audio' && isAudioPaused.value) {
+    try {
+      await audioPlayer.resume()
+      isAudioPaused.value = false
+      isSpeaking.value = true
+      lectureStore.setStatus(LECTURE_STATE.PLAYING)
+      return true
+    } catch (error) {
+      showError(error, '浏览器阻止了自动播放，请点击“开始朗读”继续。')
+      return false
+    }
+  }
+
+  if (playbackMode.value === 'speech' && isSpeechPaused.value && globalThis.speechSynthesis?.paused) {
+    globalThis.speechSynthesis.resume()
+    isSpeechPaused.value = false
+    isSpeaking.value = true
+    lectureStore.setStatus(LECTURE_STATE.PLAYING)
+    return true
+  }
+
+  return false
+}
+
+const restorePlaybackFromBreakpoint = async ({ pageIndex, breakpointTime } = {}) => {
+  const targetPage = Number(pageIndex)
+  if (!Number.isFinite(targetPage) || targetPage <= 0) {
+    lectureStore.setStatus(LECTURE_STATE.INTERRUPTED)
+    return false
+  }
+
+  const slide = slides.value[targetPage - 1]
+  if (!slide?.content) {
+    lectureStore.setStatus(LECTURE_STATE.INTERRUPTED)
+    return false
+  }
+
+  const canResumeCurrentAudio =
+    playbackMode.value === 'audio' && isAudioPaused.value && currentPage.value === targetPage
+
+  syncToPage(targetPage)
+
+  if (!slide.audioUrl || failedAudioUrls.has(slide.audioUrl)) {
+    lectureStore.setAudioMode('speech')
+    resetPauseFlags()
+    isSpeaking.value = false
+    audioCurrentTime.value = 0
+    audioDuration.value = 0
+    lectureStore.setStatus(LECTURE_STATE.PLAYING)
+    return true
+  }
+
+  try {
+    if (!canResumeCurrentAudio) {
+      await audioPlayer.load(slide.audioUrl)
+    }
+
+    const duration = audioPlayer.getDuration()
+    const targetTime = clampBreakpointTime(breakpointTime, duration)
+
+    lectureStore.setAudioMode('audio')
+    resetPauseFlags()
+    audioDuration.value = duration
+    audioPlayer.seek(targetTime)
+    audioCurrentTime.value = targetTime
+
+    if (canResumeCurrentAudio) {
+      await audioPlayer.resume()
+    } else {
+      await audioPlayer.play()
+    }
+
+    isSpeaking.value = true
+    isAudioPaused.value = false
+    lectureStore.setStatus(LECTURE_STATE.PLAYING)
+    return true
+  } catch (error) {
+    if (error?.name === 'NotAllowedError') {
+      showError(error, '浏览器阻止了自动播放，请点击“开始朗读”继续。')
+      haltPlayback()
+      return false
+    }
+
+    failedAudioUrls.add(slide.audioUrl)
+    showError('音频加载失败，已切换文本朗读', '音频加载失败，已切换文本朗读')
+    lectureStore.setAudioMode('speech')
+    lectureStore.setStatus(LECTURE_STATE.PLAYING)
+    return true
+  }
 }
 
 const syncCurrentNodeWithSlide = page => {
@@ -156,27 +906,122 @@ const syncCurrentNodeWithSlide = page => {
   })
 }
 
+const syncToPage = page => {
+  lectureStore.setCurrentPage(page)
+  syncCurrentNodeWithSlide(page)
+  lectureStore.setAudioMode(slides.value[page - 1]?.audioUrl ? 'audio' : 'speech')
+}
+
+const speakWithBrowser = text => {
+  if (!text || !globalThis.speechSynthesis) {
+    return
+  }
+
+  lectureStore.setAudioMode('speech')
+  resetAudioProgress()
+  resetPauseFlags()
+  manualSpeechStopRequested = false
+
+  speechUtterance = new SpeechSynthesisUtterance(text)
+  speechUtterance.lang = 'zh-CN'
+  speechUtterance.rate = 1
+  speechUtterance.onend = async () => {
+    const manualStop = manualSpeechStopRequested
+    manualSpeechStopRequested = false
+    isSpeaking.value = false
+    resetPauseFlags()
+
+    if (manualStop) {
+      return
+    }
+
+    await playbackEngine?.handlePlaybackEnded()
+  }
+  speechUtterance.onerror = () => {
+    manualSpeechStopRequested = false
+    isSpeaking.value = false
+    resetPauseFlags()
+  }
+
+  globalThis.speechSynthesis.speak(speechUtterance)
+  isSpeaking.value = true
+  lectureStore.setStatus(LECTURE_STATE.PLAYING)
+}
+
+const fallbackToSpeech = text => {
+  haltPlayback()
+  speakWithBrowser(text)
+}
+
+const playCurrentSlideByPageIndex = async pageIndex => {
+  const slide = slides.value[pageIndex - 1]
+  if (!slide?.content) {
+    return false
+  }
+
+  haltPlayback()
+
+  if (!slide.audioUrl || failedAudioUrls.has(slide.audioUrl)) {
+    fallbackToSpeech(slide.content)
+    return true
+  }
+
+  lectureStore.setAudioMode('audio')
+  resetPauseFlags()
+
+  try {
+    await audioPlayer.load(slide.audioUrl)
+    audioDuration.value = audioPlayer.getDuration()
+    audioCurrentTime.value = audioPlayer.getCurrentTime()
+    await audioPlayer.play()
+    isSpeaking.value = true
+    lectureStore.setStatus(LECTURE_STATE.PLAYING)
+    return true
+  } catch (error) {
+    if (error?.name === 'NotAllowedError') {
+      showError(error, '浏览器阻止了自动播放，请点击“开始朗读”继续。')
+      haltPlayback()
+      return false
+    }
+
+    failedAudioUrls.add(slide.audioUrl)
+    showError('音频加载失败，已切换文本朗读', '音频加载失败，已切换文本朗读')
+    fallbackToSpeech(slide.content)
+    return true
+  }
+}
+
+const normalizeSlide = (segment, index) => ({
+  id: segment?.id || segment?.nodeId || `segment-${index + 1}`,
+  nodeId: segment?.nodeId || segment?.id || `node-${index + 1}`,
+  pageIndex: Number(segment?.pageIndex || index + 1),
+  title: segment?.title || `第 ${index + 1} 页`,
+  content: segment?.content || '',
+  knowledgePoints: Array.isArray(segment?.knowledgePoints) ? segment.knowledgePoints : [],
+  audioUrl: segment?.audioUrl || null,
+})
+
 const loadSlides = async () => {
   lectureStore.setLoading(true)
   clearError()
 
   try {
     const response = await getCoursewareScript(coursewareId)
-    const segments = response.data?.segments || []
+    const segments = Array.isArray(response.data?.segments) ? response.data.segments : []
 
     if (!segments.length) {
       slides.value = []
-      showError(null, '讲稿数据为空，请先生成讲稿')
+      showError(null, '讲稿为空，请先生成讲稿后再进入课堂。')
       return false
     }
 
-    slides.value = segments
-    lectureStore.setCurrentPage(1)
-    syncCurrentNodeWithSlide(1)
+    slides.value = segments.map(normalizeSlide)
+    syncToPage(1)
+    lectureStore.setStatus(LECTURE_STATE.IDLE)
     return true
   } catch (error) {
     slides.value = []
-    showError(error, '无法加载讲稿数据')
+    showError(error, '无法加载课堂讲稿，请稍后重试。')
     return false
   } finally {
     lectureStore.setLoading(false)
@@ -197,10 +1042,33 @@ const startLectureSession = async () => {
     if (!response.data?.currentNode?.pageIndex) {
       syncCurrentNodeWithSlide(currentPage.value)
     }
+    await connectLectureSocket(lectureStore.sessionId)
   } catch (error) {
-    showError(error, '无法开始讲课')
+    showError(error, '无法开始课堂，请稍后重试。')
   } finally {
     lectureStore.setLoading(false)
+  }
+}
+
+const togglePlayback = async () => {
+  if (!currentSlide.value) {
+    return
+  }
+
+  if (isSpeaking.value || isAudioPaused.value || isSpeechPaused.value) {
+    playbackEngine?.stopCurrentPage()
+    stopVadMonitoring()
+    if (voiceInterruptEnabled.value) {
+      updateVoiceInterruptState(VOICE_INTERRUPT_STATE.OFF, '语音打断已开启，等待继续播放')
+    }
+    lectureStore.setStatus(LECTURE_STATE.IDLE)
+    return
+  }
+
+  lectureStore.setStatus(LECTURE_STATE.PLAYING)
+  await playbackEngine?.playPage(currentPage.value)
+  if (voiceInterruptEnabled.value) {
+    await beginVoiceInterruptMonitoring({ force: true })
   }
 }
 
@@ -211,13 +1079,22 @@ const handlePauseLecture = async () => {
 
   lectureStore.setLoading(true)
   clearError()
-  stopSpeech()
+  const hadActivePlayback =
+    isSpeaking.value || isAudioPaused.value || isSpeechPaused.value || audioCurrentTime.value > 0
+  pauseCurrentPlayback()
+  stopVadMonitoring()
+  if (voiceInterruptEnabled.value) {
+    updateVoiceInterruptState(VOICE_INTERRUPT_STATE.OFF, '课堂已暂停，恢复后会重新倾听')
+  }
 
   try {
     const response = await pauseLecture(lectureStore.sessionId)
     lectureStore.setStatus(response.data?.status)
   } catch (error) {
-    showError(error, '暂停讲课失败')
+    showError(error, '暂停课堂失败，请稍后重试。')
+    if (hadActivePlayback) {
+      await resumeCurrentPlayback()
+    }
   } finally {
     lectureStore.setLoading(false)
   }
@@ -230,114 +1107,281 @@ const handleResumeLecture = async () => {
 
   lectureStore.setLoading(true)
   clearError()
+  sendLectureSignal('resume')
+  lectureStore.resumeFromBreakpoint()
 
   try {
     const response = await resumeLecture({ sessionId: lectureStore.sessionId })
+    const responsePageIndex = response.data?.pageIndex || response.data?.currentNode?.pageIndex || lectureStore.breakpointPage
+    const responseBreakpointTime = response.data?.breakpointTime ?? lectureStore.breakpointTime
     lectureStore.syncFromStartResponse({
       ...response.data,
       coursewareId,
     })
-    if (!response.data?.currentNode?.pageIndex) {
-      syncCurrentNodeWithSlide(currentPage.value)
+    if (responsePageIndex) {
+      lectureStore.setBreakpoint(responsePageIndex, responseBreakpointTime)
+    }
+
+    if (!response.data?.currentNode?.pageIndex && responsePageIndex) {
+      syncCurrentNodeWithSlide(responsePageIndex)
+    }
+
+    const resumed = await restorePlaybackFromBreakpoint({
+      pageIndex: lectureStore.breakpointPage,
+      breakpointTime: lectureStore.breakpointTime,
+    })
+
+    if (!resumed && lectureStore.breakpointPage) {
+      syncCurrentNodeWithSlide(lectureStore.breakpointPage)
+    }
+
+    if (resumed) {
+      lectureStore.clearBreakpoint()
+    }
+
+    if (resumed && voiceInterruptEnabled.value) {
+      await beginVoiceInterruptMonitoring({ force: true })
     }
   } catch (error) {
-    showError(error, '恢复讲课失败')
+    if (lectureStore.breakpointPage) {
+      lectureStore.setStatus(LECTURE_STATE.INTERRUPTED)
+    }
+    showError(error, '继续课堂失败，请稍后重试。')
   } finally {
     lectureStore.setLoading(false)
   }
 }
 
-const previousSlide = () => {
+const previousSlide = async () => {
   if (currentPage.value <= 1) {
     return
   }
 
-  lectureStore.setCurrentPage(currentPage.value - 1)
-  syncCurrentNodeWithSlide(currentPage.value)
-  stopSpeech()
+  const autoPlay = Boolean(playbackEngine?.isContinuousPlayback())
+  await playbackEngine?.previousPage(autoPlay)
+  if (!autoPlay) {
+    stopVadMonitoring()
+    if (voiceInterruptEnabled.value) {
+      updateVoiceInterruptState(VOICE_INTERRUPT_STATE.OFF, '已切换页面，开始播放后会继续倾听')
+    }
+    lectureStore.setStatus(LECTURE_STATE.IDLE)
+  } else if (voiceInterruptEnabled.value) {
+    await beginVoiceInterruptMonitoring()
+  }
 }
 
-const nextSlide = () => {
+const nextSlide = async () => {
   if (currentPage.value >= totalPages.value) {
-    stopSpeech()
+    stopVadMonitoring()
+    if (voiceInterruptEnabled.value) {
+      updateVoiceInterruptState(VOICE_INTERRUPT_STATE.OFF, '课程已结束')
+    }
+    playbackEngine?.finishLecture()
     return
   }
 
-  lectureStore.setCurrentPage(currentPage.value + 1)
-  syncCurrentNodeWithSlide(currentPage.value)
-  stopSpeech()
+  const autoPlay = Boolean(playbackEngine?.isContinuousPlayback())
+  await playbackEngine?.nextPage(autoPlay)
+  if (!autoPlay) {
+    stopVadMonitoring()
+    if (voiceInterruptEnabled.value) {
+      updateVoiceInterruptState(VOICE_INTERRUPT_STATE.OFF, '已切换页面，开始播放后会继续倾听')
+    }
+    lectureStore.setStatus(LECTURE_STATE.IDLE)
+  } else if (voiceInterruptEnabled.value) {
+    await beginVoiceInterruptMonitoring()
+  }
 }
 
-const toggleSpeech = () => {
-  if (isSpeaking.value) {
-    stopSpeech()
+const handleSeek = event => {
+  if (!canSeek.value) {
     return
   }
 
-  speakCurrent()
+  const rect = event.currentTarget.getBoundingClientRect()
+  const ratio = Math.min(Math.max((event.clientX - rect.left) / rect.width, 0), 1)
+  const targetTime = audioDuration.value * ratio
+  audioPlayer.seek(targetTime)
+  audioCurrentTime.value = audioPlayer.getCurrentTime()
 }
 
-const speakCurrent = () => {
-  const text = currentSlide.value?.content
-  if (!text || !globalThis.speechSynthesis) {
+const restoreLectureStatusAfterAnswer = () => {
+  if (lectureStore.breakpointPage) {
+    lectureStore.setStatus(LECTURE_STATE.INTERRUPTED)
     return
   }
 
-  stopSpeech()
-  speechUtterance = new SpeechSynthesisUtterance(text)
-  speechUtterance.lang = 'zh-CN'
-  speechUtterance.rate = 1
-  speechUtterance.onend = () => {
-    isSpeaking.value = false
-  }
-  speechUtterance.onerror = () => {
-    isSpeaking.value = false
+  if (lectureStatus.value === LECTURE_STATE.ENDED) {
+    return
   }
 
-  globalThis.speechSynthesis.speak(speechUtterance)
-  isSpeaking.value = true
+  if (isSpeaking.value || isAudioPaused.value || isSpeechPaused.value) {
+    lectureStore.setStatus(LECTURE_STATE.PLAYING)
+    return
+  }
+
+  lectureStore.setStatus(LECTURE_STATE.IDLE)
 }
 
-const stopSpeech = () => {
-  if (globalThis.speechSynthesis) {
-    globalThis.speechSynthesis.cancel()
+const processRecordedQuestion = async blob => {
+  if (!blob?.size) {
+    lectureStore.setLastRecognizedText('')
+    updateVoiceInterruptState(VOICE_INTERRUPT_STATE.COMPLETED, '未识别到有效问题，请手动输入。')
+    showError('未识别到有效问题，请手动输入。', '未识别到有效问题，请手动输入。')
+    return false
   }
-  isSpeaking.value = false
+
+  if (!lectureStore.sessionId) {
+    return false
+  }
+
+  try {
+    updateVoiceInterruptState(VOICE_INTERRUPT_STATE.COMPLETED, '录音完成，正在识别')
+    const response = await recognizeAudio({
+      file: createRecordedAudioFile(blob),
+      sessionId: lectureStore.sessionId,
+      pageIndex: currentPage.value,
+    })
+    const recognizedText = String(response.data?.text || '').trim()
+    lectureStore.setLastRecognizedText(recognizedText)
+
+    if (!recognizedText) {
+      updateVoiceInterruptState(VOICE_INTERRUPT_STATE.COMPLETED, '未识别到有效问题，请手动输入。')
+      showError('未识别到有效问题，请手动输入。', '未识别到有效问题，请手动输入。')
+      return false
+    }
+
+    question.value = recognizedText
+    updateVoiceInterruptState(VOICE_INTERRUPT_STATE.COMPLETED, '识别成功，正在自动提问')
+    await submitQuestion({ inputQuestion: recognizedText, autoResume: true })
+    return true
+  } catch (error) {
+    lectureStore.setLastRecognizedText('')
+    updateVoiceInterruptState(VOICE_INTERRUPT_STATE.COMPLETED, '识别失败，请手动输入问题。')
+    showError(error, '识别失败，请手动输入问题。')
+    return false
+  }
 }
 
-const submitQuestion = async () => {
-  const normalizedQuestion = question.value.trim()
+const finalizeQuestionFlow = async ({ qaItem, autoResume = false } = {}) => {
+  if (qaItem) {
+    qaItem.streaming = false
+  }
+
+  activeStreamingQaItemId = null
+  qaStreamClient = null
+  isAsking.value = false
+  lectureStore.finishAnswer()
+
+  if (autoResume && lectureStore.breakpointPage) {
+    await handleResumeLecture()
+  } else {
+    restoreLectureStatusAfterAnswer()
+  }
+
+  scrollQAToBottom()
+}
+
+const fallbackAskQuestion = async ({ normalizedQuestion, qaItem, autoResume = false } = {}) => {
+  const response = await askText({
+    sessionId: lectureStore.sessionId,
+    question: normalizedQuestion,
+  })
+  qaItem.answer = response.data?.answer || '当前没有获取到有效回答。'
+  qaItem.evidence = Array.isArray(response.data?.evidence) ? response.data.evidence : []
+  lectureStore.appendAnswerDelta(qaItem.answer || '')
+  await finalizeQuestionFlow({ qaItem, autoResume })
+}
+
+const stopStreamingAnswer = async () => {
+  qaStreamClient?.close()
+  const qaItem = qaList.value.find(item => item.id === activeStreamingQaItemId)
+  await finalizeQuestionFlow({ qaItem, autoResume: false })
+}
+
+const submitQuestion = async ({ inputQuestion = question.value.trim(), autoResume = false } = {}) => {
+  const normalizedQuestion = String(inputQuestion || '').trim()
   if (!normalizedQuestion || isAsking.value || !lectureStore.sessionId) {
     return
   }
 
   isAsking.value = true
+  lectureStore.enterAnswering(normalizedQuestion)
   clearError()
   const qaItem = {
     id: Date.now(),
     question: normalizedQuestion,
-    answer: '正在思考...',
+    answer: '',
     evidence: [],
+    streaming: true,
   }
 
   qaList.value.push(qaItem)
+  activeStreamingQaItemId = qaItem.id
   question.value = ''
   scrollQAToBottom()
 
+  let hasSettled = false
+
+  const settleWithFallback = async error => {
+    if (hasSettled) {
+      return
+    }
+
+    hasSettled = true
+    qaStreamClient?.close()
+    qaStreamClient = null
+    showError(error, '流式回答失败，已降级为普通问答。')
+
+    try {
+      await fallbackAskQuestion({ normalizedQuestion, qaItem, autoResume })
+    } catch (fallbackError) {
+      const message = getErrorMessage(fallbackError, '提问失败，请稍后重试。')
+      qaItem.answer = message
+      lectureStore.appendAnswerDelta(message)
+      showError(fallbackError, '提问失败，请稍后重试。')
+      await finalizeQuestionFlow({ qaItem, autoResume: false })
+    }
+  }
+
   try {
-    const response = await askText({
-      sessionId: lectureStore.sessionId,
-      question: normalizedQuestion,
-    })
-    qaItem.answer = response.data?.answer || '暂无答案'
-    qaItem.evidence = response.data?.evidence || []
+    qaStreamClient = streamAskText(
+      {
+        sessionId: lectureStore.sessionId,
+        question: normalizedQuestion,
+        pageIndex: currentPage.value,
+      },
+      {
+        onDelta: content => {
+          if (hasSettled || !content) {
+            return
+          }
+
+          qaItem.answer += content
+          lectureStore.appendAnswerDelta(content)
+          scrollQAToBottom()
+        },
+        onDone: () => {
+          if (hasSettled) {
+            return
+          }
+
+          hasSettled = true
+          void finalizeQuestionFlow({ qaItem, autoResume })
+        },
+        onError: error => {
+          if (hasSettled) {
+            return
+          }
+
+          void settleWithFallback(error)
+        },
+      },
+    )
+    return true
   } catch (error) {
-    const message = getErrorMessage(error, '提问失败，请稍后重试')
-    qaItem.answer = message
-    showError(error, '提问失败，请稍后重试')
-  } finally {
-    isAsking.value = false
-    scrollQAToBottom()
+    await settleWithFallback(error)
+    return false
   }
 }
 
@@ -349,7 +1393,67 @@ const scrollQAToBottom = () => {
   })
 }
 
+watch(
+  () => currentSlide.value?.id,
+  () => {
+    resetAudioProgress()
+    resetPauseFlags()
+    isSpeaking.value = false
+    lectureStore.setAudioMode(useAudioPlayback.value ? 'audio' : 'speech')
+  },
+)
+
 onMounted(async () => {
+  canUseVoiceInterrupt.value = supportsVoiceInterrupt()
+  updateVoiceInterruptState(
+    canUseVoiceInterrupt.value ? VOICE_INTERRUPT_STATE.OFF : VOICE_INTERRUPT_STATE.UNAVAILABLE,
+    canUseVoiceInterrupt.value
+      ? '开启后会在检测到学生说话后自动打断课堂'
+      : '当前浏览器不支持语音打断，请改用手动输入问题。',
+  )
+
+  playbackEngine = createLecturePlaybackEngine({
+    getSlides: () => slides.value,
+    getCurrentPage: () => currentPage.value,
+    syncToPage,
+    playCurrentPage: playCurrentSlideByPageIndex,
+    stopPlayback: haltPlayback,
+    setLectureStatus: status => lectureStore.setStatus(status),
+    endedStatus: LECTURE_STATE.ENDED,
+    onContinuousPlaybackChange: enabled => {
+      isContinuousPlayback.value = enabled
+    },
+  })
+
+  audioUnsubscribers.push(
+    audioPlayer.onEnded(async () => {
+      isSpeaking.value = false
+      isAudioPaused.value = false
+      audioCurrentTime.value = audioPlayer.getCurrentTime()
+      await playbackEngine?.handlePlaybackEnded()
+    }),
+  )
+  audioUnsubscribers.push(
+    audioPlayer.onTimeUpdate(() => {
+      audioCurrentTime.value = audioPlayer.getCurrentTime()
+      audioDuration.value = audioPlayer.getDuration()
+    }),
+  )
+  audioUnsubscribers.push(
+    audioPlayer.onError(() => {
+      if (playbackMode.value === 'audio' && isSpeaking.value && currentSlide.value?.content) {
+        if (currentSlide.value.audioUrl) {
+          failedAudioUrls.add(currentSlide.value.audioUrl)
+        }
+        showError('音频加载失败，已切换文本朗读', '音频加载失败，已切换文本朗读')
+        fallbackToSpeech(currentSlide.value.content)
+        return
+      }
+
+      isSpeaking.value = false
+    }),
+  )
+
   lectureStore.reset()
   lectureStore.setCoursewareId(coursewareId)
   const loaded = await loadSlides()
@@ -359,278 +1463,576 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  stopSpeech()
+  playbackEngine?.stopCurrentPage()
+  stopVadMonitoring()
+  qaStreamClient?.close()
+  qaStreamClient = null
+  disconnectLectureSocket()
+  audioUnsubscribers.forEach(unsubscribe => unsubscribe())
+  audioPlayer.destroy()
+  recorder.destroy()
+  void vad?.destroy()
   lectureStore.reset()
 })
 </script>
 
 <style scoped>
-.lecture-page {
-  display: flex;
-  gap: 1.5rem;
-  padding: 1.5rem;
-  height: calc(100vh - 9rem);
-  overflow: hidden;
+.lecture-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.95fr);
+  gap: 1.25rem;
+  align-items: start;
 }
 
-.lecture-content {
-  flex: 2;
+.lecture-main,
+.lecture-chat-panel {
+  min-height: 42rem;
+}
+
+.lecture-main {
   display: flex;
   flex-direction: column;
-  background: white;
-  border-radius: var(--radius-lg);
+  gap: 1rem;
+}
+
+.lecture-topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.5rem 1.6rem;
+  border-radius: calc(var(--radius-xl) + 0.15rem);
+  background:
+    radial-gradient(circle at top left, rgba(123, 110, 255, 0.18), transparent 34%),
+    rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(126, 136, 184, 0.14);
   box-shadow: var(--shadow-md);
-  overflow: hidden;
 }
 
-.slide-section {
-  flex: 1;
-  padding: 2rem;
-  overflow-y: auto;
-}
-
-.slide-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-
-.slide-header h2 {
-  font-size: var(--font-size-xl);
-  color: var(--primary-color);
+.lecture-topbar h1 {
   margin: 0;
+  font-size: clamp(1.8rem, 3vw, 2.5rem);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
 }
 
-.state-badge {
-  font-size: var(--font-size-xs);
-  padding: 0.25rem 0.75rem;
-  border-radius: var(--radius-sm);
-  font-weight: 600;
-}
-.state-badge.state-playing { background: rgba(82, 196, 26, 0.15); color: #389e0d; }
-.state-badge.state-interrupted,
-.state-badge.state-answering { background: rgba(250, 173, 20, 0.15); color: #d48806; }
-.state-badge.state-resuming { background: rgba(102, 126, 234, 0.15); color: var(--primary-color); }
-.state-badge.state-ended { background: rgba(0, 0, 0, 0.06); color: var(--text-secondary); }
-.state-badge.state-idle { background: var(--bg-secondary); color: var(--text-secondary); }
-
-.slide-body {
-  font-size: var(--font-size-md);
-  line-height: var(--line-height-relaxed);
+.lecture-subtitle {
+  margin: 0.9rem 0 0;
   color: var(--text-secondary);
-  min-height: 10rem;
+  line-height: 1.7;
 }
 
-.knowledge-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 1.5rem;
-}
-
-.knowledge-tags .tag {
-  padding: 0.2rem 0.6rem;
-  background: rgba(102, 126, 234, 0.1);
-  color: var(--primary-color);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-xs);
-}
-
-.controls {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem 2rem;
-  border-top: 1px solid var(--border-color);
-  background: var(--bg-secondary);
-  gap: 0.5rem;
-}
-
-.center-controls {
+.lecture-topbar__meta {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
-.btn-tts {
-  font-size: var(--font-size-sm);
-  padding: 0.4rem 0.8rem;
-  border-radius: var(--radius-md);
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.btn-tts.speaking {
-  background: rgba(82, 196, 26, 0.15);
-  border-color: #52c41a;
-  color: #389e0d;
+.lecture-page-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.95rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(95, 104, 255, 0.08);
+  color: var(--primary-color);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
 }
 
-.btn-pause, .btn-resume {
-  font-size: var(--font-size-sm);
-  padding: 0.4rem 0.8rem;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  border: 1px solid var(--border-color);
-  background: var(--bg-secondary);
-  transition: all 0.2s;
+.lecture-script-card {
+  min-height: 26rem;
 }
 
-.progress {
+.script-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.script-card__label-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.audio-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(103, 118, 139, 0.12);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
   font-weight: 600;
-  color: var(--text-primary);
-  white-space: nowrap;
 }
 
-.progress-bar {
-  height: 3px;
-  background: var(--border-color);
-}
-.progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
-  transition: width 0.3s ease;
+.audio-tag.ready {
+  background: rgba(31, 157, 103, 0.12);
+  color: var(--success-color);
 }
 
-.qa-section {
-  flex: 1;
+.page-progress {
+  min-width: 4.75rem;
+  text-align: right;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+}
+
+.script-card__content p {
+  margin: 1rem 0 0;
+  color: var(--text-secondary);
+  line-height: 2;
+  white-space: pre-wrap;
+  font-size: 1.02rem;
+}
+
+.knowledge-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1.25rem;
+}
+
+.knowledge-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.35rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(95, 104, 255, 0.08);
+  color: var(--primary-color);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+.lecture-control-card {
   display: flex;
   flex-direction: column;
-  background: white;
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
-  padding: 1.5rem;
-  overflow: hidden;
+  gap: 1.2rem;
 }
 
-.qa-section h3 {
-  margin: 0 0 1rem 0;
-  color: var(--primary-color);
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
 }
 
-.qa-input {
+.control-group {
   display: flex;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
-.qa-input input {
-  flex: 1;
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  outline: none;
-  transition: border-color 0.2s;
-}
-.qa-input input:focus {
-  border-color: var(--primary-color);
+.control-label {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.qa-history {
-  flex: 1;
-  overflow-y: auto;
+.control-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 
-.qa-item {
-  margin-bottom: 1rem;
-  padding: 0.75rem;
-  background: var(--bg-secondary);
-  border-radius: var(--radius-md);
+.voice-status-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
 }
 
-.qa-question {
-  font-weight: 600;
+.voice-status-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 1.9rem;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(126, 136, 166, 0.12);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+}
+
+.voice-status-pill--listening {
+  background: rgba(95, 104, 255, 0.12);
   color: var(--primary-color);
-  margin-bottom: 0.5rem;
-  font-size: var(--font-size-sm);
 }
 
-.qa-answer {
+.voice-status-pill--recording {
+  background: rgba(31, 157, 103, 0.14);
+  color: var(--success-color);
+}
+
+.voice-status-pill--completed {
+  background: rgba(228, 156, 49, 0.14);
+  color: var(--warning-color);
+}
+
+.voice-status-pill--unavailable {
+  background: rgba(203, 65, 94, 0.14);
+  color: var(--error-color);
+}
+
+.voice-status-hint {
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
   line-height: 1.6;
 }
-.qa-answer :deep(p) { margin: 0.25rem 0; }
-.qa-answer :deep(code) {
-  background: rgba(0,0,0,0.06);
-  padding: 0.1rem 0.3rem;
-  border-radius: 3px;
-  font-size: 0.85em;
-}
-.qa-answer :deep(pre) {
-  background: #f6f8fa;
-  padding: 0.75rem;
-  border-radius: var(--radius-sm);
-  overflow-x: auto;
-  font-size: 0.85em;
+
+.voice-volume-meter {
+  position: relative;
+  width: 100%;
+  height: 0.55rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(126, 136, 166, 0.12);
 }
 
-.qa-evidence {
-  margin-top: 0.5rem;
-  font-size: var(--font-size-xs);
+.voice-volume-meter.active {
+  background: rgba(95, 104, 255, 0.12);
 }
-.qa-evidence summary {
-  cursor: pointer;
+
+.voice-volume-bar {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: left center;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.audio-progress-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.audio-progress-header strong {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.audio-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   color: var(--text-secondary);
-}
-.evidence-item {
-  margin-top: 0.25rem;
-  padding: 0.4rem;
-  background: white;
-  border-radius: var(--radius-sm);
-  border-left: 3px solid var(--primary-color);
-}
-.evidence-source {
+  font-size: var(--font-size-sm);
   font-weight: 600;
-  color: var(--primary-color);
-  margin-right: 0.5rem;
 }
 
-.qa-empty {
-  text-align: center;
+.audio-progress-track {
+  position: relative;
+  width: 100%;
+  height: 0.7rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(126, 136, 166, 0.14);
+  cursor: pointer;
+}
+
+.audio-progress-track.disabled {
+  cursor: default;
+}
+
+.audio-progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+}
+
+.timeline-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
   color: var(--text-secondary);
-  padding: 2rem 0;
   font-size: var(--font-size-sm);
 }
 
-.error-toast {
-  position: fixed;
-  bottom: 5rem;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 0.75rem 1.5rem;
-  background: var(--error-color);
-  color: white;
+.lecture-chat-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.chat-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.chat-header h2 {
+  margin: 0;
+  font-size: 1.45rem;
+}
+
+.chat-header__status {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.chat-history {
+  flex: 1;
+  min-height: 18rem;
+  max-height: 38rem;
+  overflow-y: auto;
+  padding-right: 0.35rem;
+}
+
+.chat-empty {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.chat-empty h3 {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.chat-empty p {
+  margin: 0.7rem 0 0;
+  line-height: 1.8;
+}
+
+.chat-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.bubble {
+  max-width: 100%;
+  padding: 1rem 1.05rem;
+  border-radius: 1.2rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.bubble--user {
+  align-self: flex-end;
+  max-width: 84%;
+  border-top-right-radius: 0.5rem;
+  background: linear-gradient(135deg, rgba(95, 104, 255, 0.96), rgba(141, 91, 255, 0.92));
+  color: #ffffff;
+}
+
+.bubble--assistant {
+  align-self: flex-start;
+  max-width: 92%;
+  border-top-left-radius: 0.5rem;
+  background: rgba(248, 250, 255, 0.94);
+  border: 1px solid rgba(129, 140, 183, 0.12);
+}
+
+.bubble-role {
+  display: inline-block;
+  margin-bottom: 0.55rem;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.bubble p {
+  margin: 0;
+  line-height: 1.8;
+}
+
+.bubble-answer {
+  color: var(--text-secondary);
+  line-height: 1.8;
+}
+
+.bubble-streaming {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+.bubble-streaming__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--primary-color);
+  box-shadow: 0 0 0 0 rgba(95, 104, 255, 0.35);
+  animation: pulse-dot 1.6s ease-out infinite;
+}
+
+.bubble-answer :deep(p) {
+  margin: 0.45rem 0;
+}
+
+.bubble-answer :deep(code) {
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.35rem;
+  background: rgba(95, 104, 255, 0.08);
+}
+
+.bubble-answer :deep(pre) {
+  margin: 0.65rem 0;
+  padding: 0.9rem;
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
+  background: rgba(238, 242, 255, 0.78);
+  overflow-x: auto;
+}
+
+.evidence-panel {
+  margin-top: 0.8rem;
+}
+
+.evidence-panel summary {
   cursor: pointer;
-  z-index: 100;
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.evidence-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.evidence-item {
+  padding: 0.85rem;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(127, 138, 177, 0.12);
+}
+
+.evidence-item__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.45rem;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.evidence-item p {
+  color: var(--text-secondary);
+}
+
+.chat-composer {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.chat-composer > .app-input {
+  flex: 1;
+}
+
+@keyframes pulse-dot {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(95, 104, 255, 0.3);
+  }
+
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0.42rem rgba(95, 104, 255, 0);
+  }
+
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(95, 104, 255, 0);
+  }
+}
+
+.toast {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  max-width: min(26rem, calc(100vw - 2rem));
+  padding: 0.95rem 1rem;
+  border-radius: var(--radius-md);
+  background: rgba(203, 65, 94, 0.97);
+  color: #ffffff;
+  box-shadow: var(--shadow-md);
+}
+
+.toast button {
+  color: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+@media (max-width: 1180px) {
+  .lecture-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .lecture-chat-panel {
+    min-height: auto;
+  }
 }
 
 @media (max-width: 768px) {
-  .lecture-page {
+  .lecture-topbar {
+    padding: 1.35rem;
     flex-direction: column;
-    gap: 1rem;
-    padding: 1rem;
-    height: auto;
-    overflow-y: auto;
   }
 
-  .lecture-content { flex: none; min-height: 50vh; }
-  .qa-section { flex: none; min-height: 40vh; }
+  .lecture-topbar__meta {
+    justify-content: flex-start;
+  }
 
-  .slide-section { padding: 1rem; }
-  .slide-header h2 { font-size: var(--font-size-lg); }
-  .controls { padding: 0.75rem 1rem; flex-wrap: wrap; }
-  .center-controls { order: -1; width: 100%; justify-content: center; margin-bottom: 0.5rem; }
+  .control-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .audio-progress-header,
+  .timeline-meta,
+  .chat-composer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .bubble--user,
+  .bubble--assistant {
+    max-width: 100%;
+  }
 }
 
-@media (max-width: 480px) {
-  .lecture-page { padding: 0.5rem; gap: 0.5rem; }
-  .slide-body { min-height: 8rem; font-size: var(--font-size-sm); }
-  .qa-section { padding: 1rem; }
-  .btn { padding: 0.5rem 1rem; font-size: var(--font-size-sm); }
+@media (max-width: 640px) {
+  .toast {
+    left: 1rem;
+    right: 1rem;
+    max-width: none;
+  }
 }
 </style>
