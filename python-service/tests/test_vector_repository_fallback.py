@@ -41,6 +41,33 @@ def test_keyword_vector_repository_preserves_chunk_metadata() -> None:
     assert "score" in results[0]
 
 
+def test_keyword_vector_repository_matches_long_chinese_query_by_subterms() -> None:
+    repository = KeywordVectorRepository()
+
+    repository.insert_documents(
+        "cware_visual",
+        [
+            {
+                "chunk_id": "cware_visual_p001_visual",
+                "page_index": 1,
+                "content": "视觉摘要：本页主要为文本内容，未检测到图表、表格或流程图等显著视觉元素。",
+                "metadata": {"courseware_id": "cware_visual", "page_index": 1, "source": "visual_summary"},
+            }
+        ],
+        vectors=None,
+    )
+
+    results = repository.search_similar(
+        query="当前页图表说明了什么？",
+        query_vector=None,
+        courseware_id="cware_visual",
+        top_k=3,
+    )
+
+    assert len(results) >= 1
+    assert results[0]["page_index"] == 1
+
+
 def test_vector_store_falls_back_when_milvus_schema_is_incompatible(monkeypatch) -> None:
     monkeypatch.setattr(vector_store_module, "vector_store", None)
 

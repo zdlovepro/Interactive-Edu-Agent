@@ -52,6 +52,8 @@ class TextChunkerService:
         courseware_id: str = "",
         title: str | None = None,
         knowledge_points: list[str] | None = None,
+        visual_summary: str | None = None,
+        visual_objects: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         normalized_text = _normalize_text(original_text)
         if not normalized_text:
@@ -92,6 +94,8 @@ class TextChunkerService:
                 char_count=len(chunk_text),
                 title=title.strip() if title and title.strip() else None,
                 knowledge_points=cleaned_knowledge_points or None,
+                visual_summary=visual_summary.strip() if isinstance(visual_summary, str) and visual_summary.strip() else None,
+                visual_objects=_clean_string_list(visual_objects) or None,
             )
             chunk_model = TextChunk(
                 chunk_id=self._build_chunk_id(courseware_id, page_index, chunk_index),
@@ -139,6 +143,8 @@ class TextChunkerService:
 
             title = page.get("title")
             knowledge_points = _resolve_knowledge_points(page)
+            visual_summary = page.get("visual_summary") or page.get("visualSummary")
+            visual_objects = page.get("visual_objects") or page.get("visualObjects")
             all_chunks.extend(
                 self.chunk_courseware_page(
                     page_index=page_index,
@@ -146,6 +152,8 @@ class TextChunkerService:
                     courseware_id=courseware_id,
                     title=title if isinstance(title, str) else None,
                     knowledge_points=knowledge_points,
+                    visual_summary=visual_summary if isinstance(visual_summary, str) else None,
+                    visual_objects=visual_objects if isinstance(visual_objects, list) else None,
                 )
             )
 

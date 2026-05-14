@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.services.vector_store import get_vector_store
@@ -7,7 +8,10 @@ from app.utils.logger import logger
 
 _CURRENT_PAGE_BONUS = 0.30
 _ADJACENT_PAGE_BONUS = 0.15
+_VISUAL_SUMMARY_BONUS = 0.45
 _CANDIDATE_MULTIPLIER = 3
+
+_VISUAL_QUESTION_PATTERN = re.compile(r"(图表|表格|流程图|示意图|曲线图|柱状图|饼图|折线图|这张图|这幅图|本图)")
 
 
 def retrieve_context(
@@ -42,12 +46,23 @@ def retrieve_context(
         return []
 
     weighted_results: list[dict[str, Any]] = []
+    visual_question = _is_visual_question(normalized_question)
     for rank, candidate in enumerate(candidates):
         resolved_page_index = _resolve_page_index(candidate)
         base_score = _resolve_base_score(candidate)
-        adjusted_score = base_score + _page_bonus(resolved_page_index, page_index)
         text = _resolve_text(candidate)
         metadata = candidate.get("metadata") if isinstance(candidate.get("metadata"), dict) else {}
+
+        visual_bonus = _visual_summary_bonus(
+            visual_question=visual_question,
+            metadata=metadata,
+            candidate_page_index=resolved_page_index,
+            current_page_index=page_index,
+        )
+        adjusted_score = base_score + _page_bonus(resolved_page_index, page_index) + visual_bonus
+
+        if not text and isinstance(metadata.get("visual_summary"), str):
+            text = str(metadata.get("visual_summary") or "").strip()
 
         weighted_results.append(
             {
@@ -111,4 +126,32 @@ def _page_bonus(candidate_page_index: int | None, current_page_index: int | None
         return _CURRENT_PAGE_BONUS
     if abs(candidate_page_index - current_page_index) == 1:
         return _ADJACENT_PAGE_BONUS
+    return 0.0
+
+
+def _is_visual_question(question: str) -> bool:
+    normalized = (question or "").strip()
+    if not normalized:
+        return False
+    return bool(_VISUAL_QUESTION_PATTERN.search(normalized))
+
+
+def _visual_summary_bonus(
+    *,
+    visual_question: bool,
+    metadata: dict[str, Any],
+    candidate_page_index: int | None,
+    current_page_index: int | None,
+) -> float:
+    if not visual_question or not metadata:
+        return 0.0
+    if not isinstance(metadata.get("visual_summary"), str) or not str(metadata.get("visual_summary") or "").strip():
+        return 0.0
+
+    # Strongly prefer the visual summary of the current page.
+    if candidate_page_index is not None and current_page_index is not None:
+        if candidate_page_index == current_page_index:
+            return _VISUAL_SUMMARY_BONUS
+        if abs(candidate_page_index - current_page_index) == 1:
+            return _VISUAL_SUMMARY_BONUS / 2
     return 0.0

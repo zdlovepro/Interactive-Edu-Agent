@@ -1,5 +1,6 @@
 package com.interactive.edu.service.python;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.interactive.edu.config.PythonClientProperties;
 import com.interactive.edu.exception.ErrorCode;
 import com.interactive.edu.exception.ServiceException;
@@ -78,9 +79,11 @@ public class PythonParseClient {
         }
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record ParseEnvelope(int code, String message, ParsePayload data) {
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record ParsePayload(int pages, List<String> outline, List<ParseSegment> segments) {
         public List<String> safeOutline() {
             return outline == null ? Collections.emptyList() : outline;
@@ -91,6 +94,7 @@ public class PythonParseClient {
         }
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record ParseSegment(int pageIndex, String title, String content, List<String> knowledgePoints) {
         public List<String> safeKnowledgePoints() {
             return knowledgePoints == null ? Collections.emptyList() : knowledgePoints;

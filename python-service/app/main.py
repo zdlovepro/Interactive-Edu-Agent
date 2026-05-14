@@ -12,7 +12,11 @@ from app.core.logging_middleware import RequestLoggingMiddleware
 from app.schemas.common import BaseResponse, error_response, success_response
 from app.utils.logger import logger
 
-app = FastAPI(title=settings.PROJECT_NAME)
+class UTF8JSONResponse(JSONResponse):
+    media_type = "application/json; charset=utf-8"
+
+
+app = FastAPI(title=settings.PROJECT_NAME, default_response_class=UTF8JSONResponse)
 
 app.add_middleware(
     CORSMiddleware,
@@ -72,7 +76,7 @@ def health() -> BaseResponse:
 
 def _error_json_response(request: Request, code: int, message: str, status_code: int = 200) -> JSONResponse:
     payload = error_response(code, message).model_dump()
-    response = JSONResponse(status_code=status_code, content=payload)
+    response = UTF8JSONResponse(status_code=status_code, content=payload)
     response.headers["X-Trace-Id"] = _trace_id(request)
     return response
 
