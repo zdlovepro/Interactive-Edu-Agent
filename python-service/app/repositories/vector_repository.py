@@ -9,6 +9,11 @@ from app.core.config import settings
 from app.core.exceptions import VectorStoreException
 from app.utils.logger import logger
 
+try:  # pragma: no cover - optional dependency
+    import jieba  # type: ignore
+except Exception:  # noqa: BLE001
+    jieba = None
+
 try:
     from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, connections, utility
 except Exception:  # noqa: BLE001
@@ -258,7 +263,19 @@ class KeywordVectorRepository:
             )
 
         scored.sort(key=lambda item: item["score"], reverse=True)
-        return scored[:top_k]
+        # Deduplicate by chunk_id to avoid repeated evidence when ingested multiple times.
+        deduped: List[Dict[str, Any]] = []
+        seen_chunk_ids: set[str] = set()
+        for item in scored:
+            chunk_id = str(item.get("chunk_id") or "")
+            if chunk_id and chunk_id in seen_chunk_ids:
+                continue
+            if chunk_id:
+                seen_chunk_ids.add(chunk_id)
+            deduped.append(item)
+            if len(deduped) >= top_k:
+                break
+        return deduped
 
 
 def _normalize_content(document: Dict[str, Any]) -> str:
@@ -300,4 +317,36 @@ def _keyword_score(query: str, content: str) -> float:
 
 
 def _tokenize(text: str) -> List[str]:
-    return [token for token in re.findall(r"[a-zA-Z0-9_]+|[\u4e00-\u9fff]+", text) if token]
+    raw_tokens = [
+        token
+        for token in re.findall(r"[a-zA-Z0-9_]+|[\u4e00-\u9fff]+", text)
+        if token
+    ]
+    if not raw_tokens:
+        return []
+
+    expanded: List[str] = []
+    for token in raw_tokens:
+        expanded.append(token)
+
+        # Expand long Chinese token into smaller units for better matching.
+        if re.fullmatch(r"[\u4e00-\u9fff]+", token):
+            if jieba is not None:
+                try:
+                    expanded.extend([part for part in jieba.cut(token) if part and part.strip()])
+                except Exception:  # noqa: BLE001
+                    pass
+
+            if len(token) >= 4:
+                # 2-gram shingles to capture key terms like “图表/流程图/表格”.
+                expanded.extend([token[i:i + 2] for i in range(0, len(token) - 1)])
+
+    # Deduplicate while keeping order.
+    seen = set()
+    result: List[str] = []
+    for item in expanded:
+        if item in seen:
+            continue
+        seen.add(item)
+        result.append(item)
+    return result

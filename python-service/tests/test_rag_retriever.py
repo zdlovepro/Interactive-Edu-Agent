@@ -178,3 +178,37 @@ def test_retrieve_context_returns_empty_list_when_search_fails(monkeypatch) -> N
     )
 
     assert results == []
+
+
+def test_retrieve_context_prefers_visual_summary_on_current_page_for_visual_question(monkeypatch) -> None:
+    class FakeStore:
+        def search_similar(self, *, query, courseware_id, top_k):
+            return [
+                {
+                    "chunk_id": "text-current",
+                    "page_index": 2,
+                    "content": "当前页有一些文字内容。",
+                    "score": 0.78,
+                    "metadata": {},
+                },
+                {
+                    "chunk_id": "visual-current",
+                    "page_index": 2,
+                    "content": "",
+                    "score": 0.40,
+                    "metadata": {"visual_summary": "本页包含一张折线图，展示指标随时间上升的趋势。"},
+                },
+            ]
+
+    monkeypatch.setattr(rag_retriever_module, "get_vector_store", lambda: FakeStore())
+
+    results = rag_retriever_module.retrieve_context(
+        courseware_id="cware_visual",
+        question="当前页图表说明了什么？",
+        page_index=2,
+        top_k=1,
+    )
+
+    assert len(results) == 1
+    assert results[0]["chunk_id"] == "visual-current"
+    assert "折线图" in results[0]["text"]

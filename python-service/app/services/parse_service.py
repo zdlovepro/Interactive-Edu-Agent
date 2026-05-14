@@ -36,7 +36,35 @@ def parse_courseware_file(request: ParseRequest) -> dict[str, object]:
         except Exception as exc:  # noqa: BLE001
             logger.exception("Local parse failed. coursewareId=%s path=%s", request.courseware_id, local_path)
             raise PythonServiceException("课件解析失败") from exc
-        return _build_contract_payload(result, request.preferred_name)
+
+        visual_summary_by_page: dict[int, object] = {}
+        page_images: dict[int, str] = {}
+        try:
+            from app.services.visual_summary_service import generate_visual_summaries
+
+            summaries, rendered_images = generate_visual_summaries(
+                parse_result=result,
+                source_path=local_path,
+                output_dir=_courseware_root() / request.courseware_id / "visual" / "pages",
+            )
+            visual_summary_by_page = {item.page_index: item for item in summaries}
+            page_images = rendered_images
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Visual summary generation skipped. coursewareId=%s reason=%s",
+                request.courseware_id,
+                str(exc),
+            )
+
+        payload = _build_contract_payload(
+            result,
+            request.preferred_name,
+            visual_summary_by_page=visual_summary_by_page,
+            page_images=page_images,
+        )
+
+        _best_effort_ingest(request, payload)
+        return payload
 
     if request.normalized_storage == "minio":
         raise AppException(
@@ -60,23 +88,39 @@ def _parse_local_file(local_path: Path, request: ParseRequest) -> ParseResult:
     raise ValueError(f"unsupported file type: {suffix}")
 
 
-def _build_contract_payload(result: ParseResult, preferred_name: str | None) -> dict[str, object]:
+def _build_contract_payload(
+    result: ParseResult,
+    preferred_name: str | None,
+    visual_summary_by_page: dict[int, object] | None = None,
+    page_images: dict[int, str] | None = None,
+) -> dict[str, object]:
     outline: list[str] = []
     segments: list[dict[str, object]] = []
     default_topic = Path(preferred_name or result.courseware_id).stem or result.courseware_id
 
+    visual_summary_by_page = visual_summary_by_page or {}
+    page_images = page_images or {}
+
     for page in result.pages:
         title = _derive_title(page, default_topic)
         content = _merge_page_content(page)
+        visual_summary_item = visual_summary_by_page.get(page.page_index)
         outline.append(title)
-        segments.append(
-            {
-                "pageIndex": page.page_index,
-                "title": title,
-                "content": content,
-                "knowledgePoints": _derive_knowledge_points(title, default_topic),
-            }
-        )
+        segment: dict[str, object] = {
+            "pageIndex": page.page_index,
+            "title": title,
+            "content": content,
+            "knowledgePoints": _derive_knowledge_points(title, default_topic),
+        }
+
+        if visual_summary_item is not None:
+            segment["visualSummary"] = getattr(visual_summary_item, "visual_summary", None)
+            segment["visualObjects"] = getattr(visual_summary_item, "objects", None)
+
+        if page.page_index in page_images:
+            segment["pageImagePath"] = page_images.get(page.page_index)
+
+        segments.append(segment)
 
     return {"pages": result.total_pages, "outline": outline, "segments": segments}
 
@@ -155,3 +199,82 @@ def _detect_suffix(local_path: Path, request: ParseRequest) -> str:
     if request.content_type == "application/vnd.openxmlformats-officedocument.presentationml.presentation":
         return ".pptx"
     return ""
+
+
+def _best_effort_ingest(request: ParseRequest, payload: dict[str, object]) -> None:
+    """Best-effort ingest for RAG retrieval.
+
+    This keeps the parse contract unchanged while enabling "visual summary enters retrieval"
+    without requiring a separate orchestration step.
+    """
+
+    try:
+        from app.services.ingest_service import ingest_courseware_chunks
+        from app.services.text_chunker import TextChunkerService
+
+        segments = payload.get("segments")
+        if not isinstance(segments, list) or not segments:
+            return
+
+        pages_for_chunking: list[dict[str, object]] = []
+        visual_docs: list[dict[str, object]] = []
+
+        for seg in segments:
+            if not isinstance(seg, dict):
+                continue
+            page_index = seg.get("pageIndex")
+            if not isinstance(page_index, int) or page_index <= 0:
+                continue
+
+            title = seg.get("title") if isinstance(seg.get("title"), str) else None
+            content = seg.get("content") if isinstance(seg.get("content"), str) else ""
+            knowledge_points = seg.get("knowledgePoints")
+            if not isinstance(knowledge_points, list):
+                knowledge_points = []
+
+            visual_summary = seg.get("visualSummary") if isinstance(seg.get("visualSummary"), str) else None
+            visual_objects = seg.get("visualObjects") if isinstance(seg.get("visualObjects"), list) else None
+            page_image_path = seg.get("pageImagePath") if isinstance(seg.get("pageImagePath"), str) else None
+
+            pages_for_chunking.append(
+                {
+                    "page_index": page_index,
+                    "title": title,
+                    "content": content,
+                    "knowledge_points": knowledge_points,
+                    "visualSummary": visual_summary,
+                    "visualObjects": visual_objects,
+                    "pageImagePath": page_image_path,
+                }
+            )
+
+            if visual_summary:
+                visual_docs.append(
+                    {
+                        "chunk_id": f"{request.courseware_id}_p{page_index:03d}_visual",
+                        "page_index": page_index,
+                        "content": f"视觉摘要：{visual_summary}",
+                        "metadata": {
+                            "courseware_id": request.courseware_id,
+                            "page_index": page_index,
+                            "source": "visual_summary",
+                            "title": title,
+                            "visual_summary": visual_summary,
+                            "visual_objects": visual_objects,
+                            "page_image_path": page_image_path,
+                        },
+                    }
+                )
+
+        chunker = TextChunkerService()
+        chunks = chunker.chunk_courseware_pages(request.courseware_id, pages_for_chunking)
+        if not chunks and not visual_docs:
+            return
+
+        ingest_courseware_chunks(request.courseware_id, [*chunks, *visual_docs])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Parse ingest skipped. coursewareId=%s reason=%s",
+            request.courseware_id,
+            str(exc),
+        )

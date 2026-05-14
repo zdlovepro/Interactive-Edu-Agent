@@ -99,6 +99,16 @@ class VectorStoreManager:
     def _normalize_document(self, document: Dict[str, Any]) -> Dict[str, Any]:
         content = (document.get("content") or document.get("text") or "").strip()
         metadata = document.get("metadata") if isinstance(document.get("metadata"), dict) else {}
+
+        if not content:
+            visual_summary = (
+                document.get("visual_summary")
+                or document.get("visualSummary")
+                or metadata.get("visual_summary")
+                or metadata.get("visualSummary")
+            )
+            if isinstance(visual_summary, str) and visual_summary.strip():
+                content = f"视觉摘要：{visual_summary.strip()}"
         chunk_id = document.get("chunk_id") or document.get("chunkId") or ""
         page_index = document.get("page_index") or document.get("pageIndex") or metadata.get("page_index") or 0
         return {

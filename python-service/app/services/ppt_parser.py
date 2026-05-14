@@ -51,6 +51,10 @@ def parse_pptx(file_path: str, courseware_id: str) -> ParseResult:
         image_placeholders: list[str] = []
         formula_placeholders: list[str] = []
 
+        chart_count = 0
+        diagram_count = 0
+        flowchart_count = 0
+
         for shape in slide.shapes:
             if _is_formula_ole(shape) or _is_math_shape(shape):
                 formula_placeholders.append(f"[公式:slide_{index}_formula_{len(formula_placeholders) + 1}]")
@@ -59,6 +63,36 @@ def parse_pptx(file_path: str, courseware_id: str) -> ParseResult:
             if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
                 image_placeholders.append(f"[图片:slide_{index}_img_{len(image_placeholders) + 1}]")
                 continue
+
+            # Charts / diagrams in PPTX are often not pictures.
+            # python-pptx exposes chart objects via has_chart.
+            try:
+                if getattr(shape, "has_chart", False):
+                    chart_count += 1
+                    image_placeholders.append(f"[图表:slide_{index}_chart_{chart_count}]")
+                    continue
+            except Exception:  # noqa: BLE001
+                pass
+
+            # SmartArt / complex diagrams.
+            try:
+                if shape.shape_type == MSO_SHAPE_TYPE.SMART_ART:
+                    diagram_count += 1
+                    image_placeholders.append(f"[示意图:slide_{index}_smartart_{diagram_count}]")
+                    continue
+            except Exception:  # noqa: BLE001
+                pass
+
+            # Flowcharts are commonly represented as auto-shapes (FLOWCHART_*).
+            try:
+                if shape.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE:
+                    auto_type = getattr(shape, "auto_shape_type", None)
+                    auto_name = getattr(auto_type, "name", str(auto_type) if auto_type is not None else "")
+                    if auto_name and "FLOWCHART" in str(auto_name).upper():
+                        flowchart_count += 1
+                        image_placeholders.append(f"[流程图:slide_{index}_flow_{flowchart_count}]")
+            except Exception:  # noqa: BLE001
+                pass
 
             if shape.has_text_frame:
                 for paragraph in shape.text_frame.paragraphs:
