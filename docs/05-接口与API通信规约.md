@@ -220,3 +220,54 @@
 4. 返回问答结果并生成恢复指令
 5. 前端调用 `POST /api/v1/lecture/resume`
 6. 会话恢复到原节点继续讲解
+## 6. URL 导入与爬虫任务框架
+
+本节定义迭代 1 的 URL 导入入口。当前版本由 Java 后端创建任务与课件占位记录，前端可提交 URL 并轮询状态；Python 爬虫 worker 后续接入时沿用同一任务契约推进 `stage`、`progress`、`status`。
+
+### 6.1 创建 URL 导入任务
+
+- 路径：`POST /api/v1/courseware/import-url`
+- 调用方：前端
+
+请求：
+
+```json
+{
+  "url": "https://example.com/resource/demo.pdf",
+  "name": "示例资源"
+}
+```
+
+响应：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "taskId": "crawl_task_xxx",
+    "coursewareId": "cware_xxx",
+    "sourceUrl": "https://example.com/resource/demo.pdf",
+    "name": "示例资源",
+    "status": "QUEUED",
+    "stage": "QUEUED",
+    "progress": 5,
+    "message": "URL import task has been queued",
+    "createdAt": "2026-05-17T12:00:00Z",
+    "updatedAt": "2026-05-17T12:00:00Z"
+  }
+}
+```
+
+### 6.2 查询 URL 导入任务
+
+- 路径：`GET /api/v1/courseware/import-url/tasks/{taskId}`
+- 调用方：前端轮询
+
+字段约定：
+
+- `status`：`QUEUED`、`WAITING_CRAWLER`、`RUNNING`、`SUCCESS`、`FAILED`
+- `stage`：`QUEUED`、`FETCHING`、`DOWNLOADING`、`PARSING`、`FAILED`
+- `coursewareId`：任务创建时同步生成的课件占位 ID，可继续调用 `/api/v1/courseware/{coursewareId}` 查询课件状态。
+
+当前 Java-only 版本会将任务推进到 `WAITING_CRAWLER`，表示任务已经创建并等待 Python 爬虫 worker 后续接入。

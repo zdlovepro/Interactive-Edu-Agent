@@ -7,6 +7,8 @@ export const USER_API = {
 
 export const COURSEWARE_API = {
   UPLOAD: '/courseware/upload',
+  IMPORT_URL: '/courseware/import-url',
+  URL_IMPORT_TASK: taskId => `/courseware/import-url/tasks/${taskId}`,
   LIST: '/courseware',
   DETAIL: id => `/courseware/${id}`,
 }
