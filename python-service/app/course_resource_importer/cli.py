@@ -14,9 +14,12 @@ from .config import DEFAULT_USER_AGENT
 from .downloader import DownloadPlan, DownloadResult, build_download_plan, download_plan
 from .html_resource_discoverer import discover_resources_from_html
 from .models import AuthorizedFetchContext, ChaoxingCourseRef
+from .parse_ready import load_parse_ready_files
 from .pdf_builder import build_pdf_from_slide_images, select_slide_images_from_results
 from .resource_classifier import classify_resources
 from .resource_models import DiscoveredResource
+from app.schemas.parse import ParseRequest
+from app.services.parse_service import parse_courseware_file
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -30,6 +33,8 @@ def main(argv: list[str] | None = None) -> int:
             return _handle_discover_command(args)
         if args.command == "download":
             return _handle_download_command(args)
+        if args.command == "import-and-parse":
+            return _handle_import_and_parse_command(args)
         if args.command == "build-pdf" or (args.command is None and _parse_bool(args.build_pdf)):
             return _handle_build_pdf_command(args)
     except Exception as exc:  # noqa: BLE001
@@ -59,6 +64,17 @@ def _build_parser() -> argparse.ArgumentParser:
     import_parser.add_argument("--concurrency", type=int, default=3)
     import_parser.add_argument("--rate-limit-per-host", type=float, default=1.0)
     import_parser.add_argument("--user-agent", default=os.getenv("RESOURCE_USER_AGENT"))
+
+    import_and_parse_parser = subparsers.add_parser("import-and-parse")
+    _add_course_ref_arguments(import_and_parse_parser)
+    _add_auth_arguments(import_and_parse_parser)
+    import_and_parse_parser.add_argument("--output-dir", default=os.getenv("RESOURCE_OUTPUT_DIR"))
+    import_and_parse_parser.add_argument("--build-pdf", action="store_true", dest="build_pdf")
+    import_and_parse_parser.add_argument("--include-unknown", action="store_true")
+    import_and_parse_parser.add_argument("--min-confidence", type=float, default=0.6)
+    import_and_parse_parser.add_argument("--concurrency", type=int, default=3)
+    import_and_parse_parser.add_argument("--rate-limit-per-host", type=float, default=1.0)
+    import_and_parse_parser.add_argument("--user-agent", default=os.getenv("RESOURCE_USER_AGENT"))
 
     discover_parser = subparsers.add_parser("discover")
     _add_course_ref_arguments(discover_parser)
@@ -100,85 +116,36 @@ def _add_auth_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def _handle_import_command(args: argparse.Namespace) -> int:
-    output_dir = _require_output_dir(args.output_dir)
-    course_ref, page_url = _resolve_course_ref_and_url(args)
-
-    raw_resources, classified_resources = asyncio.run(
-        _discover_classified_resources(
-            page_url=page_url,
-            course_ref=course_ref,
-            cookie=args.cookie,
-            authorization=args.authorization,
-            referer=args.referer or course_ref.referer or page_url,
-            user_agent=args.user_agent,
-            rate_limit_per_host=args.rate_limit_per_host,
-        )
-    )
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    _write_resource_payload(
-        output_dir / "resources.raw.json",
-        source="chaoxing_authorized_course_import",
-        page_url=page_url,
-        course_ref=course_ref,
-        resources=raw_resources,
-    )
-    _write_resource_payload(
-        output_dir / "resources.classified.json",
-        source="chaoxing_authorized_course_import",
-        page_url=page_url,
-        course_ref=course_ref,
-        resources=classified_resources,
-    )
-
-    plan = build_download_plan(
-        classified_resources,
-        output_dir,
-        min_confidence=args.min_confidence,
-        include_unknown=args.include_unknown,
-    )
-    results = asyncio.run(
-        download_plan(
-            plan,
-            cookie=args.cookie,
-            authorization=args.authorization,
-            referer=args.referer or course_ref.referer or page_url,
-            concurrency=args.concurrency,
-            rate_limit_per_host=args.rate_limit_per_host,
-        )
-    )
-
-    generated_pdf = _maybe_build_slide_pdf(
-        build_pdf=bool(args.build_pdf),
-        results=results,
-        output_pdf=output_dir / "courseware_from_images.pdf",
-        title=_preferred_course_title(classified_resources, course_ref),
-    )
-
-    manifest_payload = _build_custom_manifest(
-        source="chaoxing_authorized_course_import",
-        course_ref=course_ref,
-        resources=classified_resources,
-        results=results,
-        plan=plan,
-        generated_pdf=generated_pdf,
-    )
-    parse_ready_payload = _build_parse_ready_manifest(
-        source="chaoxing_authorized_course_import",
-        resources=classified_resources,
-        results=results,
-        generated_pdf=generated_pdf,
-    )
-    _write_json(output_dir / "manifest.json", manifest_payload)
-    _write_json(output_dir / "parse_ready_manifest.json", parse_ready_payload)
+    workflow = _run_import_workflow(args)
 
     _print_stats(
-        discovered=len(classified_resources),
-        selected=plan.selected_count,
-        downloaded=_downloaded_count(results),
-        ignored=_ignored_count(results),
-        generated_pdf=generated_pdf,
+        discovered=len(workflow["resources"]),
+        selected=workflow["plan"].selected_count,
+        downloaded=_downloaded_count(workflow["results"]),
+        ignored=_ignored_count(workflow["results"]),
+        generated_pdf=workflow["generated_pdf"],
     )
+    return 0
+
+
+def _handle_import_and_parse_command(args: argparse.Namespace) -> int:
+    workflow = _run_import_workflow(args)
+    parse_results = _auto_parse_from_manifest(
+        manifest_path=workflow["output_dir"] / "parse_ready_manifest.json",
+        course_ref=workflow["course_ref"],
+        output_dir=workflow["output_dir"],
+    )
+
+    _print_stats(
+        discovered=len(workflow["resources"]),
+        selected=workflow["plan"].selected_count,
+        downloaded=_downloaded_count(workflow["results"]),
+        ignored=_ignored_count(workflow["results"]),
+        generated_pdf=workflow["generated_pdf"],
+    )
+    print(f"parsed: {parse_results['parsed_count']}")
+    print(f"parse todo: {parse_results['todo_count']}")
+    print(f"parse results path: {workflow['output_dir'] / 'parse_results.json'}")
     return 0
 
 
@@ -311,6 +278,90 @@ async def _discover_classified_resources(
     raw_resources = discover_resources_from_html(html, page_url=page_url, course_ref=course_ref)
     classified_resources = classify_resources(raw_resources)
     return raw_resources, classified_resources
+
+
+def _run_import_workflow(args: argparse.Namespace) -> dict:
+    output_dir = _require_output_dir(args.output_dir)
+    course_ref, page_url = _resolve_course_ref_and_url(args)
+
+    raw_resources, classified_resources = asyncio.run(
+        _discover_classified_resources(
+            page_url=page_url,
+            course_ref=course_ref,
+            cookie=args.cookie,
+            authorization=args.authorization,
+            referer=args.referer or course_ref.referer or page_url,
+            user_agent=args.user_agent,
+            rate_limit_per_host=args.rate_limit_per_host,
+        )
+    )
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    _write_resource_payload(
+        output_dir / "resources.raw.json",
+        source="chaoxing_authorized_course_import",
+        page_url=page_url,
+        course_ref=course_ref,
+        resources=raw_resources,
+    )
+    _write_resource_payload(
+        output_dir / "resources.classified.json",
+        source="chaoxing_authorized_course_import",
+        page_url=page_url,
+        course_ref=course_ref,
+        resources=classified_resources,
+    )
+
+    plan = build_download_plan(
+        classified_resources,
+        output_dir,
+        min_confidence=args.min_confidence,
+        include_unknown=args.include_unknown,
+    )
+    results = asyncio.run(
+        download_plan(
+            plan,
+            cookie=args.cookie,
+            authorization=args.authorization,
+            referer=args.referer or course_ref.referer or page_url,
+            concurrency=args.concurrency,
+            rate_limit_per_host=args.rate_limit_per_host,
+        )
+    )
+
+    generated_pdf = _maybe_build_slide_pdf(
+        build_pdf=bool(args.build_pdf),
+        results=results,
+        output_pdf=output_dir / "courseware_from_images.pdf",
+        title=_preferred_course_title(classified_resources, course_ref),
+    )
+
+    manifest_payload = _build_custom_manifest(
+        source="chaoxing_authorized_course_import",
+        course_ref=course_ref,
+        resources=classified_resources,
+        results=results,
+        plan=plan,
+        generated_pdf=generated_pdf,
+    )
+    parse_ready_payload = _build_parse_ready_manifest(
+        source="chaoxing_authorized_course_import",
+        resources=classified_resources,
+        results=results,
+        generated_pdf=generated_pdf,
+    )
+    _write_json(output_dir / "manifest.json", manifest_payload)
+    _write_json(output_dir / "parse_ready_manifest.json", parse_ready_payload)
+
+    return {
+        "output_dir": output_dir,
+        "course_ref": course_ref,
+        "page_url": page_url,
+        "resources": classified_resources,
+        "results": results,
+        "plan": plan,
+        "generated_pdf": generated_pdf,
+    }
 
 
 def _resolve_course_ref_and_url(args: argparse.Namespace) -> tuple[ChaoxingCourseRef, str]:
@@ -460,6 +511,67 @@ def _maybe_build_slide_pdf(
     return build_pdf_from_slide_images(slide_images, output_pdf, title=title)
 
 
+def _auto_parse_from_manifest(
+    *,
+    manifest_path: Path,
+    course_ref: ChaoxingCourseRef,
+    output_dir: Path,
+) -> dict:
+    parse_ready_files = load_parse_ready_files(manifest_path)
+    entries: list[dict] = []
+    parsed_count = 0
+    todo_count = 0
+
+    for index, file_path in enumerate(parse_ready_files, start=1):
+        suffix = file_path.suffix.lower()
+        if suffix == ".ppt":
+            todo_count += 1
+            entries.append(
+                {
+                    "path": str(file_path),
+                    "status": "todo",
+                    "message": "TODO: existing local parse flow currently supports only .pdf and .pptx files.",
+                }
+            )
+            continue
+
+        try:
+            request = ParseRequest(
+                coursewareId=f"{course_ref.courseid or 'course'}_{index}",
+                storage="local",
+                filePath=str(file_path),
+                fileName=file_path.name,
+                contentType=_guess_content_type(file_path),
+            )
+            result = parse_courseware_file(request)
+            parsed_count += 1
+            entries.append(
+                {
+                    "path": str(file_path),
+                    "status": "success",
+                    "result": result,
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            entries.append(
+                {
+                    "path": str(file_path),
+                    "status": "failed",
+                    "message": str(exc),
+                }
+            )
+
+    payload = {
+        "source": "chaoxing_authorized_course_import",
+        "parse_ready_manifest": str(manifest_path),
+        "parsed_count": parsed_count,
+        "todo_count": todo_count,
+        "files": entries,
+    }
+    _write_json(output_dir / "parse_results.json", payload)
+    return payload
+
+
 def _preferred_course_title(resources: list[DiscoveredResource], course_ref: ChaoxingCourseRef) -> str | None:
     for resource in resources:
         if resource.title:
@@ -549,6 +661,17 @@ def _parse_bool(value: str | bool | None) -> bool:
         return value
     normalized = str(value or "").strip().lower()
     return normalized in {"1", "true", "yes", "y", "on"}
+
+
+def _guess_content_type(path: Path) -> str | None:
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        return "application/pdf"
+    if suffix == ".pptx":
+        return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    if suffix == ".ppt":
+        return "application/vnd.ms-powerpoint"
+    return None
 
 
 if __name__ == "__main__":
