@@ -17,6 +17,14 @@ export function uploadCourseware(file, name, config = {}) {
   })
 }
 
+export function importCoursewareFromUrl(payload) {
+  return request.post(COURSEWARE_API.IMPORT_URL, payload)
+}
+
+export function getUrlImportTask(taskId) {
+  return request.get(COURSEWARE_API.URL_IMPORT_TASK(taskId))
+}
+
 export function listCourseware(params = {}) {
   return request.get(COURSEWARE_API.LIST, { params })
 }

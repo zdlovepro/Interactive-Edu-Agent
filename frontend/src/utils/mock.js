@@ -72,6 +72,7 @@ const mockScriptData = {
 let uploadCounter = 100
 let scriptGenerateState = {} // coursewareId -> boolean
 let sessionCounter = 0
+const mockUrlImportTasks = new Map()
 
 // 模拟问答回复
 const mockAnswers = [
@@ -102,6 +103,8 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
 const matchRoute = (method, url) => {
   const routes = [
     { method: 'POST', pattern: /\/courseware\/upload$/, handler: handleUpload },
+    { method: 'POST', pattern: /\/courseware\/import-url$/, handler: handleUrlImport },
+    { method: 'GET', pattern: /\/courseware\/import-url\/tasks\/([^/]+)$/, handler: handleUrlImportTask },
     { method: 'GET', pattern: /\/courseware$/, handler: handleCoursewareList },
     { method: 'GET', pattern: /\/courseware\/([^/]+)$/, handler: handleCoursewareDetail },
     { method: 'GET', pattern: /\/courseware\/([^/]+)\/script$/, handler: handleGetScript },
@@ -140,6 +143,56 @@ function handleUpload() {
     if (item) item.status = 'PARSED'
   }, 3000)
   return { code: 0, message: 'success', data: { coursewareId: id, status: 'UPLOADED' } }
+}
+
+function handleUrlImport(params, body) {
+  uploadCounter++
+  const coursewareId = `cware_url_mock_${uploadCounter}`
+  const taskId = `crawl_task_mock_${uploadCounter}`
+  const name = body?.name || body?.url || `URL resource ${uploadCounter}`
+  const now = new Date().toISOString()
+  const task = {
+    taskId,
+    coursewareId,
+    sourceUrl: body?.url || '',
+    name,
+    status: 'QUEUED',
+    stage: 'QUEUED',
+    progress: 5,
+    message: 'URL import task has been queued',
+    createdAt: now,
+    updatedAt: now,
+  }
+
+  mockUrlImportTasks.set(taskId, task)
+  mockCoursewareList.unshift({
+    id: coursewareId,
+    name,
+    status: 'PARSING',
+    currentTaskStatus: 'PENDING',
+    createdAt: now,
+  })
+
+  setTimeout(() => {
+    const item = mockUrlImportTasks.get(taskId)
+    if (item) {
+      item.status = 'WAITING_CRAWLER'
+      item.stage = 'QUEUED'
+      item.progress = 15
+      item.message = 'Crawler worker is not connected yet; task is ready for dispatch'
+      item.updatedAt = new Date().toISOString()
+    }
+  }, 1000)
+
+  return { code: 0, message: 'success', data: task }
+}
+
+function handleUrlImportTask(params) {
+  const task = mockUrlImportTasks.get(params[0])
+  if (!task) {
+    return { code: 40401, message: 'URL import task not found', data: null }
+  }
+  return { code: 0, message: 'success', data: task }
 }
 
 function handleCoursewareList() {

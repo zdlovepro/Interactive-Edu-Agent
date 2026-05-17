@@ -12,6 +12,54 @@
 
     <section class="page-shell upload-layout">
       <AppCard class="upload-main-card" tone="accent">
+        <form class="url-import-panel" @submit.prevent="handleUrlImport">
+          <div class="url-import-copy">
+            <h3>URL 导入</h3>
+            <p>提交网页或课件资源链接后，系统会创建爬虫任务并等待后续爬虫 worker 接入。</p>
+          </div>
+          <div class="url-import-controls">
+            <label class="visually-hidden" for="url-import-input">资源 URL</label>
+            <input
+              id="url-import-input"
+              v-model.trim="importUrl"
+              class="app-input"
+              type="url"
+              placeholder="https://example.com/course/resource"
+              :disabled="urlImportLoading"
+            />
+            <input
+              v-model.trim="importName"
+              class="app-input"
+              type="text"
+              placeholder="资源名称（可选）"
+              :disabled="urlImportLoading"
+            />
+            <AppButton type="submit" :disabled="urlImportDisabled">
+              {{ urlImportLoading ? '提交中' : '导入 URL' }}
+            </AppButton>
+          </div>
+
+          <div v-if="urlTask" class="url-task-panel">
+            <div class="url-task-header">
+              <span>{{ urlTask.status }}</span>
+              <strong>{{ urlTask.progress }}%</strong>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill url-progress-fill" :style="{ width: `${urlTask.progress || 0}%` }"></div>
+            </div>
+            <div class="url-steps">
+              <span
+                v-for="step in urlImportSteps"
+                :key="step.key"
+                :class="{ active: step.key === activeUrlStep }"
+              >
+                {{ step.label }}
+              </span>
+            </div>
+            <p class="status-text">{{ urlTask.message }}</p>
+          </div>
+        </form>
+
         <FileUpload
           :disabled="uploadStatus?.status === 'uploading'"
           @file-selected="handleFileSelected"
@@ -113,7 +161,13 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
-import { getCoursewareDetail, listCourseware, uploadCourseware } from '@/api/courseware'
+import {
+  getCoursewareDetail,
+  getUrlImportTask,
+  importCoursewareFromUrl,
+  listCourseware,
+  uploadCourseware,
+} from '@/api/courseware'
 import { getCoursewareStatusMeta } from '@/constants/courseware'
 import { useCourseStore } from '@/stores/course'
 import { getErrorMessage } from '@/utils'
@@ -126,8 +180,20 @@ const uploadError = ref(null)
 const uploadedCourseware = ref([])
 const latestCoursewareId = ref('')
 const lastSelectedFile = ref(null)
+const importUrl = ref('')
+const importName = ref('')
+const urlTask = ref(null)
+const urlImportLoading = ref(false)
 
 let pollTimer = null
+let urlTaskPollTimer = null
+
+const urlImportSteps = [
+  { key: 'QUEUED', label: '排队' },
+  { key: 'FETCHING', label: '抓取' },
+  { key: 'DOWNLOADING', label: '下载' },
+  { key: 'PARSING', label: '解析' },
+]
 
 const latestCourseware = computed(() =>
   uploadedCourseware.value.find(item => item.id === latestCoursewareId.value) || uploadedCourseware.value[0] || null,
@@ -173,6 +239,8 @@ const showProgress = computed(() => uploadStatus.value && uploadStatus.value.pro
 const canRetryUpload = computed(
   () => Boolean(lastSelectedFile.value) && uploadStatus.value?.status !== 'uploading',
 )
+const urlImportDisabled = computed(() => urlImportLoading.value || !importUrl.value)
+const activeUrlStep = computed(() => urlTask.value?.stage || 'QUEUED')
 
 const showError = (error, fallback) => {
   uploadError.value = getErrorMessage(error, fallback)
@@ -256,6 +324,69 @@ const pollParseStatus = coursewareId => {
       // 轮询期间的瞬时错误不打断主流程
     }
   }, 3000)
+}
+
+const pollUrlImportTask = taskId => {
+  if (urlTaskPollTimer) {
+    clearInterval(urlTaskPollTimer)
+  }
+
+  urlTaskPollTimer = setInterval(async () => {
+    try {
+      const response = await getUrlImportTask(taskId)
+      urlTask.value = response.data
+
+      if (['WAITING_CRAWLER', 'SUCCESS', 'FAILED'].includes(urlTask.value?.status)) {
+        clearInterval(urlTaskPollTimer)
+        urlTaskPollTimer = null
+      }
+    } catch (error) {
+      clearInterval(urlTaskPollTimer)
+      urlTaskPollTimer = null
+      showError(error, 'URL 导入任务状态查询失败，请稍后重试。')
+    }
+  }, 2000)
+}
+
+const handleUrlImport = async () => {
+  if (urlImportDisabled.value) {
+    return
+  }
+
+  uploadError.value = null
+  urlImportLoading.value = true
+
+  try {
+    const response = await importCoursewareFromUrl({
+      url: importUrl.value,
+      name: importName.value || undefined,
+    })
+    urlTask.value = response.data
+    latestCoursewareId.value = urlTask.value?.coursewareId || ''
+
+    const courseware = upsertCourseware({
+      id: urlTask.value?.coursewareId,
+      name: urlTask.value?.name || importName.value || importUrl.value,
+      status: 'PARSING',
+      createdAt: new Date().toISOString(),
+      currentTaskStatus: 'PENDING',
+    })
+    courseStore.addCourseware(courseware)
+
+    uploadStatus.value = {
+      status: 'success',
+      message: 'URL 导入任务已创建，等待爬虫 worker 接入。',
+      progress: urlTask.value?.progress || 5,
+    }
+
+    if (urlTask.value?.taskId) {
+      pollUrlImportTask(urlTask.value.taskId)
+    }
+  } catch (error) {
+    showError(error, 'URL 导入失败，请检查链接后重试。')
+  } finally {
+    urlImportLoading.value = false
+  }
 }
 
 const handleFileSelected = async file => {
@@ -365,6 +496,9 @@ onUnmounted(() => {
   if (pollTimer) {
     clearInterval(pollTimer)
   }
+  if (urlTaskPollTimer) {
+    clearInterval(urlTaskPollTimer)
+  }
 })
 </script>
 
@@ -383,6 +517,79 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+}
+
+.url-import-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid rgba(105, 116, 154, 0.16);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.url-import-copy h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.url-import-copy p {
+  margin: 0.45rem 0 0;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.url-import-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.8fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.url-task-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.url-task-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.url-task-header strong {
+  color: var(--text-primary);
+}
+
+.url-progress-fill {
+  background: linear-gradient(90deg, #2fbf71, #3f8cff);
+}
+
+.url-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.url-steps span {
+  min-height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: rgba(123, 133, 159, 0.1);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+.url-steps span.active {
+  color: #ffffff;
+  background: #3f8cff;
 }
 
 .upload-status-panel {
@@ -493,6 +700,10 @@ onUnmounted(() => {
 }
 
 @media (max-width: 640px) {
+  .url-import-controls {
+    grid-template-columns: 1fr;
+  }
+
   .status-summary {
     flex-direction: column;
   }
