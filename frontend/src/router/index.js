@@ -19,6 +19,14 @@ const routes = [
     },
   },
   {
+    path: '/course-resource-import',
+    name: 'CourseResourceImport',
+    component: () => import('../views/CourseResourceImportView.vue'),
+    meta: {
+      title: '从超星课程导入课件',
+    },
+  },
+  {
     path: '/courses',
     name: 'Courses',
     component: () => import('../views/Courses.vue'),
@@ -66,7 +74,7 @@ const router = createRouter({
 })
 
 router.beforeEach((to, from, next) => {
-  const appTitle = import.meta.env.VITE_APP_TITLE || 'IEA 智能教学助手'
+  const appTitle = import.meta.env.VITE_APP_TITLE || 'Interactive-Edu-Agent'
   document.title = `${to.meta.title || 'Interactive-Edu-Agent'} - ${appTitle}`
   next()
 })

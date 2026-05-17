@@ -55,6 +55,10 @@ const isNavActive = path => {
     return route.path.startsWith('/courses') || route.path.startsWith('/script/') || route.path.startsWith('/lecture/')
   }
 
+  if (path === '/upload') {
+    return route.path.startsWith('/upload') || route.path.startsWith('/course-resource-import')
+  }
+
   return route.path.startsWith(path)
 }
 </script>
