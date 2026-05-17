@@ -27,6 +27,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -54,6 +56,42 @@ public class CoursewareService {
     private final ConcurrentMap<String, ParsedCourseware> parsedStore = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, ScriptView> scriptStore = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, String> scriptStatusStore = new ConcurrentHashMap<>();
+
+    public CoursewareUploadResult importLocalFile(Path localFile, String requestedName) {
+        if (localFile == null) {
+            throw new IllegalArgumentException("localFile must not be null");
+        }
+        Path normalizedFile = localFile.toAbsolutePath().normalize();
+        if (!Files.exists(normalizedFile) || !Files.isRegularFile(normalizedFile)) {
+            throw new IllegalArgumentException("Imported local file does not exist: " + normalizedFile);
+        }
+
+        String coursewareId = "cware_" + UUID.randomUUID().toString().replace("-", "");
+        String filename = normalizeFilename(normalizedFile.getFileName().toString());
+        String displayName = resolveDisplayName(requestedName, filename);
+        String contentType = probeContentType(normalizedFile);
+        log.info(
+                "Courseware local import accepted. coursewareId={}, file={}, displayName={}",
+                coursewareId,
+                normalizedFile,
+                displayName
+        );
+
+        CoursewareState state = new CoursewareState(
+                coursewareId,
+                displayName,
+                filename,
+                normalizedFile.toString(),
+                "local",
+                contentType
+        );
+        state.setStatus(CoursewareStatus.PARSING.name());
+        state.setCurrentTaskStatus(TaskStatus.RUNNING.name());
+        coursewareStore.put(coursewareId, state);
+
+        taskExecutor.execute(() -> completeParse(state));
+        return new CoursewareUploadResult(coursewareId, CoursewareStatus.UPLOADED.name());
+    }
 
     public CoursewareUploadResult upload(MultipartFile file, String requestedName) {
         if (file == null || file.isEmpty()) {
@@ -645,6 +683,29 @@ public class CoursewareService {
 
     private String defaultText(String text, String fallback) {
         return StringUtils.hasText(text) ? text.trim() : fallback;
+    }
+
+    private String probeContentType(Path path) {
+        try {
+            String detected = Files.probeContentType(path);
+            if (StringUtils.hasText(detected)) {
+                return detected;
+            }
+        } catch (Exception ignored) {
+            // fall through to extension-based detection
+        }
+
+        String lowerName = path.getFileName().toString().toLowerCase(Locale.ROOT);
+        if (lowerName.endsWith(".pdf")) {
+            return "application/pdf";
+        }
+        if (lowerName.endsWith(".pptx")) {
+            return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+        }
+        if (lowerName.endsWith(".ppt")) {
+            return "application/vnd.ms-powerpoint";
+        }
+        return "application/octet-stream";
     }
 
     private record ParsedCourseware(String coursewareId, List<ParsedSegment> segments) {
