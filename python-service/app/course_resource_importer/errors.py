@@ -20,3 +20,7 @@ class DownstreamFetchError(CourseResourceImporterError):
 
 class UnsafeUrlError(CourseResourceImporterError):
     """Raised when a URL is outside the allowed host or scheme policy."""
+
+
+class NoSlideImagesError(CourseResourceImporterError):
+    """Raised when no downloadable slide images are available for PDF building."""

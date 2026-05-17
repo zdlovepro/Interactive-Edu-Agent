@@ -4,11 +4,13 @@ from .downloader import DownloadPlan, DownloadResult, build_download_plan, downl
 from .html_resource_discoverer import discover_resources_from_html
 from .js_resource_discoverer import discover_resources_from_js_text
 from .json_resource_discoverer import discover_resources_from_json
+from .pdf_builder import build_pdf_from_slide_images, select_slide_images_from_results
 from .resource_classifier import ImageProbe, classify_resource, classify_resources
 from .errors import (
     CourseResourceImporterError,
     DownstreamFetchError,
     InvalidCourseRefError,
+    NoSlideImagesError,
     RateLimitedError,
     UnauthorizedFetchError,
     UnsafeUrlError,
@@ -26,11 +28,13 @@ __all__ = [
     "DiscoveredResource",
     "ImageProbe",
     "InvalidCourseRefError",
+    "NoSlideImagesError",
     "RateLimitedError",
     "UnauthorizedFetchError",
     "UnsafeUrlError",
     "build_chaoxing_course_url",
     "build_download_plan",
+    "build_pdf_from_slide_images",
     "classify_resource",
     "classify_resources",
     "discover_resources_from_html",
@@ -40,4 +44,5 @@ __all__ = [
     "fetch_authorized_html",
     "parse_chaoxing_course_url",
     "sanitize_headers_for_log",
+    "select_slide_images_from_results",
 ]
