@@ -48,6 +48,20 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("LLM_ENABLE_THINKING", "DEEPSEEK_ENABLE_THINKING"),
     )
 
+    # ---------- Vision Model Config (Optional) ----------
+    VISION_API_KEY: str = Field(default="", validation_alias=AliasChoices("VISION_API_KEY", "VISION_KEY"))
+    VISION_API_BASE: str = Field(
+        default="",
+        validation_alias=AliasChoices("VISION_API_BASE", "VISION_BASE"),
+    )
+    VISION_MODEL_NAME: str = Field(
+        default="",
+        validation_alias=AliasChoices("VISION_MODEL_NAME", "VISION_MODEL"),
+    )
+    VISION_TEMPERATURE: float = 0.2
+    VISION_MAX_TOKENS: int = 512
+    VISION_TIMEOUT: int = 120
+
     class Config:
         env_file = ".env"
 

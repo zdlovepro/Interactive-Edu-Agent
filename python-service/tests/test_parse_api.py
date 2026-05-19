@@ -17,6 +17,14 @@ def test_health_returns_code_zero(request_app):
     }
 
 
+def test_json_response_contains_utf8_charset(request_app):
+    response = request_app("GET", "/python/v1/health")
+
+    content_type = response.headers.get("content-type", "")
+    assert "application/json" in content_type.lower()
+    assert "charset=utf-8" in content_type.lower()
+
+
 def test_parse_request_accepts_camel_case_fields(request_app, monkeypatch):
     captured = {}
 

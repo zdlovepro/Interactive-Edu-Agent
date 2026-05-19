@@ -14,6 +14,8 @@ class ChunkMetadata(BaseModel):
     char_count: int = Field(..., ge=1, description="Character count in the chunk")
     title: str | None = Field(default=None, description="Optional page title")
     knowledge_points: list[str] | None = Field(default=None, description="Optional knowledge points")
+    visual_summary: str | None = Field(default=None, description="Optional visual summary for the page")
+    visual_objects: list[str] | None = Field(default=None, description="Optional detected visual objects")
 
 
 class TextChunk(BaseModel):
