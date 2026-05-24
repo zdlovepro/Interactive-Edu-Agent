@@ -41,4 +41,12 @@ export const COURSE_RESOURCE_IMPORT_API = {
   CANCEL: taskId => `/course-resource-import/tasks/${taskId}/cancel`,
 }
 
+export const VIDEO_ASSET_API = {
+  LIST: '/video-assets',
+  DETAIL: assetId => `/video-assets/${assetId}`,
+  UPLOAD: '/video-assets/upload',
+  IMPORT_SAMPLE: '/video-assets/import-sample',
+  TRANSCODE: assetId => `/video-assets/${assetId}/transcode`,
+}
+
 export const OTHER_API = {}

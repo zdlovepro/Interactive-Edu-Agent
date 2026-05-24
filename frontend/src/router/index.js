@@ -27,6 +27,14 @@ const routes = [
     },
   },
   {
+    path: '/video-assets',
+    name: 'VideoAssets',
+    component: () => import('../views/VideoAssetsView.vue'),
+    meta: {
+      title: '视频资产与 HLS 播放',
+    },
+  },
+  {
     path: '/courses',
     name: 'Courses',
     component: () => import('../views/Courses.vue'),
