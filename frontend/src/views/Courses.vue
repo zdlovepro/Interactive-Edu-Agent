@@ -6,7 +6,7 @@
           <span class="eyebrow">课程工作台</span>
           <h1 class="page-title">课程列表</h1>
           <p class="page-description">
-            统一查看上传的课件、处理进度与课堂入口，适合课前准备和后续继续编辑。
+            统一查看上传的课件、超星课程导入任务与后续讲稿入口，适合课前准备和课后继续处理。
           </p>
         </div>
       </div>
@@ -23,7 +23,12 @@
               placeholder="搜索课程名称"
             />
           </div>
-          <AppButton @click="router.push('/upload')">上传课件</AppButton>
+          <div class="toolbar-actions">
+            <AppButton variant="secondary" @click="router.push('/course-resource-import')">
+              从超星课程导入
+            </AppButton>
+            <AppButton @click="router.push('/upload')">上传课件</AppButton>
+          </div>
         </div>
       </AppCard>
     </section>
@@ -41,7 +46,7 @@
     <section class="page-shell page-section">
       <div v-if="errorMessage" class="inline-error">
         <span>{{ errorMessage }}</span>
-        <button @click="errorMessage = ''">关闭</button>
+        <button type="button" @click="errorMessage = ''">关闭</button>
       </div>
 
       <div v-if="loading" class="course-grid">
@@ -64,10 +69,10 @@
 
       <AppCard v-else tone="glass">
         <EmptyState
-          title="暂无课程，先上传一个课件吧"
-          description="上传后可以生成讲稿、进入课堂，并在这里统一管理教学资源。"
-          action-label="上传课件"
-          @action="router.push('/upload')"
+          title="还没有课程资源"
+          description="你可以先上传本地课件，也可以直接从超星课程页导入课件资源。"
+          action-label="从超星课程导入"
+          @action="router.push('/course-resource-import')"
         />
       </AppCard>
     </section>
@@ -103,27 +108,31 @@ const filteredCourses = computed(() => {
 const statsCards = computed(() => {
   const total = coursewareList.value.length
   const ready = coursewareList.value.filter(item => item.status === 'READY').length
-  const generating = coursewareList.value.filter(item => item.status === 'GENERATING_SCRIPT' || item.status === 'PARSING').length
+  const processing = coursewareList.value.filter(
+    item => item.status === 'GENERATING_SCRIPT' || item.status === 'PARSING' || item.status === 'PARSED',
+  ).length
   const failed = coursewareList.value.filter(item => item.status === 'FAILED').length
 
   return [
-    { label: '课程总数', value: total, description: '当前上传并可追踪的课件数量' },
-    { label: '已就绪', value: ready, description: '可以直接查看讲稿或进入课堂' },
-    { label: '处理中', value: generating, description: '正在解析或生成讲稿的课程' },
-    { label: '失败', value: failed, description: '需要重新上传或再次处理的课程' },
+    { label: '课程总数', value: total, description: '当前可继续追踪的课件与课程资源。' },
+    { label: '已就绪', value: ready, description: '可以直接查看讲稿或进入讲课页。' },
+    { label: '处理中', value: processing, description: '正在解析课件或生成讲稿的课程。' },
+    { label: '失败', value: failed, description: '需要重新上传或重新处理的课程。' },
   ]
 })
 
-const normalizeCourseware = item => ({
-  id: item?.id || item?.coursewareId || '',
-  name: item?.name || '未命名课程',
-  status: item?.status || 'UPLOADED',
-  createdAt: item?.createdAt || '',
-  updatedAt: item?.updatedAt || '',
-  currentTaskStatus: item?.currentTaskStatus || '',
-})
+function normalizeCourseware(item) {
+  return {
+    id: item?.id || item?.coursewareId || '',
+    name: item?.name || '未命名课程',
+    status: item?.status || 'UPLOADED',
+    createdAt: item?.createdAt || '',
+    updatedAt: item?.updatedAt || '',
+    currentTaskStatus: item?.currentTaskStatus || '',
+  }
+}
 
-const loadCoursewareList = async () => {
+async function loadCoursewareList() {
   loading.value = true
   errorMessage.value = ''
 
@@ -139,11 +148,11 @@ const loadCoursewareList = async () => {
   }
 }
 
-const openScript = courseware => {
+function openScript(courseware) {
   router.push({ name: 'Script', params: { coursewareId: courseware.id } })
 }
 
-const enterLecture = courseware => {
+function enterLecture(courseware) {
   router.push({ name: 'Lecture', params: { coursewareId: courseware.id } })
 }
 
@@ -167,6 +176,12 @@ onMounted(() => {
 .toolbar-search {
   flex: 1;
   max-width: 420px;
+}
+
+.toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 
 .stats-grid,
@@ -225,7 +240,12 @@ onMounted(() => {
   width: 100%;
   height: 0.95rem;
   border-radius: 999px;
-  background: linear-gradient(90deg, rgba(229, 232, 246, 0.8), rgba(242, 244, 255, 1), rgba(229, 232, 246, 0.8));
+  background: linear-gradient(
+    90deg,
+    rgba(229, 232, 246, 0.8),
+    rgba(242, 244, 255, 1),
+    rgba(229, 232, 246, 0.8)
+  );
   background-size: 200% 100%;
   animation: shimmer 1.2s infinite linear;
 }
@@ -256,6 +276,10 @@ onMounted(() => {
 
   .toolbar-search {
     max-width: none;
+  }
+
+  .toolbar-actions {
+    flex-direction: column;
   }
 }
 
