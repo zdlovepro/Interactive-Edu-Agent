@@ -40,3 +40,12 @@ tts:
     speech-rate: ${TTS_DASHSCOPE_SPEECH_RATE:0}
     pitch-rate: ${TTS_DASHSCOPE_PITCH_RATE:0}
     volume: ${TTS_DASHSCOPE_VOLUME:50}
+
+video:
+  asset:
+    local-base-dir: ${VIDEO_ASSET_LOCAL_BASE_DIR:./data/video-assets}
+    ffmpeg-command: ${VIDEO_FFMPEG_COMMAND:ffmpeg}
+    hls-segment-seconds: ${VIDEO_HLS_SEGMENT_SECONDS:6}
+    sample-import-candidates:
+      - ../frontend/public/sample/sample.mp4
+      - frontend/public/sample/sample.mp4

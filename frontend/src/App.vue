@@ -42,6 +42,7 @@ const route = useRoute()
 const navItems = [
   { label: '首页', to: '/' },
   { label: '上传课件', to: '/upload' },
+  { label: '视频资产', to: '/video-assets' },
   { label: '课程列表', to: '/courses' },
   { label: '我的课程', to: '/mine' },
 ]
@@ -52,11 +53,19 @@ const isNavActive = path => {
   }
 
   if (path === '/courses') {
-    return route.path.startsWith('/courses') || route.path.startsWith('/script/') || route.path.startsWith('/lecture/')
+    return (
+      route.path.startsWith('/courses') ||
+      route.path.startsWith('/script/') ||
+      route.path.startsWith('/lecture/')
+    )
   }
 
   if (path === '/upload') {
     return route.path.startsWith('/upload') || route.path.startsWith('/course-resource-import')
+  }
+
+  if (path === '/video-assets') {
+    return route.path.startsWith('/video-assets')
   }
 
   return route.path.startsWith(path)
