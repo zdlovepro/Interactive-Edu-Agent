@@ -3,7 +3,21 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+try:  # pragma: no cover - real splitter is preferred when LangChain is installed
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
+except ImportError:  # pragma: no cover - deterministic fallback for slim envs
+    class RecursiveCharacterTextSplitter:
+        def __init__(self, *, chunk_size: int, chunk_overlap: int, length_function=len, separators=None) -> None:
+            self.chunk_size = max(1, chunk_size)
+            self.chunk_overlap = max(0, min(chunk_overlap, self.chunk_size - 1))
+            self.length_function = length_function
+
+        def split_text(self, text: str) -> list[str]:
+            normalized = str(text or "")
+            if not normalized:
+                return []
+            step = max(1, self.chunk_size - self.chunk_overlap)
+            return [normalized[start : start + self.chunk_size] for start in range(0, len(normalized), step)]
 
 from app.schemas.chunk import ChunkMetadata, TextChunk
 from app.utils.logger import logger

@@ -736,6 +736,53 @@ CompletableFuture<TtsResult> synthesizeAsync(TtsRequest request)
 
 > **安全规约**：`app-key`、`access-key-id`、`access-key-secret` 必须通过环境变量注入，禁止明文提交到代码仓库。
 
+
+### 7.8 Python 数字人音频时间轴与动作驱动协议
+
+> 用于任务 33、34、35：读取 TTS 音频或音频时长，生成文本词元毫秒级时间轴、音素/口型片段以及数字人动作驱动帧。接口为 Java 后端内部调用，供后续数字人视频异步渲染调度使用。
+
+#### 接口
+
+- 路径：`POST /python/v1/digital-human/audio-drive`
+- 响应：统一 `BaseResponse`
+
+#### 请求字段
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `coursewareId` | String | 是 | 课件唯一标识 |
+| `pageIndex` | Integer | 否 | 页码，从 1 开始 |
+| `scriptText` | String | 是 | 该页 TTS 讲稿文本 |
+| `audioPath` | String | 否 | Python 服务可访问的本地 PCM WAV 文件路径 |
+| `audioUrl` | String | 否 | TTS 音频 URL，用于协议元信息透传 |
+| `audioDurationMs` | Integer | 否 | 当无法读取 WAV 时的音频时长兜底值；`audioPath` 和 `audioDurationMs` 至少传一个 |
+| `frameIntervalMs` | Integer | 否 | 动作帧间隔，默认 40ms，范围 20~200ms |
+| `protocolFormat` | String | 否 | `json` / `xml` / `both`，默认 `json` |
+| `avatarId` | String | 否 | 数字人形象标识 |
+| `sdkVersion` | String | 否 | 驱动协议版本或厂商协议版本标记 |
+
+#### 响应 data 字段
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `coursewareId` | String | 课件唯一标识 |
+| `pageIndex` | Integer | 页码 |
+| `audio` | Object | 音频元信息，含 `durationMs`、`sampleRate`、`channels`、`source` |
+| `tokens` | Array | 词元时间轴，含 `tokenIndex`、`token`、`startMs`、`endMs`、`phoneme`、`viseme` |
+| `phonemes` | Array | 音素/口型片段，含 `startMs`、`endMs`、`phoneme`、`viseme`、`energy`、`confidence` |
+| `frames` | Array | 动作驱动帧，含 `timeMs`、口型系数、眨眼、头动和手势语义 |
+| `protocolJson` | Object | JSON 驱动协议；`protocolFormat=xml` 时为 `null` |
+| `protocolXml` | String | XML 驱动协议；`protocolFormat=json` 时为 `null` |
+| `warnings` | Array | 降级或兼容提示 |
+
+#### 处理策略
+
+1. 优先读取 `audioPath` 指向的 PCM WAV，计算时长、采样率、声道数和短时能量特征；
+2. 当仅提供 `audioDurationMs` 时，生成确定性的文本驱动兜底时间轴，并在 `warnings` 中记录降级原因；
+3. 对讲稿进行中英文混合词元切分，保留标点作为停顿边界；
+4. 生成毫秒级词元时间轴、音素/口型片段和固定间隔动作帧；
+5. 输出厂商中立 JSON/XML，后续 Java 调度层可再映射到具体数字人 SDK。
+
 ---
 
 ## 8. 典型业务流程
