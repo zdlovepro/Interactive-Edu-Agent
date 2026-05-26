@@ -18,6 +18,13 @@
             </div>
           </div>
 
+          <DualTrackVideoStage
+            :lecture-status="lectureStatus"
+            :current-page="currentPage"
+            :title="currentSlide?.title"
+            :is-speaking="isSpeaking"
+          />
+
           <AppCard class="lecture-script-card" tone="glass">
             <template v-if="currentSlide">
               <div class="script-card__header">
@@ -249,6 +256,7 @@ import { useRoute } from 'vue-router'
 import { marked } from 'marked'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
+import DualTrackVideoStage from '@/components/lecture/DualTrackVideoStage.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { recognizeAudio } from '@/api/asr'
