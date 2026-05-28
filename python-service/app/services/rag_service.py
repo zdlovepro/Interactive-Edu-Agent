@@ -2,8 +2,23 @@ from __future__ import annotations
 
 import time
 from collections.abc import Iterator
+from dataclasses import dataclass
 
-from langchain.schema import HumanMessage, SystemMessage
+try:  # pragma: no cover - real LangChain messages are used when installed
+    from langchain.schema import HumanMessage, SystemMessage
+except ImportError:  # pragma: no cover - keeps QA fallback importable without LangChain
+    @dataclass
+    class _FallbackMessage:
+        content: str
+        type: str
+
+    class SystemMessage(_FallbackMessage):
+        def __init__(self, content: str) -> None:
+            super().__init__(content=content, type="system")
+
+    class HumanMessage(_FallbackMessage):
+        def __init__(self, content: str) -> None:
+            super().__init__(content=content, type="human")
 
 from app.clients.llm_client import get_llm_client
 from app.core.config import settings

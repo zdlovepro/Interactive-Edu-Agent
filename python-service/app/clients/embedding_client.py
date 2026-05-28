@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import os
-from typing import List
+from typing import Any, List
 
-from langchain_community.embeddings import HuggingFaceBgeEmbeddings
-from openai import OpenAI
+try:  # pragma: no cover - real OpenAI client is used when installed
+    from openai import OpenAI
+except ImportError:  # pragma: no cover - allows non-LLM/non-embedding endpoints in slim envs
+    OpenAI = None
+
+try:  # pragma: no cover - exercised only when optional local embedding deps exist
+    from langchain_community.embeddings import HuggingFaceBgeEmbeddings
+except ImportError:  # pragma: no cover - keeps non-vector endpoints importable in slim envs
+    HuggingFaceBgeEmbeddings = None
 
 from app.core.config import settings
 from app.core.exceptions import VectorStoreException
@@ -19,8 +26,8 @@ class EmbeddingClient:
         self.provider = (settings.EMBEDDING_PROVIDER or "dashscope").strip().lower()
         self.model_name = self._resolve_model_name()
         self.dim_size = settings.EMBEDDING_DIM_SIZE
-        self._embeddings: HuggingFaceBgeEmbeddings | None = None
-        self._client: OpenAI | None = None
+        self._embeddings: Any | None = None
+        self._client: Any | None = None
 
     def embed_text(self, text: str) -> List[float]:
         return self.embed_batch([text])[0]
@@ -95,7 +102,9 @@ class EmbeddingClient:
             finalized_results.append(embedding if embedding is not None else self._zero_vector())
         return finalized_results
 
-    def _get_embeddings(self) -> HuggingFaceBgeEmbeddings:
+    def _get_embeddings(self) -> Any:
+        if HuggingFaceBgeEmbeddings is None:
+            raise VectorStoreException("本地向量模型依赖 langchain-community 未安装")
         if self._embeddings is None:
             try:
                 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
@@ -110,7 +119,9 @@ class EmbeddingClient:
                 raise VectorStoreException("向量模型初始化失败") from exc
         return self._embeddings
 
-    def _get_client(self, api_key: str) -> OpenAI:
+    def _get_client(self, api_key: str) -> Any:
+        if OpenAI is None:
+            raise VectorStoreException("Embedding API 依赖 openai 未安装")
         if self._client is None:
             self._client = OpenAI(
                 api_key=api_key,

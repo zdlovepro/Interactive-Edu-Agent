@@ -2,10 +2,51 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from typing import Any
 
-from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
 from pydantic import ValidationError
+
+try:  # pragma: no cover - real LangChain prompt templates are used when installed
+    from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
+except ImportError:  # pragma: no cover - lightweight equivalent for slim runtime/test environments
+    @dataclass
+    class _FallbackPromptMessage:
+        content: str
+        type: str
+
+    @dataclass
+    class _FallbackMessageTemplate:
+        template: str
+        message_type: str
+
+        @classmethod
+        def from_template(cls, template: str):
+            return cls(template=template, message_type="human")
+
+        def format(self, **kwargs: Any) -> _FallbackPromptMessage:
+            return _FallbackPromptMessage(content=self.template.format(**kwargs), type=self.message_type)
+
+    class SystemMessagePromptTemplate(_FallbackMessageTemplate):
+        @classmethod
+        def from_template(cls, template: str):
+            return cls(template=template, message_type="system")
+
+    class HumanMessagePromptTemplate(_FallbackMessageTemplate):
+        @classmethod
+        def from_template(cls, template: str):
+            return cls(template=template, message_type="human")
+
+    class ChatPromptTemplate:
+        def __init__(self, templates: list[_FallbackMessageTemplate]) -> None:
+            self._templates = templates
+
+        @classmethod
+        def from_messages(cls, templates: list[_FallbackMessageTemplate]):
+            return cls(templates)
+
+        def format_messages(self, **kwargs: Any) -> list[_FallbackPromptMessage]:
+            return [template.format(**kwargs) for template in self._templates]
 
 from app.clients.llm_client import get_llm_client
 from app.core.config import settings

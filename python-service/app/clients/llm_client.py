@@ -1,9 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from typing import Any
 
-from langchain.schema import BaseMessage
-from openai import OpenAI
+try:  # pragma: no cover - real OpenAI client is used when installed
+    from openai import OpenAI
+except ImportError:  # pragma: no cover - allows non-LLM/non-embedding endpoints in slim envs
+    OpenAI = None
+
+try:  # pragma: no cover - real LangChain messages are used when installed
+    from langchain.schema import BaseMessage
+except ImportError:  # pragma: no cover - tests and fallback prompt objects only need content/type
+    BaseMessage = Any
 
 from app.core.config import settings
 from app.core.exceptions import ModelOutputException, PythonServiceException, THIRD_PARTY_SERVICE_ERROR
@@ -14,6 +22,8 @@ class LLMClient:
     def __init__(self) -> None:
         if not settings.LLM_API_KEY:
             raise PythonServiceException("LLM 服务未配置", code=THIRD_PARTY_SERVICE_ERROR)
+        if OpenAI is None:
+            raise PythonServiceException("LLM API 依赖 openai 未安装", code=THIRD_PARTY_SERVICE_ERROR)
 
         self._client = OpenAI(
             api_key=settings.LLM_API_KEY,
@@ -21,7 +31,7 @@ class LLMClient:
         )
 
     @property
-    def client(self) -> OpenAI:
+    def client(self) -> Any:
         return self._client
 
     def invoke(self, messages: list[BaseMessage]) -> str:
