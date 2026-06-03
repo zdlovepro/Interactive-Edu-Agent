@@ -23,6 +23,15 @@ public class PythonClientProperties {
     /** QA SSE API path, e.g. /python/v1/qa/stream */
     private String qaStreamPath = "/python/v1/qa/stream";
 
+    /** Course resource import API path. */
+    private String courseResourceImportPath = "/python/v1/course-resource-import/import";
+
+    /** Digital-human audio-drive API path. */
+    private String digitalHumanAudioDrivePath = "/python/v1/digital-human/audio-drive";
+
+    /** Optional visual QA API path. */
+    private String visualQaPath = "/python/v1/rag/visual-ask";
+
     /** HTTP connect timeout. */
     private Duration connectTimeout = Duration.ofSeconds(5);
 

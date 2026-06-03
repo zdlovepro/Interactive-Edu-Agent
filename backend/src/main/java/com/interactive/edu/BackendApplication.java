@@ -1,6 +1,7 @@
 package com.interactive.edu;
 
 import com.interactive.edu.config.AsrProperties;
+import com.interactive.edu.config.CorsProperties;
 import com.interactive.edu.config.PythonClientProperties;
 import com.interactive.edu.config.StorageProperties;
 import com.interactive.edu.config.TtsProperties;
@@ -12,6 +13,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 @SpringBootApplication
 @EnableConfigurationProperties({
         AsrProperties.class,
+        CorsProperties.class,
         StorageProperties.class,
         PythonClientProperties.class,
         TtsProperties.class,

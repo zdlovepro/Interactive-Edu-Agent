@@ -98,6 +98,9 @@ public class ScriptCallbackService {
         log.warn("Courseware missing when callback arrived. Create placeholder. coursewareId={}", coursewareId);
         Courseware courseware = new Courseware();
         courseware.setId(coursewareId);
+        courseware.setName("Recovered Courseware");
+        courseware.setFileUrl("callback/" + coursewareId);
+        courseware.setFileType("APPLICATION/OCTET-STREAM");
         courseware.setStatus(CoursewareStatus.GENERATING_SCRIPT.name());
         return coursewareRepository.save(courseware);
     }
