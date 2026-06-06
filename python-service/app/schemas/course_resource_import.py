@@ -17,6 +17,7 @@ class CourseResourceImportHeaders(_ConfiguredModel):
     cookie: str | None = None
     authorization: str | None = None
     referer: str | None = None
+    user_agent: str | None = Field(None, validation_alias=AliasChoices("user_agent", "userAgent"))
 
 
 class DiscoveredResourcePayload(_ConfiguredModel):
@@ -61,14 +62,16 @@ class DiscoveredResourcePayload(_ConfiguredModel):
 
 class CourseResourceImportSourceRequest(_ConfiguredModel):
     source_type: str = Field(..., validation_alias=AliasChoices("source_type", "sourceType"))
-    url: str | None = None
-    courseid: str | None = None
-    clazzid: str | None = None
+    url: str | None = Field(None, validation_alias=AliasChoices("url", "courseUrl"))
+    courseid: str | None = Field(None, validation_alias=AliasChoices("courseid", "courseId"))
+    clazzid: str | None = Field(None, validation_alias=AliasChoices("clazzid", "clazzId"))
     cpi: str | None = None
     enc: str | None = None
+    t: str | None = None
     cookie: str | None = None
     authorization: str | None = None
     referer: str | None = None
+    user_agent: str | None = Field(None, validation_alias=AliasChoices("user_agent", "userAgent"))
 
 
 class CourseResourceImportDiscoverRequest(CourseResourceImportSourceRequest):

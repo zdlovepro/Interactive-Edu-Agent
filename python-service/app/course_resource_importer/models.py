@@ -11,6 +11,7 @@ class ChaoxingCourseRef:
     clazzid: str | None = None
     cpi: str | None = None
     enc: str | None = None
+    t: str | None = None
     raw_url: str | None = None
     referer: str | None = None
 

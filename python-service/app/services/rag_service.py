@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 try:  # pragma: no cover - real LangChain messages are used when installed
     from langchain.schema import HumanMessage, SystemMessage
-except ImportError:  # pragma: no cover - keeps QA fallback importable without LangChain
+except Exception:  # noqa: BLE001  # pragma: no cover - keeps QA fallback importable without LangChain
     @dataclass
     class _FallbackMessage:
         content: str

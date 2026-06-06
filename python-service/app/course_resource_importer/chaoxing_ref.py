@@ -20,6 +20,7 @@ def parse_chaoxing_course_url(url: str) -> ChaoxingCourseRef:
         clazzid=_get_single_query_value(query, "clazzid"),
         cpi=_get_single_query_value(query, "cpi"),
         enc=_get_single_query_value(query, "enc"),
+        t=_get_single_query_value(query, "t"),
         raw_url=url,
         referer=url,
     )
@@ -40,6 +41,8 @@ def build_chaoxing_course_url(ref: ChaoxingCourseRef) -> str:
         query_items.append(("cpi", ref.cpi))
     if ref.enc:
         query_items.append(("enc", ref.enc))
+    if ref.t:
+        query_items.append(("t", ref.t))
     query_items.extend(DEFAULT_COURSE_QUERY_SUFFIX)
 
     return f"{DEFAULT_COURSE_URL_BASE}?{urlencode(query_items)}"

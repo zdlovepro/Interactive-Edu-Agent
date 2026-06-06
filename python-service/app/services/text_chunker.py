@@ -5,7 +5,7 @@ from typing import Any
 
 try:  # pragma: no cover - real splitter is preferred when LangChain is installed
     from langchain.text_splitter import RecursiveCharacterTextSplitter
-except ImportError:  # pragma: no cover - deterministic fallback for slim envs
+except Exception:  # noqa: BLE001  # pragma: no cover - deterministic fallback for slim envs
     class RecursiveCharacterTextSplitter:
         def __init__(self, *, chunk_size: int, chunk_overlap: int, length_function=len, separators=None) -> None:
             self.chunk_size = max(1, chunk_size)

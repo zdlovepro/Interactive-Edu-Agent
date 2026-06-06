@@ -10,7 +10,7 @@ except ImportError:  # pragma: no cover - allows non-LLM/non-embedding endpoints
 
 try:  # pragma: no cover - real LangChain messages are used when installed
     from langchain.schema import BaseMessage
-except ImportError:  # pragma: no cover - tests and fallback prompt objects only need content/type
+except Exception:  # noqa: BLE001  # pragma: no cover - tests and fallback prompt objects only need content/type
     BaseMessage = Any
 
 from app.core.config import settings

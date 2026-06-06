@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from app.api.v1 import parse as parse_api
+from app.schemas.parse import PageContent, ParseResult
+from app.services import parse_service
 
 
 def test_health_returns_code_zero(request_app):
@@ -81,3 +83,39 @@ def test_unknown_exception_returns_base_response(request_app, monkeypatch):
     assert body["data"] is None
     assert body["message"] == "服务内部错误，请稍后重试"
     assert "sensitive internal detail" not in body["message"]
+
+
+def test_parse_contract_adds_page_details_without_removing_segments():
+    result = ParseResult(
+        courseware_id="cware_page_details",
+        file_type="pptx",
+        total_pages=1,
+        pages=[
+            PageContent(
+                page_index=1,
+                text="流程图说明导入步骤",
+                notes="",
+                image_placeholders=["[流程图:slide_1_flow_1]", "[图表:slide_1_chart_1]"],
+                formula_placeholders=["[公式:slide_1_formula_1]"],
+            )
+        ],
+    )
+
+    payload = parse_service._build_contract_payload(
+        result,
+        "demo.pptx",
+        visual_summary_by_page={},
+        page_images={1: "D:/tmp/page_1.png"},
+    )
+
+    assert payload["pages"] == 1
+    assert payload["coursewareId"] == "cware_page_details"
+    assert payload["segments"][0]["pageIndex"] == 1
+    assert payload["segments"][0]["visualSummary"]
+    assert payload["segments"][0]["pageImagePath"] == "D:/tmp/page_1.png"
+    assert payload["pageDetails"][0]["pageNo"] == 1
+    assert payload["pageDetails"][0]["text"] == "流程图说明导入步骤"
+    assert payload["pageDetails"][0]["imagePath"] == "D:/tmp/page_1.png"
+    assert payload["pageDetails"][0]["formulas"] == ["[公式:slide_1_formula_1]"]
+    assert payload["pageDetails"][0]["charts"] == ["[图表:slide_1_chart_1]"]
+    assert payload["pageDetails"][0]["diagrams"] == ["[流程图:slide_1_flow_1]"]

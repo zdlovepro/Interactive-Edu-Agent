@@ -5,6 +5,7 @@ import asyncio
 import httpx
 
 from app.api.v1 import qa as qa_api
+from app.api.v1 import rag as rag_api
 from app.core.config import settings
 from app.main import app
 from app.schemas.qa import QaAskTextRequest, QaAskTextResponse
@@ -214,3 +215,60 @@ def test_qa_stream_endpoint_returns_error_and_done_when_rag_service_fails(monkey
 
     assert any('"type": "error"' in line for line in lines)
     assert lines[-1] == 'data: {"type": "done"}'
+
+
+def test_rag_ask_endpoint_uses_compatibility_service(request_app, monkeypatch):
+    captured = {}
+
+    def fake_answer_rag_question(request):
+        captured["courseware_id"] = request.courseware_id
+        captured["page_index"] = request.page_index
+        return {"answer": "兼容问答", "evidence": [], "latencyMs": 1}
+
+    monkeypatch.setattr(rag_api, "answer_rag_question", fake_answer_rag_question)
+
+    response = request_app(
+        "POST",
+        "/python/v1/rag/ask",
+        json={
+            "coursewareId": "cware_rag_1",
+            "pageNo": 2,
+            "question": "这一页讲什么",
+        },
+    )
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["code"] == 0
+    assert payload["data"]["answer"] == "兼容问答"
+    assert captured == {"courseware_id": "cware_rag_1", "page_index": 2}
+
+
+def test_visual_ask_endpoint_uses_page_text_and_visual_summary(request_app, monkeypatch):
+    monkeypatch.setattr(settings, "LLM_API_KEY", "")
+
+    response = request_app(
+        "POST",
+        "/python/v1/rag/visual-ask",
+        json={
+            "coursewareId": "cware_visual_1",
+            "pageNo": 1,
+            "question": "这张图表示什么意思？",
+            "pageImageUrl": "https://minio/pages/1.png",
+            "pageText": "本页讲解三阶段处理流程。",
+            "visualSummary": "这是一张流程图，展示输入、处理、输出三个步骤。",
+        },
+    )
+
+    payload = response.json()
+    data = payload["data"]
+    assert response.status_code == 200
+    assert payload["code"] == 0
+    assert "流程图" in data["answer"]
+    assert data["usedVision"] is False
+    assert data["fallbackReason"]
+    assert data["evidence"][0] == {
+        "pageNo": 1,
+        "type": "visualSummary",
+        "content": "这是一张流程图，展示输入、处理、输出三个步骤。",
+    }

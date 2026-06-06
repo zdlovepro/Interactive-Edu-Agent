@@ -114,3 +114,31 @@ def test_generate_audio_drive_endpoint_returns_base_response(request_app, tmp_pa
     assert payload["data"]["protocolJson"] is None
     assert payload["data"]["protocolXml"].startswith("<DigitalHumanDrive")
     assert payload["data"]["frames"]
+
+
+def test_digital_human_task_endpoint_returns_minimal_protocol(request_app):
+    response = request_app(
+        "POST",
+        "/python/v1/digital-human/tasks",
+        json={
+            "coursewareId": "cware_dh_task",
+            "pageNo": 1,
+            "scriptText": "这一页介绍课程目标。",
+            "audioDurationMs": 800,
+        },
+    )
+
+    payload = response.json()
+    data = payload["data"]
+
+    assert response.status_code == 200
+    assert payload["code"] == 0
+    assert data["taskId"].startswith("py_dh_")
+    assert data["status"] == "SUCCESS"
+    assert data["timeline"]
+    assert data["phonemes"]
+    assert data["actionFrames"]
+    assert data["mockVideoRequired"] is True
+
+    detail = request_app("GET", f"/python/v1/digital-human/tasks/{data['taskId']}")
+    assert detail.json()["data"]["taskId"] == data["taskId"]

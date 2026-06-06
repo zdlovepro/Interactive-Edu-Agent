@@ -3,8 +3,9 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.schemas.common import BaseResponse, success_response
-from app.schemas.digital_human import AudioDriveGenerateRequest
+from app.schemas.digital_human import AudioDriveGenerateRequest, DigitalHumanTaskCreateRequest
 from app.services.audio_drive_service import generate_audio_drive_protocol
+from app.services.digital_human_task_service import create_digital_human_task, get_digital_human_task
 from app.utils.logger import logger
 
 router = APIRouter(prefix="/digital-human", tags=["digital-human"])
@@ -20,3 +21,13 @@ async def generate_audio_drive_endpoint(request: AudioDriveGenerateRequest) -> B
     )
     result = generate_audio_drive_protocol(request)
     return success_response(result.model_dump(by_alias=True))
+
+
+@router.post("/tasks", response_model=BaseResponse, summary="Create digital-human task protocol")
+def create_digital_human_task_endpoint(request: DigitalHumanTaskCreateRequest) -> BaseResponse:
+    return success_response(create_digital_human_task(request))
+
+
+@router.get("/tasks/{task_id}", response_model=BaseResponse, summary="Get digital-human task protocol")
+def get_digital_human_task_endpoint(task_id: str) -> BaseResponse:
+    return success_response(get_digital_human_task(task_id))

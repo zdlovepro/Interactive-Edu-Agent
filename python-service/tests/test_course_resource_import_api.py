@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import uuid
 from pathlib import Path
 
 import httpx
@@ -9,6 +10,7 @@ import pytest
 
 from app.api.v1 import course_resource_import as course_resource_import_api
 from app.main import app
+from app.services import chaoxing_import_task_service
 from app.services import vector_store as vector_store_module
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -131,6 +133,9 @@ def test_import_endpoint_accepts_camel_case_fields(request_app, monkeypatch):
 
     async def fake_import(request):
         captured["source_type"] = request.source_type
+        captured["url"] = request.url
+        captured["courseid"] = request.courseid
+        captured["clazzid"] = request.clazzid
         captured["output_dir"] = request.output_dir
         captured["build_pdf"] = request.build_pdf
         return {
@@ -151,7 +156,9 @@ def test_import_endpoint_accepts_camel_case_fields(request_app, monkeypatch):
         "/python/v1/course-resource-import/import",
         json={
             "sourceType": "CHAOXING_COURSE",
-            "url": "https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/stu?courseid=260728285",
+            "courseUrl": "https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/stu?courseid=260728285",
+            "courseId": "260728285",
+            "clazzId": "139811358",
             "cookie": "secret-cookie",
             "outputDir": "data/course-import/import_xxx",
             "buildPdf": True,
@@ -163,6 +170,9 @@ def test_import_endpoint_accepts_camel_case_fields(request_app, monkeypatch):
     assert body["code"] == 0
     assert captured == {
         "source_type": "CHAOXING_COURSE",
+        "url": "https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/stu?courseid=260728285",
+        "courseid": "260728285",
+        "clazzid": "139811358",
         "output_dir": "data/course-import/import_xxx",
         "build_pdf": True,
     }
@@ -201,3 +211,79 @@ def test_discover_rejects_non_chaoxing_url(request_app):
     assert body["code"] == 40001
     assert body["data"] is None
     assert "chaoxing.com" in body["message"]
+
+
+def test_chaoxing_task_endpoint_returns_public_manifest(request_app, monkeypatch):
+    chaoxing_import_task_service.clear_chaoxing_import_tasks_for_test()
+    captured = {}
+    output_dir = Path("data") / "test-chaoxing-task" / uuid.uuid4().hex
+
+    async def fake_import(request):
+        captured["user_agent"] = request.user_agent
+        output_dir = request.output_path
+        output_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = output_dir / "manifest.json"
+        manifest_path.write_text(
+            """
+            {
+              "files": [
+                {
+                  "resource_id": "res_001",
+                  "title": "第1章课件",
+                  "type": "pptx",
+                  "file_name": "chapter1.pptx",
+                  "source_url": "https://p.ananas.chaoxing.com/chapter1.pptx",
+                  "local_path": "D:/tmp/chapter1.pptx",
+                  "sha256": "abc123",
+                  "size": 1024
+                }
+              ]
+            }
+            """,
+            encoding="utf-8",
+        )
+        return {
+            "manifest_path": str(manifest_path),
+            "parse_ready_manifest_path": str(output_dir / "parse_ready_manifest.json"),
+            "generated_pdf": None,
+            "summary": {"downloaded": 1, "failed": 0, "ignored": 0},
+        }
+
+    monkeypatch.setattr(chaoxing_import_task_service, "import_course_resources", fake_import)
+
+    response = request_app(
+        "POST",
+        "/python/v1/import/chaoxing/tasks",
+        json={
+            "courseUrl": "https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/stu?courseid=260728285&clazzid=139811358",
+            "cookie": "secret-cookie",
+            "userAgent": "UnitTest-UA",
+            "outputDir": str(output_dir),
+            "buildPdf": False,
+        },
+    )
+
+    body = response.json()
+    task_id = body["data"]["taskId"]
+
+    assert response.status_code == 200
+    assert body["code"] == 0
+    assert body["data"]["status"] == "SUCCESS"
+    assert captured["user_agent"] == "UnitTest-UA"
+    assert body["data"]["manifest"]["status"] == "SUCCESS"
+    assert body["data"]["manifest"]["courseId"] == "260728285"
+    assert body["data"]["manifest"]["clazzId"] == "139811358"
+    assert body["data"]["manifest"]["resources"][0] == {
+        "resourceId": "res_001",
+        "title": "第1章课件",
+        "type": "pptx",
+        "sourceUrl": "https://p.ananas.chaoxing.com/chapter1.pptx",
+        "localPath": "D:/tmp/chapter1.pptx",
+        "sha256": "abc123",
+        "size": 1024,
+        "parseReady": True,
+    }
+
+    manifest_response = request_app("GET", f"/python/v1/import/chaoxing/tasks/{task_id}/manifest")
+    assert manifest_response.json()["data"]["status"] == "SUCCESS"
+    assert manifest_response.json()["data"]["resources"][0]["parseReady"] is True

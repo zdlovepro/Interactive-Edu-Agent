@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 try:  # pragma: no cover - real LangChain prompt templates are used when installed
     from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
-except ImportError:  # pragma: no cover - lightweight equivalent for slim runtime/test environments
+except Exception:  # noqa: BLE001  # pragma: no cover - lightweight equivalent for slim runtime/test environments
     @dataclass
     class _FallbackPromptMessage:
         content: str

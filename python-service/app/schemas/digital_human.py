@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 
 class AudioDriveGenerateRequest(BaseModel):
@@ -93,3 +93,34 @@ class AudioDriveGenerateResponse(BaseModel):
     protocol_json: dict[str, Any] | None = Field(default=None, alias="protocolJson", description="JSON 驱动协议")
     protocol_xml: str | None = Field(default=None, alias="protocolXml", description="XML 驱动协议")
     warnings: list[str] = Field(default_factory=list, description="降级或兼容提示")
+
+
+class DigitalHumanTaskCreateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    courseware_id: str | None = Field(default=None, alias="coursewareId")
+    page_index: int | None = Field(
+        default=None,
+        ge=1,
+        alias="pageIndex",
+        validation_alias=AliasChoices("page_index", "pageIndex", "pageNo"),
+    )
+    script_text: str | None = Field(default=None, alias="scriptText")
+    audio_path: str | None = Field(default=None, alias="audioPath")
+    audio_url: str | None = Field(default=None, alias="audioUrl")
+    audio_duration_ms: int | None = Field(default=None, gt=0, alias="audioDurationMs")
+    frame_interval_ms: int = Field(default=40, ge=20, le=200, alias="frameIntervalMs")
+    avatar_id: str = Field(default="default-avatar", alias="avatarId")
+    sdk_version: str = Field(default="vendor-neutral-v1", alias="sdkVersion")
+
+
+class DigitalHumanTaskResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    task_id: str = Field(..., alias="taskId")
+    status: Literal["PENDING", "RUNNING", "SUCCESS", "FAILED"]
+    timeline: list[dict[str, Any]] = Field(default_factory=list)
+    phonemes: list[dict[str, Any]] = Field(default_factory=list)
+    action_frames: list[dict[str, Any]] = Field(default_factory=list, alias="actionFrames")
+    mock_video_required: bool = Field(True, alias="mockVideoRequired")
+    message: str | None = None
