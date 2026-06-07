@@ -20,5 +20,9 @@ class RagVisualAskRequest(_ConfiguredModel):
     page_no: int = Field(..., ge=1, validation_alias=AliasChoices("page_no", "pageNo", "pageIndex"))
     question: str = Field(..., min_length=1)
     page_image_url: str | None = Field(None, validation_alias=AliasChoices("page_image_url", "pageImageUrl"))
+    page_image_path: str | None = Field(
+        None,
+        validation_alias=AliasChoices("page_image_path", "pageImagePath", "imagePath"),
+    )
     page_text: str = Field("", validation_alias=AliasChoices("page_text", "pageText"))
     visual_summary: str = Field("", validation_alias=AliasChoices("visual_summary", "visualSummary"))
