@@ -17,6 +17,9 @@ spring:
       port: ${REDIS_PORT:6379}
       database: ${REDIS_DATABASE:0}
       password: ${REDIS_PASSWORD:}
+  sql:
+    init:
+      mode: ${SPRING_SQL_INIT_MODE:always}
 
 minio:
   endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
@@ -31,9 +34,13 @@ storage:
 python:
   client:
     base-url: ${PYTHON_CLIENT_BASE_URL:http://localhost:8001}
+    parse-path: ${PYTHON_PARSE_PATH:/python/v1/parse}
     script-generate-path: ${PYTHON_SCRIPT_GENERATE_PATH:/python/v1/script/generate}
     qa-path: ${PYTHON_QA_PATH:/python/v1/qa/ask-text}
     qa-stream-path: ${PYTHON_QA_STREAM_PATH:/python/v1/qa/stream}
+    course-resource-import-path: ${PYTHON_COURSE_RESOURCE_IMPORT_PATH:/python/v1/course-resource-import/import}
+    digital-human-audio-drive-path: ${PYTHON_DIGITAL_HUMAN_AUDIO_DRIVE_PATH:/python/v1/digital-human/audio-drive}
+    visual-qa-path: ${PYTHON_VISUAL_QA_PATH:/python/v1/rag/visual-ask}
 
 asr:
   enabled: ${ASR_ENABLED:false}
@@ -59,3 +66,16 @@ tts:
     speech-rate: ${TTS_DASHSCOPE_SPEECH_RATE:0}
     pitch-rate: ${TTS_DASHSCOPE_PITCH_RATE:0}
     volume: ${TTS_DASHSCOPE_VOLUME:50}
+
+video:
+  asset:
+    local-base-dir: ${VIDEO_ASSET_LOCAL_BASE_DIR:./data/video-assets}
+    ffmpeg-command: ${VIDEO_FFMPEG_COMMAND:ffmpeg}
+    hls-segment-seconds: ${VIDEO_HLS_SEGMENT_SECONDS:6}
+    sample-import-candidates:
+      - ../frontend/public/sample/sample.mp4
+      - frontend/public/sample/sample.mp4
+
+app:
+  cors:
+    allowed-origins: ${BACKEND_CORS_ALLOWED_ORIGINS:*}

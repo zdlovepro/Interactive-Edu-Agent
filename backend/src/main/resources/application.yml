@@ -25,5 +25,23 @@ python:
     parse-path: /python/v1/parse
     script-generate-path: /python/v1/script/generate
     qa-path: /python/v1/qa/ask-text
+    qa-stream-path: /python/v1/qa/stream
+    course-resource-import-path: /python/v1/course-resource-import/import
+    digital-human-audio-drive-path: /python/v1/digital-human/audio-drive
+    visual-qa-path: /python/v1/rag/visual-ask
     connect-timeout: 5s
     read-timeout: 30s
+
+app:
+  cors:
+    allowed-origins:
+      - "*"
+    allowed-methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - OPTIONS
+    allowed-headers:
+      - "*"
+    allow-credentials: false

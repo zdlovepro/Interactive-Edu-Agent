@@ -37,6 +37,12 @@ public class CoursewarePage {
     @Column(name = "image_url", length = 512)
     private String imageUrl;
 
+    @Column(name = "visual_summary", columnDefinition = "TEXT")
+    private String visualSummary;
+
+    @Column(name = "visual_objects_json", columnDefinition = "TEXT")
+    private String visualObjectsJson;
+
     @CreatedDate
     @Column(name = "create_time", updatable = false)
     private LocalDateTime createTime;

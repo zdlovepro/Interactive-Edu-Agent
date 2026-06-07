@@ -1,16 +1,24 @@
 package com.interactive.edu.service.courseware;
 
 import com.interactive.edu.dto.CoursewareUploadResult;
+import com.interactive.edu.entity.Courseware;
+import com.interactive.edu.entity.CoursewarePage;
+import com.interactive.edu.entity.LectureScript;
+import com.interactive.edu.entity.TtsAudioEntity;
 import com.interactive.edu.enums.CoursewareStatus;
 import com.interactive.edu.enums.TaskStatus;
 import com.interactive.edu.exception.BusinessException;
 import com.interactive.edu.exception.ErrorCode;
+import com.interactive.edu.repository.CoursewarePageRepository;
+import com.interactive.edu.repository.CoursewareRepository;
+import com.interactive.edu.repository.LectureScriptRepository;
+import com.interactive.edu.repository.TtsAudioRepository;
 import com.interactive.edu.service.python.PythonParseClient;
 import com.interactive.edu.service.python.PythonParseRequest;
 import com.interactive.edu.service.python.PythonScriptClient;
 import com.interactive.edu.service.python.PythonScriptRequest;
-import com.interactive.edu.service.storage.StorageServiceFactory;
-import com.interactive.edu.service.storage.StoredObject;
+import com.interactive.edu.storage.StorageServiceFactory;
+import com.interactive.edu.storage.StoredObject;
 import com.interactive.edu.service.tts.TtsService;
 import com.interactive.edu.vo.courseware.CoursewareDetailView;
 import com.interactive.edu.vo.courseware.CoursewareListItem;
@@ -22,6 +30,8 @@ import com.interactive.edu.vo.courseware.ScriptView;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -56,6 +66,21 @@ public class CoursewareService {
     private final ConcurrentMap<String, ParsedCourseware> parsedStore = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, ScriptView> scriptStore = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, String> scriptStatusStore = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, Map<Integer, String>> pageImageStore = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, String> coursewareSourceTypeStore = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, String> coursewareImportTaskStore = new ConcurrentHashMap<>();
+
+    @Autowired(required = false)
+    private ObjectProvider<CoursewareRepository> coursewareRepositoryProvider;
+
+    @Autowired(required = false)
+    private ObjectProvider<CoursewarePageRepository> coursewarePageRepositoryProvider;
+
+    @Autowired(required = false)
+    private ObjectProvider<LectureScriptRepository> lectureScriptRepositoryProvider;
+
+    @Autowired(required = false)
+    private ObjectProvider<TtsAudioRepository> ttsAudioRepositoryProvider;
 
     public CoursewareUploadResult importLocalFile(Path localFile, String requestedName) {
         if (localFile == null) {
@@ -88,6 +113,8 @@ public class CoursewareService {
         state.setStatus(CoursewareStatus.PARSING.name());
         state.setCurrentTaskStatus(TaskStatus.RUNNING.name());
         coursewareStore.put(coursewareId, state);
+        coursewareSourceTypeStore.put(coursewareId, "LOCAL");
+        persistCoursewareState(state, null);
 
         taskExecutor.execute(() -> completeParse(state));
         return new CoursewareUploadResult(coursewareId, CoursewareStatus.UPLOADED.name());
@@ -115,6 +142,8 @@ public class CoursewareService {
         state.setStatus(CoursewareStatus.PARSING.name());
         state.setCurrentTaskStatus(TaskStatus.RUNNING.name());
         coursewareStore.put(coursewareId, state);
+        coursewareSourceTypeStore.put(coursewareId, "UPLOAD");
+        persistCoursewareState(state, null);
 
         taskExecutor.execute(() -> completeParse(state));
         return new CoursewareUploadResult(coursewareId, CoursewareStatus.UPLOADED.name());
@@ -243,6 +272,150 @@ public class CoursewareService {
         return new CurrentNodeView(segment.nodeId(), segment.pageIndex(), segment.content(), segment.audioUrl());
     }
 
+    public PageSnapshot getPageSnapshot(String coursewareId, int pageIndex) {
+        ensureCoursewareId(coursewareId);
+        if (pageIndex <= 0) {
+            throw new IllegalArgumentException("pageIndex must be positive");
+        }
+
+        ParsedCourseware parsedCourseware = parsedStore.get(coursewareId);
+        if (parsedCourseware != null) {
+            ParsedSegment segment = parsedCourseware.segments().stream()
+                    .filter(item -> item.pageIndex() == pageIndex)
+                    .findFirst()
+                    .orElse(null);
+            if (segment != null) {
+                return new PageSnapshot(
+                        segment.pageIndex(),
+                        segment.title(),
+                        segment.content(),
+                        resolvePageImageUrl(coursewareId, pageIndex),
+                        segment.knowledgePoints()
+                );
+            }
+        }
+
+        CoursewarePageRepository pageRepository = getPageRepository();
+        if (pageRepository != null) {
+            return pageRepository.findByCoursewareIdOrderByPageIndexAsc(coursewareId).stream()
+                    .filter(item -> item.getPageIndex() != null && item.getPageIndex() == pageIndex)
+                    .findFirst()
+                    .map(item -> new PageSnapshot(
+                            item.getPageIndex(),
+                            "第" + item.getPageIndex() + "页",
+                            item.getOriginalText(),
+                            item.getImageUrl(),
+                            List.of()
+                    ))
+                    .orElse(null);
+        }
+        return null;
+    }
+
+    public List<PageSnapshot> listPageSnapshots(String coursewareId) {
+        ensureCoursewareId(coursewareId);
+        ParsedCourseware parsedCourseware = parsedStore.get(coursewareId);
+        if (parsedCourseware != null) {
+            return parsedCourseware.segments().stream()
+                    .map(segment -> new PageSnapshot(
+                            segment.pageIndex(),
+                            segment.title(),
+                            segment.content(),
+                            resolvePageImageUrl(coursewareId, segment.pageIndex()),
+                            segment.knowledgePoints()
+                    ))
+                    .toList();
+        }
+
+        CoursewarePageRepository pageRepository = getPageRepository();
+        if (pageRepository == null) {
+            return List.of();
+        }
+        return pageRepository.findByCoursewareIdOrderByPageIndexAsc(coursewareId).stream()
+                .map(item -> new PageSnapshot(
+                        item.getPageIndex(),
+                        "第" + item.getPageIndex() + "页",
+                        item.getOriginalText(),
+                        item.getImageUrl(),
+                        List.of()
+                ))
+                .toList();
+    }
+
+    public void bindPageImageUrls(String coursewareId, Map<Integer, String> pageImageUrls) {
+        ensureCoursewareId(coursewareId);
+        if (pageImageUrls == null || pageImageUrls.isEmpty()) {
+            return;
+        }
+        pageImageStore.put(coursewareId, new HashMap<>(pageImageUrls));
+        CoursewarePageRepository pageRepository = getPageRepository();
+        if (pageRepository == null) {
+            return;
+        }
+        List<CoursewarePage> pages = pageRepository.findByCoursewareIdOrderByPageIndexAsc(coursewareId);
+        for (CoursewarePage page : pages) {
+            String imageUrl = pageImageUrls.get(page.getPageIndex());
+            if (StringUtils.hasText(imageUrl)) {
+                page.setImageUrl(imageUrl);
+            }
+        }
+        pageRepository.saveAll(pages);
+    }
+
+    public void bindSourceMetadata(String coursewareId, String sourceType, String importTaskId) {
+        ensureCoursewareId(coursewareId);
+        if (StringUtils.hasText(sourceType)) {
+            coursewareSourceTypeStore.put(coursewareId, sourceType.trim());
+        }
+        if (StringUtils.hasText(importTaskId)) {
+            coursewareImportTaskStore.put(coursewareId, importTaskId.trim());
+        }
+        CoursewareRepository coursewareRepository = getCoursewareRepository();
+        if (coursewareRepository == null) {
+            return;
+        }
+        coursewareRepository.findById(coursewareId).ifPresent(entity -> {
+            entity.setSourceType(StringUtils.hasText(sourceType) ? sourceType.trim() : entity.getSourceType());
+            entity.setImportTaskId(StringUtils.hasText(importTaskId) ? importTaskId.trim() : entity.getImportTaskId());
+            coursewareRepository.save(entity);
+        });
+    }
+
+    public String getSourceType(String coursewareId) {
+        ensureCoursewareId(coursewareId);
+        String runtimeSourceType = coursewareSourceTypeStore.get(coursewareId);
+        if (StringUtils.hasText(runtimeSourceType)) {
+            return runtimeSourceType;
+        }
+        CoursewareRepository coursewareRepository = getCoursewareRepository();
+        if (coursewareRepository != null) {
+            return coursewareRepository.findById(coursewareId)
+                    .map(Courseware::getSourceType)
+                    .orElse(null);
+        }
+        return null;
+    }
+
+    public String findScriptIdByPage(String coursewareId, int pageIndex) {
+        ScriptView script = scriptStore.get(coursewareId);
+        if (script != null) {
+            return script.segments().stream()
+                    .filter(segment -> segment.pageIndex() == pageIndex)
+                    .map(ScriptSegmentView::id)
+                    .findFirst()
+                    .orElse(null);
+        }
+        LectureScriptRepository lectureScriptRepository = getLectureScriptRepository();
+        if (lectureScriptRepository == null) {
+            return null;
+        }
+        return lectureScriptRepository.findByCoursewareIdOrderByPageIndexAsc(coursewareId).stream()
+                .filter(item -> item.getPageIndex() != null && item.getPageIndex() == pageIndex)
+                .map(LectureScript::getId)
+                .findFirst()
+                .orElse(null);
+    }
+
     private void completeParse(CoursewareState state) {
         try {
             log.info("Courseware parsing started. coursewareId={}", state.getId());
@@ -268,12 +441,14 @@ public class CoursewareService {
             state.setStatus(CoursewareStatus.PARSED.name());
             state.setCurrentTaskStatus(TaskStatus.SUCCESS.name());
             state.touch();
+            persistCoursewareState(state, parsedCourseware);
             log.info("Courseware parsing completed. coursewareId={}, segments={}", state.getId(), parsedCourseware.segments().size());
         } catch (Exception ex) {
             log.error("Courseware parsing failed. coursewareId={}", state.getId(), ex);
             state.setStatus(CoursewareStatus.FAILED.name());
             state.setCurrentTaskStatus(TaskStatus.FAILED.name());
             state.touch();
+            persistCoursewareState(state, null);
         }
     }
 
@@ -317,6 +492,7 @@ public class CoursewareService {
             );
             scriptStore.put(coursewareId, scriptView);
             markScriptReady(state, taskStatus);
+            persistScriptView(coursewareId, scriptView);
             log.info(
                     "Script generation completed. coursewareId={}, segments={}, ttsSuccessCount={}, ttsFailureCount={}, taskStatus={}",
                     coursewareId,
@@ -332,6 +508,7 @@ public class CoursewareService {
             state.setStatus(CoursewareStatus.FAILED.name());
             state.setCurrentTaskStatus(TaskStatus.FAILED.name());
             state.touch();
+            persistCoursewareState(state, parsedStore.get(coursewareId));
         }
     }
 
@@ -634,6 +811,111 @@ public class CoursewareService {
         state.setStatus(CoursewareStatus.READY.name());
         state.setCurrentTaskStatus(taskStatus.name());
         state.touch();
+        persistCoursewareState(state, parsedStore.get(state.getId()));
+    }
+
+    private String resolvePageImageUrl(String coursewareId, int pageIndex) {
+        Map<Integer, String> imageMap = pageImageStore.get(coursewareId);
+        if (imageMap != null && StringUtils.hasText(imageMap.get(pageIndex))) {
+            return imageMap.get(pageIndex);
+        }
+        CoursewarePageRepository pageRepository = getPageRepository();
+        if (pageRepository == null) {
+            return null;
+        }
+        return pageRepository.findByCoursewareIdOrderByPageIndexAsc(coursewareId).stream()
+                .filter(page -> page.getPageIndex() != null && page.getPageIndex() == pageIndex)
+                .map(CoursewarePage::getImageUrl)
+                .filter(StringUtils::hasText)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private void persistCoursewareState(CoursewareState state, ParsedCourseware parsedCourseware) {
+        CoursewareRepository coursewareRepository = getCoursewareRepository();
+        if (coursewareRepository == null) {
+            return;
+        }
+        Courseware entity = coursewareRepository.findById(state.getId()).orElseGet(Courseware::new);
+        entity.setId(state.getId());
+        entity.setName(state.getName());
+        entity.setFileUrl(state.getStorageKey());
+        entity.setFileType(state.getFileType());
+        entity.setStatus(state.getStatus());
+        entity.setUploaderId("demo_user");
+        entity.setSourceType(coursewareSourceTypeStore.getOrDefault(state.getId(), "LOCAL"));
+        entity.setImportTaskId(coursewareImportTaskStore.get(state.getId()));
+        entity.setPageCount(parsedCourseware == null ? entity.getPageCount() : parsedCourseware.segments().size());
+        coursewareRepository.save(entity);
+
+        if (parsedCourseware == null) {
+            return;
+        }
+        CoursewarePageRepository pageRepository = getPageRepository();
+        if (pageRepository == null) {
+            return;
+        }
+        pageRepository.deleteByCoursewareId(state.getId());
+        List<CoursewarePage> pages = new ArrayList<>();
+        for (ParsedSegment segment : parsedCourseware.segments()) {
+            CoursewarePage page = new CoursewarePage();
+            page.setCoursewareId(state.getId());
+            page.setPageIndex(segment.pageIndex());
+            page.setOriginalText(segment.content());
+            page.setImageUrl(resolvePageImageUrl(state.getId(), segment.pageIndex()));
+            pages.add(page);
+        }
+        pageRepository.saveAll(pages);
+    }
+
+    private void persistScriptView(String coursewareId, ScriptView scriptView) {
+        LectureScriptRepository lectureScriptRepository = getLectureScriptRepository();
+        if (lectureScriptRepository == null) {
+            return;
+        }
+        lectureScriptRepository.deleteByCoursewareId(coursewareId);
+        TtsAudioRepository ttsAudioRepository = getTtsAudioRepository();
+        if (ttsAudioRepository != null) {
+            ttsAudioRepository.deleteAll(ttsAudioRepository.findByCoursewareIdOrderByCreateTimeAsc(coursewareId));
+        }
+
+        for (ScriptSegmentView segment : scriptView.segments()) {
+            LectureScript script = new LectureScript();
+            script.setId(segment.id());
+            script.setCoursewareId(coursewareId);
+            script.setPageIndex(segment.pageIndex());
+            script.setNodeId(segment.nodeId());
+            script.setContent(segment.content());
+            script.setAudioUrl(segment.audioUrl());
+            script.setEditStatus("AUTO");
+            lectureScriptRepository.save(script);
+
+            if (ttsAudioRepository != null && StringUtils.hasText(segment.audioUrl())) {
+                TtsAudioEntity audioEntity = new TtsAudioEntity();
+                audioEntity.setCoursewareId(coursewareId);
+                audioEntity.setScriptId(segment.id());
+                audioEntity.setPageNo(segment.pageIndex());
+                audioEntity.setAudioUrl(segment.audioUrl());
+                audioEntity.setProvider("AUTO");
+                ttsAudioRepository.save(audioEntity);
+            }
+        }
+    }
+
+    private CoursewareRepository getCoursewareRepository() {
+        return coursewareRepositoryProvider == null ? null : coursewareRepositoryProvider.getIfAvailable();
+    }
+
+    private CoursewarePageRepository getPageRepository() {
+        return coursewarePageRepositoryProvider == null ? null : coursewarePageRepositoryProvider.getIfAvailable();
+    }
+
+    private LectureScriptRepository getLectureScriptRepository() {
+        return lectureScriptRepositoryProvider == null ? null : lectureScriptRepositoryProvider.getIfAvailable();
+    }
+
+    private TtsAudioRepository getTtsAudioRepository() {
+        return ttsAudioRepositoryProvider == null ? null : ttsAudioRepositoryProvider.getIfAvailable();
     }
 
     private CoursewareState requireCourseware(String coursewareId) {
@@ -721,6 +1003,15 @@ public class CoursewareService {
     }
 
     private record TtsBatchResult(List<ScriptSegmentView> segments, int successCount, int failureCount) {
+    }
+
+    public record PageSnapshot(
+            int pageIndex,
+            String title,
+            String text,
+            String imageUrl,
+            List<String> knowledgePoints
+    ) {
     }
 
     @Getter

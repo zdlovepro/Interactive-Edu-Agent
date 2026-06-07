@@ -27,6 +27,7 @@ public class PythonScriptClient {
 
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(props.getConnectTimeout())
+                .version(HttpClient.Version.HTTP_1_1)
                 .build();
 
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);

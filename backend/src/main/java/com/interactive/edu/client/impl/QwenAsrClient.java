@@ -9,6 +9,7 @@ import com.interactive.edu.dto.asr.AsrResult;
 import com.interactive.edu.exception.ErrorCode;
 import com.interactive.edu.exception.ServiceException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -33,6 +34,7 @@ public class QwenAsrClient implements AsrClient {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
 
+    @Autowired
     public QwenAsrClient(AsrProperties properties, ObjectMapper objectMapper) {
         this(
                 properties,

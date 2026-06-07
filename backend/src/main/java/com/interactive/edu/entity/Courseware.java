@@ -40,6 +40,15 @@ public class Courseware {
     @Column(name = "uploader_id", length = 64)
     private String uploaderId;
 
+    @Column(name = "source_type", length = 64)
+    private String sourceType;
+
+    @Column(name = "page_count")
+    private Integer pageCount;
+
+    @Column(name = "import_task_id", length = 64)
+    private String importTaskId;
+
     @CreatedDate
     @Column(name = "create_time", updatable = false)
     private LocalDateTime createTime;

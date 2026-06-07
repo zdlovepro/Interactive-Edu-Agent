@@ -8,6 +8,7 @@ import com.interactive.edu.vo.qa.EvidenceItemView;
 import com.interactive.edu.vo.record.InterruptRecordView;
 import com.interactive.edu.vo.record.QaRecordView;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -38,6 +39,7 @@ public class LectureRecordService {
     private final Path recordBaseDir;
     private final ConcurrentMap<String, SessionRecordState> recordStore = new ConcurrentHashMap<>();
 
+    @Autowired
     public LectureRecordService(
             ObjectMapper objectMapper,
             @Value("${record.local-base-dir:./data/records}") String recordBaseDir

@@ -12,9 +12,13 @@ storage:
 python:
   client:
     base-url: ${PYTHON_CLIENT_BASE_URL:http://localhost:8001}
+    parse-path: ${PYTHON_PARSE_PATH:/python/v1/parse}
     script-generate-path: ${PYTHON_SCRIPT_GENERATE_PATH:/python/v1/script/generate}
     qa-path: ${PYTHON_QA_PATH:/python/v1/qa/ask-text}
     qa-stream-path: ${PYTHON_QA_STREAM_PATH:/python/v1/qa/stream}
+    course-resource-import-path: ${PYTHON_COURSE_RESOURCE_IMPORT_PATH:/python/v1/course-resource-import/import}
+    digital-human-audio-drive-path: ${PYTHON_DIGITAL_HUMAN_AUDIO_DRIVE_PATH:/python/v1/digital-human/audio-drive}
+    visual-qa-path: ${PYTHON_VISUAL_QA_PATH:/python/v1/rag/visual-ask}
 
 asr:
   enabled: ${ASR_ENABLED:false}
@@ -49,3 +53,7 @@ video:
     sample-import-candidates:
       - ../frontend/public/sample/sample.mp4
       - frontend/public/sample/sample.mp4
+
+app:
+  cors:
+    allowed-origins: ${BACKEND_CORS_ALLOWED_ORIGINS:*}
