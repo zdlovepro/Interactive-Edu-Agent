@@ -21,6 +21,7 @@ def test_parse_chaoxing_course_url_extracts_required_fields():
         clazzid="139811358",
         cpi="356891153",
         enc="2448a3080846a1ab7a7c597107a9c576",
+        t="1779005233298",
         raw_url=url,
         referer=url,
     )

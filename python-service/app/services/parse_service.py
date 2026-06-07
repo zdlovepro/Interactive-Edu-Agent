@@ -39,13 +39,14 @@ def parse_courseware_file(request: ParseRequest) -> dict[str, object]:
 
         visual_summary_by_page: dict[int, object] = {}
         page_images: dict[int, str] = {}
+        visual_pages_dir = _courseware_root() / request.courseware_id / "visual" / "pages"
         try:
             from app.services.visual_summary_service import generate_visual_summaries
 
             summaries, rendered_images = generate_visual_summaries(
                 parse_result=result,
                 source_path=local_path,
-                output_dir=_courseware_root() / request.courseware_id / "visual" / "pages",
+                output_dir=visual_pages_dir,
             )
             visual_summary_by_page = {item.page_index: item for item in summaries}
             page_images = rendered_images
@@ -56,6 +57,7 @@ def parse_courseware_file(request: ParseRequest) -> dict[str, object]:
                 str(exc),
             )
 
+        page_images = _ensure_page_images(result, page_images, visual_pages_dir)
         payload = _build_contract_payload(
             result,
             request.preferred_name,
@@ -96,6 +98,7 @@ def _build_contract_payload(
 ) -> dict[str, object]:
     outline: list[str] = []
     segments: list[dict[str, object]] = []
+    page_details: list[dict[str, object]] = []
     default_topic = Path(preferred_name or result.courseware_id).stem or result.courseware_id
 
     visual_summary_by_page = visual_summary_by_page or {}
@@ -105,24 +108,99 @@ def _build_contract_payload(
         title = _derive_title(page, default_topic)
         content = _merge_page_content(page)
         visual_summary_item = visual_summary_by_page.get(page.page_index)
+        visual_summary_text, visual_objects = _resolve_visual_summary(page, visual_summary_item)
+        page_image_path = page_images.get(page.page_index)
         outline.append(title)
         segment: dict[str, object] = {
             "pageIndex": page.page_index,
             "title": title,
             "content": content,
             "knowledgePoints": _derive_knowledge_points(title, default_topic),
+            "visualSummary": visual_summary_text,
+            "visualObjects": visual_objects,
         }
 
-        if visual_summary_item is not None:
-            segment["visualSummary"] = getattr(visual_summary_item, "visual_summary", None)
-            segment["visualObjects"] = getattr(visual_summary_item, "objects", None)
-
-        if page.page_index in page_images:
-            segment["pageImagePath"] = page_images.get(page.page_index)
+        if page_image_path:
+            segment["pageImagePath"] = page_image_path
 
         segments.append(segment)
 
-    return {"pages": result.total_pages, "outline": outline, "segments": segments}
+        page_details.append(
+            {
+                "pageNo": page.page_index,
+                "text": content,
+                "imagePath": page_image_path,
+                "visualSummary": visual_summary_text,
+                "formulas": list(page.formula_placeholders),
+                "charts": _derive_charts(page.image_placeholders),
+                "diagrams": _derive_diagrams(page.image_placeholders),
+            }
+        )
+
+    return {
+        "coursewareId": result.courseware_id,
+        "pages": result.total_pages,
+        "outline": outline,
+        "segments": segments,
+        "pageDetails": page_details,
+    }
+
+
+def _ensure_page_images(result: ParseResult, page_images: dict[int, str], output_dir: Path) -> dict[int, str]:
+    resolved = dict(page_images)
+    missing_pages = [page.page_index for page in result.pages if page.page_index not in resolved]
+    if not missing_pages:
+        return resolved
+
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for page_index in missing_pages:
+            image_path = output_dir / f"page_{page_index}.png"
+            if not image_path.exists():
+                _write_fallback_page_image(image_path, page_index)
+            resolved[page_index] = str(image_path)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Fallback page image generation skipped. coursewareId=%s reason=%s",
+            result.courseware_id,
+            str(exc),
+        )
+    return resolved
+
+
+def _write_fallback_page_image(path: Path, page_index: int) -> None:
+    from PIL import Image, ImageDraw
+
+    image = Image.new("RGB", (1280, 720), color=(246, 248, 250))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((64, 64, 1216, 656), outline=(120, 130, 140), width=3)
+    draw.text((96, 96), f"Courseware Page {page_index}", fill=(40, 50, 60))
+    draw.text((96, 136), "Rendered page image unavailable; using fallback preview.", fill=(80, 90, 100))
+    image.save(path)
+
+
+def _resolve_visual_summary(page, visual_summary_item: object | None) -> tuple[str, list[str]]:
+    if visual_summary_item is not None:
+        summary = getattr(visual_summary_item, "visual_summary", None)
+        objects = getattr(visual_summary_item, "objects", None)
+        if isinstance(summary, str) and summary.strip():
+            return summary, list(objects) if isinstance(objects, list) else []
+
+    try:
+        from app.services.visual_summary_service import build_mock_visual_summary
+
+        fallback = build_mock_visual_summary(page)
+        return fallback.visual_summary, fallback.objects
+    except Exception:  # noqa: BLE001
+        return "本页视觉摘要暂不可用，已保留页面文本用于后续问答。", []
+
+
+def _derive_charts(image_placeholders: list[str]) -> list[str]:
+    return [item for item in image_placeholders if "图表" in item]
+
+
+def _derive_diagrams(image_placeholders: list[str]) -> list[str]:
+    return [item for item in image_placeholders if any(keyword in item for keyword in ("流程图", "示意图", "矢量图形"))]
 
 
 def _derive_title(page, default_topic: str) -> str:

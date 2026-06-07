@@ -93,13 +93,14 @@ async def download_plan(
     cookie: str | None = None,
     authorization: str | None = None,
     referer: str | None = None,
+    user_agent: str | None = None,
     concurrency: int = 3,
     rate_limit_per_host: float = 1.0,
 ) -> list[DownloadResult]:
     plan.output_dir.mkdir(parents=True, exist_ok=True)
     semaphore = asyncio.Semaphore(max(1, concurrency))
     timeout = aiohttp.ClientTimeout(total=120)
-    headers = _build_download_headers(cookie=cookie, authorization=authorization, referer=referer)
+    headers = _build_download_headers(cookie=cookie, authorization=authorization, referer=referer, user_agent=user_agent)
 
     logger.info(
         "Starting download plan. taskId=%s outputDir=%s selected=%s ignored=%s headers=%s",
@@ -375,8 +376,9 @@ def _build_download_headers(
     cookie: str | None,
     authorization: str | None,
     referer: str | None,
+    user_agent: str | None = None,
 ) -> dict[str, str]:
-    headers = {"User-Agent": DEFAULT_USER_AGENT}
+    headers = {"User-Agent": user_agent or DEFAULT_USER_AGENT}
     if cookie:
         headers["Cookie"] = cookie
     if authorization:

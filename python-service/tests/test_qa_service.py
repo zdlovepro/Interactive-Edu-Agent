@@ -5,10 +5,12 @@ import asyncio
 import httpx
 
 from app.api.v1 import qa as qa_api
+from app.api.v1 import rag as rag_api
 from app.core.config import settings
 from app.main import app
 from app.schemas.qa import QaAskTextRequest, QaAskTextResponse
 from app.services import rag_service
+from app.services import visual_qa_service
 
 
 def _build_request(**overrides) -> QaAskTextRequest:
@@ -214,3 +216,142 @@ def test_qa_stream_endpoint_returns_error_and_done_when_rag_service_fails(monkey
 
     assert any('"type": "error"' in line for line in lines)
     assert lines[-1] == 'data: {"type": "done"}'
+
+
+def test_rag_ask_endpoint_uses_compatibility_service(request_app, monkeypatch):
+    captured = {}
+
+    def fake_answer_rag_question(request):
+        captured["courseware_id"] = request.courseware_id
+        captured["page_index"] = request.page_index
+        return {"answer": "兼容问答", "evidence": [], "latencyMs": 1}
+
+    monkeypatch.setattr(rag_api, "answer_rag_question", fake_answer_rag_question)
+
+    response = request_app(
+        "POST",
+        "/python/v1/rag/ask",
+        json={
+            "coursewareId": "cware_rag_1",
+            "pageNo": 2,
+            "question": "这一页讲什么",
+        },
+    )
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["code"] == 0
+    assert payload["data"]["answer"] == "兼容问答"
+    assert captured == {"courseware_id": "cware_rag_1", "page_index": 2}
+
+
+def test_visual_ask_endpoint_uses_page_text_and_visual_summary(request_app, monkeypatch):
+    monkeypatch.setattr(settings, "LLM_API_KEY", "")
+    monkeypatch.setattr(settings, "VISION_ENABLED", False, raising=False)
+
+    response = request_app(
+        "POST",
+        "/python/v1/rag/visual-ask",
+        json={
+            "coursewareId": "cware_visual_1",
+            "pageNo": 1,
+            "question": "这张图表示什么意思？",
+            "pageImageUrl": "https://minio/pages/1.png",
+            "pageText": "本页讲解三阶段处理流程。",
+            "visualSummary": "这是一张流程图，展示输入、处理、输出三个步骤。",
+        },
+    )
+
+    payload = response.json()
+    data = payload["data"]
+    assert response.status_code == 200
+    assert payload["code"] == 0
+    assert "流程图" in data["answer"]
+    assert data["usedVision"] is False
+    assert data["fallbackUsed"] is True
+    assert data["fallbackReason"]
+    assert data["evidence"][0] == {
+        "pageNo": 1,
+        "type": "visualSummary",
+        "content": "这是一张流程图，展示输入、处理、输出三个步骤。",
+    }
+
+
+def test_visual_ask_endpoint_uses_qwen_vl_when_enabled(request_app, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(settings, "VISION_ENABLED", True, raising=False)
+    monkeypatch.setattr(settings, "VISION_API_KEY", "test-vision-key", raising=False)
+    monkeypatch.setattr(settings, "VISION_API_BASE", "https://dashscope.aliyuncs.com/compatible-mode/v1", raising=False)
+    monkeypatch.setattr(settings, "VISION_MODEL_NAME", "qwen3-vl-plus", raising=False)
+    monkeypatch.setattr(settings, "VISION_PROVIDER", "qwen-vl", raising=False)
+
+    class _FakeVisionClient:
+        provider = "qwen-vl"
+        model = "qwen3-vl-plus"
+
+        def ask_page(self, **kwargs):
+            captured.update(kwargs)
+            return "这张图展示了从输入到处理再到输出的流程。"
+
+    monkeypatch.setattr(visual_qa_service, "get_vision_client", lambda: _FakeVisionClient())
+
+    response = request_app(
+        "POST",
+        "/python/v1/rag/visual-ask",
+        json={
+            "coursewareId": "cware_visual_2",
+            "pageNo": 2,
+            "question": "这张图是什么意思？",
+            "imagePath": "D:/tmp/page_2.png",
+            "pageText": "页面文字说明流程处理。",
+            "visualSummary": "流程图包含输入、处理、输出。",
+        },
+    )
+
+    data = response.json()["data"]
+    assert response.status_code == 200
+    assert data["usedVision"] is True
+    assert data["fallbackUsed"] is False
+    assert data["fallbackReason"] is None
+    assert data["visionProvider"] == "qwen-vl"
+    assert data["model"] == "qwen3-vl-plus"
+    assert captured["image"] == "D:/tmp/page_2.png"
+    assert captured["question"] == "这张图是什么意思？"
+
+
+def test_visual_ask_endpoint_falls_back_when_qwen_vl_fails(request_app, monkeypatch):
+    monkeypatch.setattr(settings, "LLM_API_KEY", "")
+    monkeypatch.setattr(settings, "VISION_ENABLED", True, raising=False)
+    monkeypatch.setattr(settings, "VISION_API_KEY", "test-vision-key", raising=False)
+    monkeypatch.setattr(settings, "VISION_API_BASE", "https://dashscope.aliyuncs.com/compatible-mode/v1", raising=False)
+    monkeypatch.setattr(settings, "VISION_MODEL_NAME", "qwen3-vl-plus", raising=False)
+    monkeypatch.setattr(settings, "VISION_PROVIDER", "qwen-vl", raising=False)
+
+    class _BrokenVisionClient:
+        provider = "qwen-vl"
+        model = "qwen3-vl-plus"
+
+        def ask_page(self, **_kwargs):
+            raise RuntimeError("vision down")
+
+    monkeypatch.setattr(visual_qa_service, "get_vision_client", lambda: _BrokenVisionClient())
+
+    response = request_app(
+        "POST",
+        "/python/v1/rag/visual-ask",
+        json={
+            "coursewareId": "cware_visual_3",
+            "pageNo": 3,
+            "question": "解释这个流程图",
+            "pageImageUrl": "https://minio.local/pages/3.png",
+            "pageText": "本页说明导入、解析、问答的处理链路。",
+            "visualSummary": "流程图展示导入、解析、问答三个环节。",
+        },
+    )
+
+    data = response.json()["data"]
+    assert response.status_code == 200
+    assert data["usedVision"] is False
+    assert data["fallbackUsed"] is True
+    assert data["fallbackReason"] == "vision_model_error"
+    assert "流程图" in data["answer"]

@@ -73,6 +73,7 @@ async def download_course_resources(request: CourseResourceImportDownloadRequest
         cookie=request.headers.cookie,
         authorization=request.headers.authorization,
         referer=request.headers.referer,
+        user_agent=request.headers.user_agent,
     )
     resources = [item.to_resource() for item in request.resources]
     output_dir = request.output_path
@@ -84,6 +85,7 @@ async def download_course_resources(request: CourseResourceImportDownloadRequest
             cookie=headers.cookie,
             authorization=headers.authorization,
             referer=headers.referer,
+            user_agent=headers.user_agent,
             concurrency=DEFAULT_DOWNLOAD_CONCURRENCY,
             rate_limit_per_host=DEFAULT_RATE_LIMIT_PER_HOST,
         )
@@ -184,6 +186,7 @@ async def import_course_resources(request: CourseResourceImportRequest) -> dict[
             cookie=request.cookie,
             authorization=request.authorization,
             referer=request.referer or page_url,
+            user_agent=request.user_agent,
         ),
         output_dir=str(output_dir),
         build_pdf=request.build_pdf,
@@ -208,6 +211,7 @@ def _resolve_course_ref_and_url(
         clazzid=_strip_optional(request.clazzid),
         cpi=_strip_optional(request.cpi),
         enc=_strip_optional(request.enc),
+        t=_strip_optional(request.t),
         referer=_strip_optional(request.referer),
     )
     return course_ref, build_chaoxing_course_url(course_ref)
@@ -225,14 +229,19 @@ async def _discover_resource_batches(
 ) -> tuple[list[DiscoveredResource], list[DiscoveredResource], ChaoxingCourseRef, str]:
     try:
         course_ref, page_url = _resolve_course_ref_and_url(request)
-        headers = _resolve_headers(cookie=request.cookie, authorization=request.authorization, referer=request.referer or page_url)
+        headers = _resolve_headers(
+            cookie=request.cookie,
+            authorization=request.authorization,
+            referer=request.referer or page_url,
+            user_agent=request.user_agent,
+        )
         html = await fetch_authorized_html(
             page_url,
             AuthorizedFetchContext(
                 cookie=headers.cookie,
                 authorization=headers.authorization,
                 referer=headers.referer,
-                user_agent=DEFAULT_USER_AGENT,
+                user_agent=headers.user_agent or DEFAULT_USER_AGENT,
                 timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
                 rate_limit_per_host=DEFAULT_RATE_LIMIT_PER_HOST,
             ),
@@ -244,10 +253,16 @@ async def _discover_resource_batches(
         raise _translate_import_exception(exc) from exc
 
 
-def _resolve_headers(*, cookie: str | None, authorization: str | None, referer: str | None) -> CourseResourceImportHeaders:
+def _resolve_headers(
+    *,
+    cookie: str | None,
+    authorization: str | None,
+    referer: str | None,
+    user_agent: str | None = None,
+) -> CourseResourceImportHeaders:
     if not cookie and not authorization:
         raise AppException(BUSINESS_VALIDATION_FAILED, "Explicit Cookie or Authorization is required.")
-    return CourseResourceImportHeaders(cookie=cookie, authorization=authorization, referer=referer)
+    return CourseResourceImportHeaders(cookie=cookie, authorization=authorization, referer=referer, user_agent=user_agent)
 
 
 def _ensure_supported_source_type(source_type: str) -> None:
@@ -292,11 +307,15 @@ def _build_manifest(
         resource = resource_map.get(result.resource_id)
         files.append(
             {
+                "resource_id": result.resource_id,
                 "title": (resource.title if resource else None) or result.file_name,
+                "type": _resource_type(result, resource),
                 "file_name": result.file_name,
+                "source_url": resource.url if resource else result.url,
                 "local_path": result.local_path,
                 "resource_kind": result.resource_kind,
                 "mime_type": resource.mime_type if resource else None,
+                "size": result.size_bytes,
                 "md5": result.md5,
                 "sha256": result.sha256,
                 "confidence": resource.confidence if resource else None,
@@ -361,6 +380,15 @@ def _preferred_title(resources: list[DiscoveredResource]) -> str | None:
         if resource.title:
             return resource.title
     return None
+
+
+def _resource_type(result: DownloadResult, resource: DiscoveredResource | None) -> str:
+    if resource and resource.extension:
+        return resource.extension.lower().lstrip(".")
+    suffix = Path(result.file_name).suffix.lower().lstrip(".")
+    if suffix:
+        return suffix
+    return result.resource_kind
 
 
 def _serialize_resource(resource: DiscoveredResource) -> dict[str, object]:

@@ -334,4 +334,9 @@ def _parse_ppt_export_index(filename: str) -> int | None:
 
 
 def _vision_enabled() -> bool:
-    return bool(settings.VISION_API_KEY and settings.VISION_API_BASE and settings.VISION_MODEL_NAME)
+    return bool(
+        settings.VISION_ENABLED
+        and settings.VISION_API_KEY
+        and settings.VISION_API_BASE
+        and settings.VISION_MODEL_NAME
+    )

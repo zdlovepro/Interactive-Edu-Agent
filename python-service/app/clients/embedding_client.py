@@ -10,7 +10,7 @@ except ImportError:  # pragma: no cover - allows non-LLM/non-embedding endpoints
 
 try:  # pragma: no cover - exercised only when optional local embedding deps exist
     from langchain_community.embeddings import HuggingFaceBgeEmbeddings
-except ImportError:  # pragma: no cover - keeps non-vector endpoints importable in slim envs
+except Exception:  # noqa: BLE001  # pragma: no cover - keeps non-vector endpoints importable in slim envs
     HuggingFaceBgeEmbeddings = None
 
 from app.core.config import settings
