@@ -6,7 +6,7 @@ import json
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.core.config import settings
@@ -50,8 +50,8 @@ class _RuntimeSession:
     message: str | None = None
     qr_code_png: bytes | None = None
     cookie_header: str | None = None
-    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    expires_at: datetime = field(default_factory=lambda: datetime.now(UTC) + timedelta(seconds=settings.CHAOXING_AUTH_TTL_SECONDS))
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    expires_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc) + timedelta(seconds=settings.CHAOXING_AUTH_TTL_SECONDS))
     authorized_at: datetime | None = None
     playwright: Any | None = None
     browser: Browser | None = None
@@ -260,7 +260,7 @@ class ChaoxingAuthService:
                 if _is_authorized_cookie_set(cookies):
                     cookie_header = _build_cookie_header(cookies)
                     session.cookie_header = cookie_header
-                    session.authorized_at = datetime.now(UTC)
+                    session.authorized_at = datetime.now(timezone.utc)
                     await self._store.save_cookie(session.session_id, cookie_header)
                     await self._set_status(session, STATUS_AUTHORIZED, "Chaoxing authorization succeeded.")
                     logger.info("Chaoxing auth session authorized. sessionId=%s cookie=%s", session.session_id, _REDACTED)

@@ -1,0 +1,5 @@
+# Optional local embedding stack.
+# Full/Docker mode defaults to EMBEDDING_PROVIDER=dashscope and does not need this file.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2+cpu
+sentence-transformers==2.5.1
