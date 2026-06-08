@@ -13,7 +13,7 @@ import aiohttp
 from app.core.config import settings
 from app.utils.logger import logger
 
-from .authorized_fetcher import fetch_authorized_html
+from .authorized_fetcher import fetch_authorized_html, fetch_authorized_html_with_final_url
 from .config import DEFAULT_RATE_LIMIT_PER_HOST, DEFAULT_TIMEOUT_SECONDS, DEFAULT_USER_AGENT, validate_chaoxing_url
 from .json_resource_discoverer import discover_resources_from_json
 from .models import AuthorizedFetchContext, ChaoxingCourseRef
@@ -87,9 +87,13 @@ async def _discover_from_chapter(
     context: AuthorizedFetchContext,
 ) -> list[DiscoveredResource]:
     resources: list[DiscoveredResource] = []
-    chapter_page_html = await fetch_authorized_html(chapter.transfer_url, _with_referer(context, f"{_MOOC2}/"))
-    chapter_referrer = chapter.transfer_url
-    card_count = await _read_card_count(chapter, cpi=cpi, referer=chapter_referrer, context=context)
+    chapter_page = await fetch_authorized_html_with_final_url(
+        chapter.transfer_url,
+        _with_referer(context, f"{_MOOC2}/"),
+    )
+    chapter_referrer = chapter_page.final_url or chapter.transfer_url
+    chapter_cpi = _query_value(chapter_referrer, "cpi") or cpi
+    card_count = await _read_card_count(chapter, cpi=chapter_cpi, referer=chapter_referrer, context=context)
 
     for card_index in range(min(card_count, settings.CHAOXING_MAX_CARDS_PER_CHAPTER)):
         cards_url = (
@@ -101,7 +105,7 @@ async def _discover_from_chapter(
                     "knowledgeid": chapter.knowledgeid,
                     "num": str(card_index),
                     "ut": "s",
-                    "cpi": cpi,
+                    "cpi": chapter_cpi,
                     "v": "20160407-1",
                 }
             )
@@ -110,10 +114,24 @@ async def _discover_from_chapter(
         card_args = _extract_marg(cards_html)
         if not card_args:
             continue
-        resources.extend(discover_resources_from_json(card_args, source_url=cards_url, course_ref=_course_ref_from_chapter(chapter, cpi)))
-        resources.extend(await _discover_attachment_statuses(card_args, cards_url=cards_url, chapter=chapter, context=context))
+        resources.extend(
+            discover_resources_from_json(
+                card_args,
+                source_url=cards_url,
+                course_ref=_course_ref_from_chapter(chapter, chapter_cpi, referer=chapter_referrer),
+            )
+        )
+        resources.extend(
+            await _discover_attachment_statuses(
+                card_args,
+                cards_url=cards_url,
+                chapter=chapter,
+                context=context,
+                referer=chapter_referrer,
+            )
+        )
 
-    _ = chapter_page_html  # Kept for future page-level discovery without changing behavior.
+    _ = chapter_page.html  # Kept for future page-level discovery without changing behavior.
     return dedupe_discovered_resources(resources)
 
 
@@ -148,6 +166,7 @@ async def _discover_attachment_statuses(
     cards_url: str,
     chapter: _ChapterRef,
     context: AuthorizedFetchContext,
+    referer: str,
 ) -> list[DiscoveredResource]:
     attachments = card_args.get("attachments")
     if not isinstance(attachments, list):
@@ -181,7 +200,7 @@ async def _discover_attachment_statuses(
             status_json.setdefault("objectid", object_id)
             status_json.setdefault("name", prop.get("name") or prop.get("title"))
             status_json.setdefault("chapterId", chapter.knowledgeid)
-            resources.extend(discover_resources_from_json(status_json, source_url=cards_url, course_ref=_course_ref_from_chapter(chapter, None)))
+            resources.extend(discover_resources_from_json(status_json, source_url=cards_url, course_ref=_course_ref_from_chapter(chapter, None, referer=referer)))
 
     return resources
 
@@ -279,6 +298,14 @@ def _studentcourse_url(course_info: dict[str, str | None]) -> str:
     )
 
 
+def _query_value(url: str, name: str) -> str | None:
+    values = parse_qs(urlsplit(url).query).get(name)
+    if not values:
+        return None
+    value = values[0].strip()
+    return value or None
+
+
 def _with_referer(context: AuthorizedFetchContext, referer: str | None) -> AuthorizedFetchContext:
     return AuthorizedFetchContext(
         cookie=context.cookie,
@@ -290,5 +317,5 @@ def _with_referer(context: AuthorizedFetchContext, referer: str | None) -> Autho
     )
 
 
-def _course_ref_from_chapter(chapter: _ChapterRef, cpi: str | None) -> ChaoxingCourseRef:
-    return ChaoxingCourseRef(courseid=chapter.courseid, clazzid=chapter.clazzid, cpi=cpi, referer=chapter.transfer_url)
+def _course_ref_from_chapter(chapter: _ChapterRef, cpi: str | None, *, referer: str | None = None) -> ChaoxingCourseRef:
+    return ChaoxingCourseRef(courseid=chapter.courseid, clazzid=chapter.clazzid, cpi=cpi, referer=referer or chapter.transfer_url)

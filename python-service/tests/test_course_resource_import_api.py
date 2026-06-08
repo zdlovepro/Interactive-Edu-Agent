@@ -182,7 +182,7 @@ def test_discover_requires_explicit_authorization(request_app):
     assert response.status_code == 200
     assert body["code"] == 40002
     assert body["data"] is None
-    assert "Cookie or Authorization" in body["message"]
+    assert "Cookie, Authorization, or auth_session_id" in body["message"]
 
 
 def test_discover_rejects_non_chaoxing_url(request_app):

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Mapping
+from dataclasses import dataclass
 
 import aiohttp
 
@@ -17,7 +18,19 @@ _RATE_LIMIT_NEXT_ALLOWED_AT: dict[str, float] = {}
 _REDACTED = "<redacted>"
 
 
+@dataclass(frozen=True, slots=True)
+class AuthorizedHtmlFetchResult:
+    html: str
+    final_url: str
+    status: int
+
+
 async def fetch_authorized_html(url: str, context: AuthorizedFetchContext) -> str:
+    result = await fetch_authorized_html_with_final_url(url, context)
+    return result.html
+
+
+async def fetch_authorized_html_with_final_url(url: str, context: AuthorizedFetchContext) -> AuthorizedHtmlFetchResult:
     if not context.cookie and not context.authorization:
         raise UnauthorizedFetchError("Explicit Cookie or Authorization is required for authorized fetch.")
 
@@ -51,8 +64,16 @@ async def fetch_authorized_html(url: str, context: AuthorizedFetchContext) -> st
                 if status >= 400:
                     raise DownstreamFetchError(f"Upstream returned unexpected status {status}.")
 
-                logger.info("Authorized HTML fetched. url=%s host=%s status=%s bytes=%s", url, host, status, len(body))
-                return body
+                final_url = str(getattr(response, "url", url) or url)
+                logger.info(
+                    "Authorized HTML fetched. url=%s finalUrl=%s host=%s status=%s bytes=%s",
+                    url,
+                    final_url,
+                    host,
+                    status,
+                    len(body),
+                )
+                return AuthorizedHtmlFetchResult(html=body, final_url=final_url, status=status)
     except asyncio.TimeoutError as exc:
         raise DownstreamFetchError("Timed out while fetching authorized HTML.") from exc
     except aiohttp.ClientError as exc:

@@ -5,15 +5,20 @@ import asyncio
 import pytest
 
 from app.course_resource_importer import authorized_fetcher
-from app.course_resource_importer.authorized_fetcher import fetch_authorized_html, sanitize_headers_for_log
+from app.course_resource_importer.authorized_fetcher import (
+    fetch_authorized_html,
+    fetch_authorized_html_with_final_url,
+    sanitize_headers_for_log,
+)
 from app.course_resource_importer.errors import DownstreamFetchError, RateLimitedError, UnauthorizedFetchError
 from app.course_resource_importer.models import AuthorizedFetchContext
 
 
 class _FakeResponse:
-    def __init__(self, status: int, body: str = "<html></html>"):
+    def __init__(self, status: int, body: str = "<html></html>", url: str | None = None):
         self.status = status
         self._body = body
+        self.url = url
 
     async def __aenter__(self):
         return self
@@ -26,8 +31,14 @@ class _FakeResponse:
 
 
 class _FakeClientSession:
-    def __init__(self, response_status: int, response_body: str = "<html></html>", **kwargs):
-        self._response = _FakeResponse(response_status, response_body)
+    def __init__(
+        self,
+        response_status: int,
+        response_body: str = "<html></html>",
+        response_url: str | None = None,
+        **kwargs,
+    ):
+        self._response = _FakeResponse(response_status, response_body, response_url)
         self.kwargs = kwargs
         self.calls: list[dict[str, object]] = []
 
@@ -109,6 +120,26 @@ def test_fetch_authorized_html_raises_downstream_error_on_500(monkeypatch: pytes
                 _build_context(),
             )
         )
+
+
+def test_fetch_authorized_html_with_final_url_returns_redirect_target(monkeypatch: pytest.MonkeyPatch):
+    final_url = "https://mooc1.chaoxing.com/mycourse/studentstudy?chapterId=123&cpi=final_cpi"
+    monkeypatch.setattr(
+        authorized_fetcher.aiohttp,
+        "ClientSession",
+        lambda **kwargs: _FakeClientSession(200, "<html>chapter</html>", response_url=final_url, **kwargs),
+    )
+
+    result = asyncio.run(
+        fetch_authorized_html_with_final_url(
+            "https://mooc1.chaoxing.com/mycourse/transfer?moocId=260728285",
+            _build_context(),
+        )
+    )
+
+    assert result.html == "<html>chapter</html>"
+    assert result.final_url == final_url
+    assert result.status == 200
 
 
 def test_sanitize_headers_for_log_redacts_sensitive_values():
