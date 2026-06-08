@@ -1,14 +1,12 @@
 from __future__ import annotations
 
+import shutil
+import tempfile
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from app.core.exceptions import (
-    AppException,
-    BUSINESS_VALIDATION_FAILED,
-    NOT_IMPLEMENTED,
-    PARAM_ERROR,
-    PythonServiceException,
-)
+from app.core.config import settings
+from app.core.exceptions import AppException, BUSINESS_VALIDATION_FAILED, PARAM_ERROR, PythonServiceException
 from app.schemas.parse import ParseRequest, ParseResult
 from app.utils.logger import logger
 
@@ -26,53 +24,108 @@ def parse_courseware_file(request: ParseRequest) -> dict[str, object]:
         if local_path is None:
             target = request.key or request.preferred_name or "<unknown>"
             raise AppException(BUSINESS_VALIDATION_FAILED, f"local courseware file not found: {target}")
-
-        try:
-            result = _parse_local_file(local_path, request)
-        except FileNotFoundError as exc:
-            raise AppException(BUSINESS_VALIDATION_FAILED, str(exc)) from exc
-        except ValueError as exc:
-            raise AppException(PARAM_ERROR, str(exc)) from exc
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Local parse failed. coursewareId=%s path=%s", request.courseware_id, local_path)
-            raise PythonServiceException("课件解析失败") from exc
-
-        visual_summary_by_page: dict[int, object] = {}
-        page_images: dict[int, str] = {}
-        try:
-            from app.services.visual_summary_service import generate_visual_summaries
-
-            summaries, rendered_images = generate_visual_summaries(
-                parse_result=result,
-                source_path=local_path,
-                output_dir=_courseware_root() / request.courseware_id / "visual" / "pages",
-            )
-            visual_summary_by_page = {item.page_index: item for item in summaries}
-            page_images = rendered_images
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "Visual summary generation skipped. coursewareId=%s reason=%s",
-                request.courseware_id,
-                str(exc),
-            )
-
-        payload = _build_contract_payload(
-            result,
-            request.preferred_name,
-            visual_summary_by_page=visual_summary_by_page,
-            page_images=page_images,
-        )
-
-        _best_effort_ingest(request, payload)
-        return payload
+        return _parse_and_build_payload(local_path, request)
 
     if request.normalized_storage == "minio":
-        raise AppException(
-            NOT_IMPLEMENTED,
-            f"minio courseware parsing is not implemented yet, key={request.key or '<empty>'}",
-        )
+        temp_dir: Path | None = None
+        try:
+            temp_dir, local_path = _download_minio_object(request)
+            return _parse_and_build_payload(local_path, request)
+        finally:
+            if temp_dir is not None:
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
     raise AppException(PARAM_ERROR, f"unsupported storage: {request.storage}")
+
+
+def _parse_and_build_payload(local_path: Path, request: ParseRequest) -> dict[str, object]:
+    try:
+        result = _parse_local_file(local_path, request)
+    except FileNotFoundError as exc:
+        raise AppException(BUSINESS_VALIDATION_FAILED, str(exc)) from exc
+    except ValueError as exc:
+        raise AppException(PARAM_ERROR, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Courseware parse failed. coursewareId=%s path=%s", request.courseware_id, local_path)
+        raise PythonServiceException("courseware parse failed") from exc
+
+    visual_summary_by_page: dict[int, object] = {}
+    page_images: dict[int, str] = {}
+    try:
+        from app.services.visual_summary_service import generate_visual_summaries
+
+        summaries, rendered_images = generate_visual_summaries(
+            parse_result=result,
+            source_path=local_path,
+            output_dir=_courseware_root() / request.courseware_id / "visual" / "pages",
+        )
+        visual_summary_by_page = {item.page_index: item for item in summaries}
+        page_images = rendered_images
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Visual summary generation skipped. coursewareId=%s reason=%s",
+            request.courseware_id,
+            str(exc),
+        )
+
+    payload = _build_contract_payload(
+        result,
+        request.preferred_name,
+        visual_summary_by_page=visual_summary_by_page,
+        page_images=page_images,
+    )
+
+    _best_effort_ingest(request, payload)
+    return payload
+
+
+def _download_minio_object(request: ParseRequest) -> tuple[Path, Path]:
+    if not request.key:
+        raise AppException(PARAM_ERROR, "minio parse requires key")
+    if not settings.MINIO_ACCESS_KEY or not settings.MINIO_SECRET_KEY:
+        raise AppException(BUSINESS_VALIDATION_FAILED, "minio credentials are not configured")
+
+    try:
+        from minio import Minio
+    except ImportError as exc:  # pragma: no cover - dependency exists in full image.
+        raise PythonServiceException("minio dependency is not installed") from exc
+
+    endpoint = settings.MINIO_ENDPOINT.strip()
+    parsed = urlsplit(endpoint if "://" in endpoint else f"http://{endpoint}")
+    minio_endpoint = parsed.netloc or parsed.path
+    secure = settings.MINIO_SECURE or parsed.scheme == "https"
+    bucket = settings.MINIO_BUCKET
+    object_key = request.key.strip().lstrip("/")
+
+    temp_dir = Path(tempfile.mkdtemp(prefix=f"courseware_{request.courseware_id}_"))
+    filename = _safe_filename(request.preferred_name or Path(object_key).name or f"{request.courseware_id}.bin")
+    local_path = temp_dir / filename
+
+    try:
+        client = Minio(
+            minio_endpoint,
+            access_key=settings.MINIO_ACCESS_KEY,
+            secret_key=settings.MINIO_SECRET_KEY,
+            secure=secure,
+        )
+        client.fget_object(bucket, object_key, str(local_path))
+        logger.info(
+            "Downloaded MinIO courseware object for parse. coursewareId=%s bucket=%s key=%s bytes=%s",
+            request.courseware_id,
+            bucket,
+            object_key,
+            local_path.stat().st_size if local_path.exists() else 0,
+        )
+        return temp_dir, local_path
+    except Exception as exc:  # noqa: BLE001
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        logger.exception(
+            "Failed to download MinIO courseware object. coursewareId=%s bucket=%s key=%s",
+            request.courseware_id,
+            bucket,
+            object_key,
+        )
+        raise AppException(BUSINESS_VALIDATION_FAILED, f"minio courseware file not found: {object_key}") from exc
 
 
 def _parse_local_file(local_path: Path, request: ParseRequest) -> ParseResult:
@@ -133,14 +186,14 @@ def _derive_title(page, default_topic: str) -> str:
         note_line = next((line.strip() for line in page.notes.splitlines() if line.strip()), "")
         if note_line:
             return note_line[:48]
-    return f"{default_topic}-第{page.page_index}页"
+    return f"{default_topic}-page-{page.page_index}"
 
 
 def _merge_page_content(page) -> str:
     parts = [part.strip() for part in (page.text, page.notes) if part and part.strip()]
     if parts:
         return "\n".join(parts)
-    return f"第{page.page_index}页暂无可提取文本内容。"
+    return f"Page {page.page_index} has no extractable text."
 
 
 def _derive_knowledge_points(title: str, default_topic: str) -> list[str]:
@@ -201,11 +254,16 @@ def _detect_suffix(local_path: Path, request: ParseRequest) -> str:
     return ""
 
 
+def _safe_filename(value: str) -> str:
+    safe = "".join(ch if ch.isalnum() or ch in {".", "-", "_"} else "_" for ch in value)
+    return safe.strip("._") or "courseware.bin"
+
+
 def _best_effort_ingest(request: ParseRequest, payload: dict[str, object]) -> None:
     """Best-effort ingest for RAG retrieval.
 
-    This keeps the parse contract unchanged while enabling "visual summary enters retrieval"
-    without requiring a separate orchestration step.
+    This keeps the parse contract unchanged while enabling retrieval without
+    requiring a separate orchestration step.
     """
 
     try:
@@ -253,7 +311,7 @@ def _best_effort_ingest(request: ParseRequest, payload: dict[str, object]) -> No
                     {
                         "chunk_id": f"{request.courseware_id}_p{page_index:03d}_visual",
                         "page_index": page_index,
-                        "content": f"视觉摘要：{visual_summary}",
+                        "content": f"Visual summary: {visual_summary}",
                         "metadata": {
                             "courseware_id": request.courseware_id,
                             "page_index": page_index,

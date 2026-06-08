@@ -25,5 +25,7 @@ python:
     parse-path: /python/v1/parse
     script-generate-path: /python/v1/script/generate
     qa-path: /python/v1/qa/ask-text
-    connect-timeout: 5s
-    read-timeout: 30s
+    course-resource-import-path: /python/v1/course-resource-import/import
+    chaoxing-auth-path: /python/v1/chaoxing/auth/sessions
+    connect-timeout: ${PYTHON_CLIENT_CONNECT_TIMEOUT:5s}
+    read-timeout: ${PYTHON_CLIENT_READ_TIMEOUT:30s}

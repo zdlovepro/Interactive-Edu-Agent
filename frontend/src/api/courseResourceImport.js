@@ -1,5 +1,25 @@
 import request from '@/utils/request'
-import { COURSE_RESOURCE_IMPORT_API } from '@/constants/api'
+import { CHAOXING_AUTH_API, COURSE_RESOURCE_IMPORT_API } from '@/constants/api'
+
+export function createChaoxingAuthSession(payload = {}, config = {}) {
+  return request.post(CHAOXING_AUTH_API.CREATE_SESSION, payload, {
+    timeout: 45000,
+    ...config,
+  })
+}
+
+export function getChaoxingAuthSession(sessionId, config = {}) {
+  return request.get(CHAOXING_AUTH_API.DETAIL(sessionId), config)
+}
+
+export function getChaoxingAuthQrCodeUrl(sessionId) {
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1'
+  return `${baseUrl}${CHAOXING_AUTH_API.QRCODE(sessionId)}`
+}
+
+export function closeChaoxingAuthSession(sessionId, config = {}) {
+  return request.delete(CHAOXING_AUTH_API.CLOSE(sessionId), config)
+}
 
 export function createCourseResourceImportTask(payload, config = {}) {
   return request.post(COURSE_RESOURCE_IMPORT_API.CREATE_TASK, payload, {

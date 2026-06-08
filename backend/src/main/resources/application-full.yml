@@ -34,6 +34,7 @@ python:
     script-generate-path: ${PYTHON_SCRIPT_GENERATE_PATH:/python/v1/script/generate}
     qa-path: ${PYTHON_QA_PATH:/python/v1/qa/ask-text}
     qa-stream-path: ${PYTHON_QA_STREAM_PATH:/python/v1/qa/stream}
+    course-resource-import-path: ${PYTHON_COURSE_RESOURCE_IMPORT_PATH:/python/v1/course-resource-import/import}
 
 asr:
   enabled: ${ASR_ENABLED:false}

@@ -13,6 +13,7 @@ public class CreateCourseResourceImportTaskRequest {
     private String clazzid;
     private String cpi;
     private String enc;
+    private String authSessionId;
     private String cookie;
     private String authorization;
     private String referer;

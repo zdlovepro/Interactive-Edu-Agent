@@ -30,7 +30,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -60,7 +59,7 @@ public class CourseResourceImportTaskService {
 
         TaskState state = new TaskState(taskId, ownerUserId, command.toRedactedSummary(), outputDir);
         taskStore.put(taskId, state);
-        taskSecretsStore.put(taskId, new TaskSecrets(command.cookie(), command.authorization(), command.referer()));
+        taskSecretsStore.put(taskId, new TaskSecrets(command.authSessionId(), command.cookie(), command.authorization(), command.referer()));
         log.info("Course-resource import task created. taskId={}, userId={}, sourceType={}", taskId, ownerUserId, command.sourceType());
 
         taskExecutor.execute(() -> runTask(state, command));
@@ -129,6 +128,7 @@ public class CourseResourceImportTaskService {
                             .clazzid(command.clazzid())
                             .cpi(command.cpi())
                             .enc(command.enc())
+                            .authSessionId(command.authSessionId())
                             .cookie(command.cookie())
                             .authorization(command.authorization())
                             .referer(command.referer())
@@ -270,8 +270,6 @@ public class CourseResourceImportTaskService {
     private Path pickPreferredParseReadyFile(PythonCourseResourceImportClient.ImportExecutionResult importResult) {
         Path parseReadyManifest = Path.of(importResult.getParseReadyManifest()).toAbsolutePath().normalize();
         try {
-            List<Map<?, ?>> items = List.of();
-            // The mock client already writes parse_ready_manifest.json. Keep parsing lightweight here.
             String json = java.nio.file.Files.readString(parseReadyManifest);
             com.fasterxml.jackson.databind.JsonNode root = new ObjectMapperHolder().readTree(json);
             com.fasterxml.jackson.databind.JsonNode parseReadyFiles = root.path("parse_ready_files");
@@ -334,8 +332,10 @@ public class CourseResourceImportTaskService {
         if (!SOURCE_TYPE_CHAOXING_COURSE.equalsIgnoreCase(request.getSourceType())) {
             throw new IllegalArgumentException("Only CHAOXING_COURSE sourceType is supported");
         }
-        if (!StringUtils.hasText(request.getCookie()) && !StringUtils.hasText(request.getAuthorization())) {
-            throw new IllegalArgumentException("Either cookie or authorization must be provided");
+        if (!StringUtils.hasText(request.getAuthSessionId())
+                && !StringUtils.hasText(request.getCookie())
+                && !StringUtils.hasText(request.getAuthorization())) {
+            throw new IllegalArgumentException("Either authSessionId, cookie, or authorization must be provided");
         }
 
         String url = StringUtils.hasText(request.getUrl()) ? request.getUrl().trim() : null;
@@ -343,6 +343,7 @@ public class CourseResourceImportTaskService {
         String clazzid = StringUtils.hasText(request.getClazzid()) ? request.getClazzid().trim() : null;
         String cpi = StringUtils.hasText(request.getCpi()) ? request.getCpi().trim() : null;
         String enc = StringUtils.hasText(request.getEnc()) ? request.getEnc().trim() : null;
+        String authSessionId = StringUtils.hasText(request.getAuthSessionId()) ? request.getAuthSessionId().trim() : null;
 
         if (!StringUtils.hasText(url) && !StringUtils.hasText(courseid)) {
             throw new IllegalArgumentException("Either url or courseid must be provided");
@@ -363,6 +364,7 @@ public class CourseResourceImportTaskService {
                 clazzid,
                 cpi,
                 enc,
+                authSessionId,
                 request.getCookie(),
                 request.getAuthorization(),
                 StringUtils.hasText(request.getReferer()) ? request.getReferer().trim() : resolvedUrl,
@@ -428,6 +430,7 @@ public class CourseResourceImportTaskService {
             String clazzid,
             String cpi,
             String enc,
+            String authSessionId,
             String cookie,
             String authorization,
             String referer,
@@ -435,7 +438,7 @@ public class CourseResourceImportTaskService {
             boolean autoParse
     ) {
         private CommandSummary toRedactedSummary() {
-            return new CommandSummary(sourceType, url, courseid, clazzid, cpi, enc, referer, buildPdf, autoParse);
+            return new CommandSummary(sourceType, url, courseid, clazzid, cpi, enc, authSessionId, referer, buildPdf, autoParse);
         }
     }
 
@@ -446,6 +449,7 @@ public class CourseResourceImportTaskService {
             String clazzid,
             String cpi,
             String enc,
+            String authSessionId,
             String referer,
             boolean buildPdf,
             boolean autoParse
@@ -458,6 +462,7 @@ public class CourseResourceImportTaskService {
                     clazzid,
                     cpi,
                     enc,
+                    StringUtils.hasText(secrets.authSessionId()) ? secrets.authSessionId() : authSessionId,
                     secrets.cookie(),
                     secrets.authorization(),
                     StringUtils.hasText(secrets.referer()) ? secrets.referer() : referer,
@@ -467,7 +472,7 @@ public class CourseResourceImportTaskService {
         }
     }
 
-    private record TaskSecrets(String cookie, String authorization, String referer) {
+    private record TaskSecrets(String authSessionId, String cookie, String authorization, String referer) {
     }
 
     @Getter

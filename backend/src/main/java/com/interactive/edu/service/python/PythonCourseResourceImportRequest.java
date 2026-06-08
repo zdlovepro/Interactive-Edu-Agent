@@ -14,6 +14,7 @@ public class PythonCourseResourceImportRequest {
     String clazzid;
     String cpi;
     String enc;
+    String authSessionId;
     String cookie;
     String authorization;
     String referer;

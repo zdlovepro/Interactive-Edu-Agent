@@ -41,6 +41,13 @@ export const COURSE_RESOURCE_IMPORT_API = {
   CANCEL: taskId => `/course-resource-import/tasks/${taskId}/cancel`,
 }
 
+export const CHAOXING_AUTH_API = {
+  CREATE_SESSION: '/chaoxing/auth/sessions',
+  DETAIL: sessionId => `/chaoxing/auth/sessions/${sessionId}`,
+  QRCODE: sessionId => `/chaoxing/auth/sessions/${sessionId}/qrcode`,
+  CLOSE: sessionId => `/chaoxing/auth/sessions/${sessionId}`,
+}
+
 export const VIDEO_ASSET_API = {
   LIST: '/video-assets',
   DETAIL: assetId => `/video-assets/${assetId}`,

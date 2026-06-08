@@ -14,6 +14,7 @@ class _ConfiguredModel(BaseModel):
 
 
 class CourseResourceImportHeaders(_ConfiguredModel):
+    auth_session_id: str | None = Field(None, validation_alias=AliasChoices("auth_session_id", "authSessionId"))
     cookie: str | None = None
     authorization: str | None = None
     referer: str | None = None
@@ -66,6 +67,7 @@ class CourseResourceImportSourceRequest(_ConfiguredModel):
     clazzid: str | None = None
     cpi: str | None = None
     enc: str | None = None
+    auth_session_id: str | None = Field(None, validation_alias=AliasChoices("auth_session_id", "authSessionId"))
     cookie: str | None = None
     authorization: str | None = None
     referer: str | None = None

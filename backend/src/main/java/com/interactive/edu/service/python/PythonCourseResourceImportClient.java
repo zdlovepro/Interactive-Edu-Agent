@@ -1,164 +1,188 @@
 package com.interactive.edu.service.python;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.interactive.edu.config.PythonClientProperties;
 import com.interactive.edu.exception.ErrorCode;
 import com.interactive.edu.exception.ServiceException;
 import lombok.Builder;
-import lombok.RequiredArgsConstructor;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
-import javax.imageio.ImageIO;
-import java.awt.Color;
-import java.awt.Graphics2D;
-import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class PythonCourseResourceImportClient {
 
+    private final PythonClientProperties props;
     private final ObjectMapper objectMapper;
+    private final RestClient restClient;
+
+    public PythonCourseResourceImportClient(PythonClientProperties props, ObjectMapper objectMapper) {
+        this.props = props;
+        this.objectMapper = objectMapper;
+
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(props.getConnectTimeout())
+                .build();
+
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(props.getReadTimeout());
+
+        this.restClient = RestClient.builder()
+                .requestFactory(requestFactory)
+                .build();
+    }
 
     public ImportExecutionResult executeImport(String taskId, PythonCourseResourceImportRequest request) {
+        String url = props.getBaseUrl() + props.getCourseResourceImportPath();
+        long startAt = System.currentTimeMillis();
         try {
-            Path outputDir = request.getOutputDir().toAbsolutePath().normalize();
-            Files.createDirectories(outputDir);
+            JsonNode envelope = restClient.post()
+                    .uri(url)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .body(buildRequestBody(request))
+                    .retrieve()
+                    .body(JsonNode.class);
 
-            Path imagesDir = outputDir.resolve("images");
-            Path attachmentsDir = outputDir.resolve("attachments");
-            Path contentImagesDir = outputDir.resolve("content_images");
-            Files.createDirectories(imagesDir);
-            Files.createDirectories(attachmentsDir);
-            Files.createDirectories(contentImagesDir);
-
-            Path slideOne = imagesDir.resolve("slide_001.png");
-            Path slideTwo = imagesDir.resolve("slide_002.png");
-            createDemoSlideImage(slideOne, 1280, 720, "Machine Learning - 1");
-            createDemoSlideImage(slideTwo, 1280, 720, "Machine Learning - 2");
-
-            Path originalPdf = attachmentsDir.resolve("original.pdf");
-            Files.writeString(originalPdf, minimalPdf(), StandardCharsets.US_ASCII);
-
-            Path generatedPdf = null;
-            if (request.isBuildPdf()) {
-                generatedPdf = outputDir.resolve("courseware_from_images.pdf");
-                Files.writeString(generatedPdf, minimalPdf(), StandardCharsets.US_ASCII);
+            if (envelope == null) {
+                throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "Course resource importer returned empty response");
+            }
+            if (envelope.path("code").asInt(-1) != 0) {
+                String message = envelope.path("message").asText("Course resource importer failed");
+                throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, message);
             }
 
-            List<ImportFileResult> files = List.of(
-                    ImportFileResult.builder()
-                            .fileName(slideOne.getFileName().toString())
-                            .resourceKind("slide_image")
-                            .status("SUCCESS")
-                            .localPath(slideOne.toString())
-                            .confidence(0.92d)
-                            .reason("large 16:9 image likely slide page")
-                            .build(),
-                    ImportFileResult.builder()
-                            .fileName(slideTwo.getFileName().toString())
-                            .resourceKind("slide_image")
-                            .status("SUCCESS")
-                            .localPath(slideTwo.toString())
-                            .confidence(0.91d)
-                            .reason("large 16:9 image likely slide page")
-                            .build(),
-                    ImportFileResult.builder()
-                            .fileName(originalPdf.getFileName().toString())
-                            .resourceKind("courseware_file")
-                            .status("SUCCESS")
-                            .localPath(originalPdf.toString())
-                            .confidence(0.98d)
-                            .reason("extension .pdf recognized as courseware file")
-                            .build()
-            );
-
-            Path manifestPath = outputDir.resolve("manifest.json");
-            Map<String, Object> generated = new LinkedHashMap<>();
-            generated.put("pdf_from_slide_images", generatedPdf == null ? null : generatedPdf.toString());
-            Map<String, Object> manifest = new LinkedHashMap<>();
-            manifest.put("source", "chaoxing_authorized_course_import");
-            manifest.put("taskId", taskId);
-            manifest.put("resourceCount", 12);
-            manifest.put("selectedCount", 3);
-            manifest.put("downloadedCount", 3);
-            manifest.put("ignoredCount", 9);
-            manifest.put("files", files);
-            manifest.put("generated", generated);
-            objectMapper.writerWithDefaultPrettyPrinter().writeValue(
-                    manifestPath.toFile(),
-                    manifest
-            );
-
-            List<ParseReadyFile> parseReadyFiles = generatedPdf == null
-                    ? List.of(new ParseReadyFile("courseware_file", originalPdf.toString(), "Original PDF"))
-                    : List.of(
-                    new ParseReadyFile("pdf", generatedPdf.toString(), "Courseware slide images merged PDF"),
-                    new ParseReadyFile("courseware_file", originalPdf.toString(), "Original PDF")
-            );
-
-            Path parseReadyManifest = outputDir.resolve("parse_ready_manifest.json");
-            objectMapper.writerWithDefaultPrettyPrinter().writeValue(
-                    parseReadyManifest.toFile(),
-                    Map.of(
-                            "source", "chaoxing_authorized_course_import",
-                            "parse_ready_files", parseReadyFiles
-                    )
-            );
-
+            ImportExecutionResult result = toImportExecutionResult(envelope.path("data"));
             log.info(
-                    "Mock Python course-resource import finished. taskId={}, outputDir={}, generatedPdf={}",
+                    "Python course-resource import succeeded. taskId={}, downloaded={}, ignored={}, latencyMs={}",
                     taskId,
-                    outputDir,
-                    generatedPdf
+                    result.getDownloadedCount(),
+                    result.getIgnoredCount(),
+                    Math.max(1, System.currentTimeMillis() - startAt)
             );
-
-            return ImportExecutionResult.builder()
-                    .discoveredCount(12)
-                    .selectedCount(3)
-                    .downloadedCount(3)
-                    .ignoredCount(9)
-                    .generatedPdf(generatedPdf == null ? null : generatedPdf.toString())
-                    .parseReadyManifest(parseReadyManifest.toString())
-                    .files(files)
-                    .build();
-        } catch (IOException ex) {
-            throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "Mock Python course import failed", ex);
+            return result;
+        } catch (ServiceException ex) {
+            log.warn(
+                    "Python course-resource import returned failure. taskId={}, latencyMs={}, reason={}",
+                    taskId,
+                    Math.max(1, System.currentTimeMillis() - startAt),
+                    ex.getMessage()
+            );
+            throw ex;
+        } catch (RestClientException ex) {
+            throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "Course resource importer call failed", ex);
         }
     }
 
-    private void createDemoSlideImage(Path path, int width, int height, String label) throws IOException {
-        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-        Graphics2D graphics = image.createGraphics();
-        graphics.setColor(new Color(244, 247, 250));
-        graphics.fillRect(0, 0, width, height);
-        graphics.setColor(new Color(40, 57, 74));
-        graphics.fillRect(60, 60, width - 120, height - 120);
-        graphics.setColor(Color.WHITE);
-        graphics.drawString(label, 120, 160);
-        graphics.dispose();
-        ImageIO.write(image, "png", path.toFile());
+    private Map<String, Object> buildRequestBody(PythonCourseResourceImportRequest request) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("source_type", request.getSourceType());
+        body.put("url", emptyToNull(request.getUrl()));
+        body.put("courseid", emptyToNull(request.getCourseid()));
+        body.put("clazzid", emptyToNull(request.getClazzid()));
+        body.put("cpi", emptyToNull(request.getCpi()));
+        body.put("enc", emptyToNull(request.getEnc()));
+        body.put("auth_session_id", emptyToNull(request.getAuthSessionId()));
+        body.put("cookie", emptyToNull(request.getCookie()));
+        body.put("authorization", emptyToNull(request.getAuthorization()));
+        body.put("referer", emptyToNull(request.getReferer()));
+        body.put("output_dir", request.getOutputDir().toString());
+        body.put("build_pdf", request.isBuildPdf());
+        return body;
     }
 
-    private String minimalPdf() {
-        return "%PDF-1.4\n"
-                + "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
-                + "2 0 obj\n<< /Type /Pages /Count 1 /Kids [3 0 R] >>\nendobj\n"
-                + "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n"
-                + "xref\n0 4\n"
-                + "0000000000 65535 f \n"
-                + "0000000010 00000 n \n"
-                + "0000000059 00000 n \n"
-                + "0000000116 00000 n \n"
-                + "trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n178\n%%EOF\n";
+    private ImportExecutionResult toImportExecutionResult(JsonNode payload) {
+        String manifestPath = payload.path("manifest_path").asText("");
+        String parseReadyManifestPath = payload.path("parse_ready_manifest_path").asText("");
+        String generatedPdf = payload.path("generated_pdf").isMissingNode() || payload.path("generated_pdf").isNull()
+                ? null
+                : payload.path("generated_pdf").asText();
+
+        if (!StringUtils.hasText(manifestPath)) {
+            throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "Course resource importer did not return manifest_path");
+        }
+        if (!StringUtils.hasText(parseReadyManifestPath)) {
+            throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "Course resource importer did not return parse_ready_manifest_path");
+        }
+
+        JsonNode manifest = readManifest(manifestPath);
+        JsonNode generatedNode = manifest.path("generated").path("pdf_from_slide_images");
+        if (!StringUtils.hasText(generatedPdf) && !generatedNode.isMissingNode() && !generatedNode.isNull()) {
+            generatedPdf = generatedNode.asText(null);
+        }
+
+        int discoveredCount = manifest.path("resource_count").asInt(payload.path("summary").path("discovered").asInt(0));
+        int selectedCount = manifest.path("selected_count").asInt(payload.path("summary").path("selected").asInt(0));
+        int downloadedCount = manifest.path("downloaded_count").asInt(payload.path("summary").path("downloaded").asInt(0));
+        int ignoredCount = manifest.path("ignored_count").asInt(payload.path("summary").path("ignored").asInt(0));
+
+        return ImportExecutionResult.builder()
+                .discoveredCount(discoveredCount)
+                .selectedCount(selectedCount)
+                .downloadedCount(downloadedCount)
+                .ignoredCount(ignoredCount)
+                .generatedPdf(generatedPdf)
+                .parseReadyManifest(parseReadyManifestPath)
+                .files(parseFiles(manifest.path("files")))
+                .build();
+    }
+
+    private JsonNode readManifest(String manifestPath) {
+        try {
+            Path path = Path.of(manifestPath).toAbsolutePath().normalize();
+            if (!Files.exists(path) || !Files.isRegularFile(path)) {
+                throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "Course resource manifest not found: " + path);
+            }
+            return objectMapper.readTree(path.toFile());
+        } catch (ServiceException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "Failed to read course resource manifest", ex);
+        }
+    }
+
+    private List<ImportFileResult> parseFiles(JsonNode filesNode) {
+        List<ImportFileResult> files = new ArrayList<>();
+        if (!filesNode.isArray()) {
+            return List.of();
+        }
+
+        for (JsonNode item : filesNode) {
+            String localPath = item.path("local_path").asText("");
+            String fileName = item.path("file_name").asText("");
+            if (!StringUtils.hasText(fileName) && StringUtils.hasText(localPath)) {
+                fileName = Path.of(localPath).getFileName().toString();
+            }
+
+            files.add(ImportFileResult.builder()
+                    .fileName(fileName)
+                    .resourceKind(item.path("resource_kind").asText("unknown"))
+                    .status(item.path("status").asText("SUCCESS").toUpperCase())
+                    .localPath(StringUtils.hasText(localPath) ? localPath : null)
+                    .confidence(item.path("confidence").isNumber() ? item.path("confidence").asDouble() : null)
+                    .reason(item.path("reason").asText(""))
+                    .build());
+        }
+        return List.copyOf(files);
+    }
+
+    private String emptyToNull(String value) {
+        return StringUtils.hasText(value) ? value.trim() : null;
     }
 
     @Value
@@ -182,8 +206,5 @@ public class PythonCourseResourceImportClient {
         String localPath;
         Double confidence;
         String reason;
-    }
-
-    public record ParseReadyFile(String type, String path, String title) {
     }
 }

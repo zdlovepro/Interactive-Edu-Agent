@@ -23,6 +23,12 @@ public class PythonClientProperties {
     /** QA SSE API path, e.g. /python/v1/qa/stream */
     private String qaStreamPath = "/python/v1/qa/stream";
 
+    /** Course resource importer API path, e.g. /python/v1/course-resource-import/import */
+    private String courseResourceImportPath = "/python/v1/course-resource-import/import";
+
+    /** Chaoxing QR auth API path, e.g. /python/v1/chaoxing/auth/sessions */
+    private String chaoxingAuthPath = "/python/v1/chaoxing/auth/sessions";
+
     /** HTTP connect timeout. */
     private Duration connectTimeout = Duration.ofSeconds(5);
 

@@ -32,7 +32,9 @@ from app.course_resource_importer import (
     parse_chaoxing_course_url,
     select_slide_images_from_results,
 )
+from app.course_resource_importer.chaoxing_course_crawler import discover_resources_from_chaoxing_course_structure
 from app.course_resource_importer.config import DEFAULT_RATE_LIMIT_PER_HOST, DEFAULT_TIMEOUT_SECONDS, DEFAULT_USER_AGENT
+from app.course_resource_importer.resource_models import dedupe_discovered_resources
 from app.schemas.course_resource_import import (
     CourseResourceImportDiscoverRequest,
     CourseResourceImportDownloadRequest,
@@ -41,6 +43,7 @@ from app.schemas.course_resource_import import (
     DiscoveredResourcePayload,
 )
 from app.utils.logger import logger
+from app.services.chaoxing_auth_service import chaoxing_auth_service
 
 SOURCE_TYPE_CHAOXING_COURSE = "CHAOXING_COURSE"
 DEFAULT_MIN_CONFIDENCE = 0.6
@@ -69,7 +72,8 @@ async def discover_course_resources(request: CourseResourceImportDiscoverRequest
 
 
 async def download_course_resources(request: CourseResourceImportDownloadRequest) -> dict[str, object]:
-    headers = _resolve_headers(
+    headers = await _resolve_headers(
+        auth_session_id=request.headers.auth_session_id,
         cookie=request.headers.cookie,
         authorization=request.headers.authorization,
         referer=request.headers.referer,
@@ -181,6 +185,7 @@ async def import_course_resources(request: CourseResourceImportRequest) -> dict[
         task_id=request.output_path.name or "course_resource_import",
         resources=[DiscoveredResourcePayload.model_validate(item) for item in discover_payload["resources"]],
         headers=CourseResourceImportHeaders(
+            auth_session_id=request.auth_session_id,
             cookie=request.cookie,
             authorization=request.authorization,
             referer=request.referer or page_url,
@@ -225,7 +230,12 @@ async def _discover_resource_batches(
 ) -> tuple[list[DiscoveredResource], list[DiscoveredResource], ChaoxingCourseRef, str]:
     try:
         course_ref, page_url = _resolve_course_ref_and_url(request)
-        headers = _resolve_headers(cookie=request.cookie, authorization=request.authorization, referer=request.referer or page_url)
+        headers = await _resolve_headers(
+            auth_session_id=request.auth_session_id,
+            cookie=request.cookie,
+            authorization=request.authorization,
+            referer=request.referer or page_url,
+        )
         html = await fetch_authorized_html(
             page_url,
             AuthorizedFetchContext(
@@ -237,17 +247,47 @@ async def _discover_resource_batches(
                 rate_limit_per_host=DEFAULT_RATE_LIMIT_PER_HOST,
             ),
         )
+        fetch_context = AuthorizedFetchContext(
+            cookie=headers.cookie,
+            authorization=headers.authorization,
+            referer=headers.referer,
+            user_agent=DEFAULT_USER_AGENT,
+            timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+            rate_limit_per_host=DEFAULT_RATE_LIMIT_PER_HOST,
+        )
         raw_resources = discover_resources_from_html(html, page_url=page_url, course_ref=course_ref)
+        structured_resources = await discover_resources_from_chaoxing_course_structure(
+            course_ref=course_ref,
+            page_url=page_url,
+            page_html=html,
+            context=fetch_context,
+        )
+        raw_resources = dedupe_discovered_resources([*raw_resources, *structured_resources])
         classified_resources = classify_resources(raw_resources)
         return raw_resources, classified_resources, course_ref, page_url
     except Exception as exc:  # noqa: BLE001
         raise _translate_import_exception(exc) from exc
 
 
-def _resolve_headers(*, cookie: str | None, authorization: str | None, referer: str | None) -> CourseResourceImportHeaders:
-    if not cookie and not authorization:
-        raise AppException(BUSINESS_VALIDATION_FAILED, "Explicit Cookie or Authorization is required.")
-    return CourseResourceImportHeaders(cookie=cookie, authorization=authorization, referer=referer)
+async def _resolve_headers(
+    *,
+    auth_session_id: str | None,
+    cookie: str | None,
+    authorization: str | None,
+    referer: str | None,
+) -> CourseResourceImportHeaders:
+    resolved_cookie = cookie
+    if auth_session_id and not resolved_cookie:
+        resolved_cookie = await chaoxing_auth_service.get_cookie_header(auth_session_id)
+
+    if not resolved_cookie and not authorization:
+        raise AppException(BUSINESS_VALIDATION_FAILED, "Explicit Cookie, Authorization, or auth_session_id is required.")
+    return CourseResourceImportHeaders(
+        auth_session_id=auth_session_id,
+        cookie=resolved_cookie,
+        authorization=authorization,
+        referer=referer,
+    )
 
 
 def _ensure_supported_source_type(source_type: str) -> None:

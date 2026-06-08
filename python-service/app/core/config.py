@@ -62,6 +62,26 @@ class Settings(BaseSettings):
     VISION_MAX_TOKENS: int = 512
     VISION_TIMEOUT: int = 120
 
+    # ---------- Redis / Chaoxing authorized import ----------
+    REDIS_URL: str = ""
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_DATABASE: int = 0
+    REDIS_PASSWORD: str = ""
+    CHAOXING_AUTH_TTL_SECONDS: int = 7200
+    CHAOXING_AUTH_LOGIN_URL: str = "https://passport2.chaoxing.com/login?refer=https%3A%2F%2Fi.chaoxing.com"
+    CHAOXING_AUTH_HEADLESS: bool = True
+    CHAOXING_AUTH_TIMEOUT_SECONDS: int = 180
+    CHAOXING_MAX_CHAPTERS: int = 120
+    CHAOXING_MAX_CARDS_PER_CHAPTER: int = 80
+
+    # ---------- Object storage for full mode parsing ----------
+    MINIO_ENDPOINT: str = "http://localhost:9000"
+    MINIO_ACCESS_KEY: str = ""
+    MINIO_SECRET_KEY: str = ""
+    MINIO_BUCKET: str = "courseware"
+    MINIO_SECURE: bool = False
+
     class Config:
         env_file = ".env"
 

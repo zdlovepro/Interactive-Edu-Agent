@@ -75,6 +75,50 @@
           </p>
         </div>
 
+        <div class="chaoxing-auth-card">
+          <div class="chaoxing-auth-card__copy">
+            <span class="eyebrow">推荐授权方式</span>
+            <h3>学习通扫码授权</h3>
+            <p>
+              系统会打开超星官方扫码登录页并截取二维码。你用学习通 App 扫码确认后，Cookie 只保存在后端临时会话中，
+              前端不会接触完整 Cookie。
+            </p>
+            <div class="chaoxing-auth-card__actions">
+              <AppButton type="button" :disabled="authLoading || isProcessing" @click="startChaoxingAuth">
+                {{ chaoxingAuth?.sessionId ? '重新生成二维码' : '生成扫码二维码' }}
+              </AppButton>
+              <AppButton
+                v-if="chaoxingAuth?.sessionId"
+                type="button"
+                variant="secondary"
+                :disabled="authLoading"
+                @click="disconnectChaoxingAuth"
+              >
+                断开授权
+              </AppButton>
+            </div>
+          </div>
+
+          <div class="chaoxing-auth-card__qr">
+            <div v-if="authQrCodeUrl && authStatus !== 'AUTHORIZED'" class="qr-box">
+              <img :src="authQrCodeUrl" alt="超星扫码登录二维码" />
+            </div>
+            <div v-else class="qr-placeholder" :class="{ authorized: isChaoxingAuthorized }">
+              <strong>{{ isChaoxingAuthorized ? '已授权' : '等待生成二维码' }}</strong>
+              <span>{{ authStatusText }}</span>
+            </div>
+            <StatusBadge
+              :label="authStatusText"
+              :tone="isChaoxingAuthorized ? 'success' : authStatus === 'FAILED' || authStatus === 'EXPIRED' ? 'danger' : 'info'"
+            />
+          </div>
+        </div>
+
+        <div v-if="authError" class="inline-error">
+          <span>{{ authError }}</span>
+          <button type="button" @click="authError = ''">关闭</button>
+        </div>
+
         <form class="import-form" @submit.prevent="submitTask">
           <div class="field-block">
             <label class="field-label" for="course-url">超星课程 URL</label>
@@ -392,7 +436,11 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   cancelCourseResourceImportTask,
+  closeChaoxingAuthSession,
+  createChaoxingAuthSession,
   createCourseResourceImportTask,
+  getChaoxingAuthQrCodeUrl,
+  getChaoxingAuthSession,
   getCourseResourceImportTask,
   getCourseResourceImportTaskFiles,
   retryCourseResourceImportTask,
@@ -516,7 +564,9 @@ const RESOURCE_KIND_LABELS = {
 }
 
 const POLL_INTERVAL_MS = 3000
+const AUTH_POLL_INTERVAL_MS = 2500
 const TERMINAL_STATUSES = new Set(['READY', 'FAILED', 'CANCELLED'])
+const AUTH_TERMINAL_STATUSES = new Set(['AUTHORIZED', 'EXPIRED', 'FAILED', 'CLOSED'])
 
 const formSectionRef = ref(null)
 const showAdvanced = ref(false)
@@ -524,6 +574,9 @@ const formError = ref('')
 const pageError = ref('')
 const isSubmitting = ref(false)
 const actionLoading = ref(false)
+const authLoading = ref(false)
+const authError = ref('')
+const chaoxingAuth = ref(null)
 const task = ref(null)
 const files = ref([])
 const coursewareDetail = ref(null)
@@ -534,6 +587,7 @@ const form = reactive({
   clazzid: '',
   cpi: '',
   enc: '',
+  authSessionId: '',
   cookie: '',
   authorization: '',
   referer: '',
@@ -542,6 +596,7 @@ const form = reactive({
 })
 
 let pollTimer = null
+let authPollTimer = null
 
 const normalizedTaskStatus = computed(() => normalizeTaskStatus(task.value?.status))
 const taskStatusMeta = computed(() => TASK_STATUS_META[normalizedTaskStatus.value] || TASK_STATUS_META.PENDING)
@@ -608,6 +663,40 @@ const coursewareStatusMeta = computed(() => {
   return getCoursewareStatusMeta(coursewareDetail.value?.status || '')
 })
 
+const authStatus = computed(() => String(chaoxingAuth.value?.status || '').trim().toUpperCase())
+
+const isChaoxingAuthorized = computed(() => authStatus.value === 'AUTHORIZED')
+
+const authQrCodeUrl = computed(() => {
+  if (!chaoxingAuth.value?.sessionId) {
+    return ''
+  }
+  return getChaoxingAuthQrCodeUrl(chaoxingAuth.value.sessionId)
+})
+
+const authStatusText = computed(() => {
+  const status = authStatus.value
+  if (status === 'AUTHORIZED') {
+    return '授权成功，可以提交导入'
+  }
+  if (status === 'WAITING_SCAN') {
+    return '等待学习通扫码确认'
+  }
+  if (status === 'WAITING_QR' || status === 'CREATED') {
+    return '正在生成登录二维码'
+  }
+  if (status === 'EXPIRED') {
+    return '二维码已过期，请重新创建'
+  }
+  if (status === 'FAILED') {
+    return '授权失败，请重试'
+  }
+  if (status === 'CLOSED') {
+    return '授权已断开'
+  }
+  return '尚未创建授权会话'
+})
+
 const canSubmit = computed(() => {
   return !isSubmitting.value && !isProcessing.value && hasSourceInput() && hasAuthorizationInput()
 })
@@ -671,7 +760,7 @@ function hasSourceInput() {
 }
 
 function hasAuthorizationInput() {
-  return Boolean(form.cookie.trim() || form.authorization.trim())
+  return Boolean(isChaoxingAuthorized.value || form.cookie.trim() || form.authorization.trim())
 }
 
 function normalizeOptional(value) {
@@ -687,6 +776,7 @@ function buildPayload() {
     clazzid: normalizeOptional(form.clazzid),
     cpi: normalizeOptional(form.cpi),
     enc: normalizeOptional(form.enc),
+    authSessionId: isChaoxingAuthorized.value ? normalizeOptional(form.authSessionId) : null,
     cookie: normalizeOptional(form.cookie),
     authorization: normalizeOptional(form.authorization),
     referer: normalizeOptional(form.referer),
@@ -706,6 +796,7 @@ function resetForm() {
   form.clazzid = ''
   form.cpi = ''
   form.enc = ''
+  form.authSessionId = ''
   form.cookie = ''
   form.authorization = ''
   form.referer = ''
@@ -846,6 +937,87 @@ function formatConfidence(confidence) {
   return `${Math.round(numeric * 100)}%`
 }
 
+function normalizeAuthSession(payload) {
+  return {
+    sessionId: payload?.sessionId || payload?.session_id || '',
+    status: String(payload?.status || 'CREATED').trim().toUpperCase(),
+    qrCodeUrl: payload?.qrCodeUrl || payload?.qr_code_url || '',
+    message: payload?.message || '',
+    expiresAt: payload?.expiresAt || payload?.expires_at || '',
+    authorizedAt: payload?.authorizedAt || payload?.authorized_at || '',
+  }
+}
+
+function stopAuthPolling() {
+  if (authPollTimer) {
+    window.clearInterval(authPollTimer)
+    authPollTimer = null
+  }
+}
+
+function startAuthPolling(sessionId) {
+  stopAuthPolling()
+  authPollTimer = window.setInterval(async () => {
+    await refreshAuthSession(sessionId)
+  }, AUTH_POLL_INTERVAL_MS)
+}
+
+async function startChaoxingAuth() {
+  authError.value = ''
+  formError.value = ''
+  authLoading.value = true
+  try {
+    const response = await createChaoxingAuthSession({
+      courseUrl: normalizeOptional(form.url),
+    })
+    chaoxingAuth.value = normalizeAuthSession(response.data)
+    form.authSessionId = chaoxingAuth.value.sessionId
+    if (!AUTH_TERMINAL_STATUSES.has(authStatus.value)) {
+      startAuthPolling(chaoxingAuth.value.sessionId)
+    }
+  } catch (error) {
+    authError.value = mapFriendlyImportMessage(error)
+  } finally {
+    authLoading.value = false
+  }
+}
+
+async function refreshAuthSession(sessionId) {
+  if (!sessionId) {
+    return
+  }
+  try {
+    const response = await getChaoxingAuthSession(sessionId)
+    chaoxingAuth.value = normalizeAuthSession(response.data)
+    form.authSessionId = chaoxingAuth.value.sessionId
+    if (AUTH_TERMINAL_STATUSES.has(authStatus.value)) {
+      stopAuthPolling()
+    }
+  } catch (error) {
+    authError.value = mapFriendlyImportMessage(error)
+    stopAuthPolling()
+  }
+}
+
+async function disconnectChaoxingAuth() {
+  const sessionId = chaoxingAuth.value?.sessionId
+  stopAuthPolling()
+  form.authSessionId = ''
+  if (!sessionId) {
+    chaoxingAuth.value = null
+    return
+  }
+  authLoading.value = true
+  try {
+    await closeChaoxingAuthSession(sessionId)
+    chaoxingAuth.value = null
+  } catch (error) {
+    authError.value = mapFriendlyImportMessage(error)
+  } finally {
+    authLoading.value = false
+  }
+}
+
 function stopPolling() {
   if (pollTimer) {
     window.clearInterval(pollTimer)
@@ -918,7 +1090,7 @@ async function submitTask() {
 
   if (!hasAuthorizationInput()) {
     showAdvanced.value = true
-    formError.value = '请至少提供 Cookie 或 Authorization 之一。'
+    formError.value = '请先扫码授权，或在高级授权信息中提供 Cookie / Authorization。'
     return
   }
 
@@ -1031,10 +1203,12 @@ function openLecturePage() {
 
 onMounted(() => {
   stopPolling()
+  stopAuthPolling()
 })
 
 onUnmounted(() => {
   stopPolling()
+  stopAuthPolling()
 })
 </script>
 
@@ -1186,6 +1360,83 @@ onUnmounted(() => {
   margin: 0.45rem 0 0;
   color: var(--text-secondary);
   line-height: 1.75;
+}
+
+.chaoxing-auth-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 1rem;
+  align-items: stretch;
+  padding: 1.05rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(95, 104, 255, 0.16);
+  background:
+    radial-gradient(circle at top left, rgba(95, 104, 255, 0.12), transparent 34%),
+    rgba(255, 255, 255, 0.78);
+}
+
+.chaoxing-auth-card__copy h3 {
+  margin: 0.3rem 0 0.55rem;
+  font-size: 1.2rem;
+}
+
+.chaoxing-auth-card__copy p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.75;
+}
+
+.chaoxing-auth-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.chaoxing-auth-card__qr {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.qr-box,
+.qr-placeholder {
+  display: flex;
+  width: 180px;
+  height: 180px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(122, 132, 181, 0.16);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.qr-box img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.qr-placeholder {
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 1rem;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.qr-placeholder.authorized {
+  color: var(--success-color);
+  background: rgba(54, 179, 126, 0.08);
+}
+
+.qr-placeholder span {
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
 }
 
 .import-form {
@@ -1506,6 +1757,7 @@ onUnmounted(() => {
 
 @media (max-width: 880px) {
   .hero-trust-list,
+  .chaoxing-auth-card,
   .param-grid,
   .options-grid,
   .task-stats-grid {

@@ -1,5 +1,30 @@
 # Interactive-Edu-Agent
 
+## Docker Desktop full 模式与超星扫码授权
+
+本仓库新增了完整 Docker Desktop 编排文件 `docker-compose.full.yml`，用于启动 MySQL、Redis、MinIO、Milvus、Python FastAPI、Spring Boot backend 和 Vue/Nginx frontend。
+
+首次运行：
+
+```powershell
+cd Interactive-Edu-Agent
+cp .env.docker.example .env.docker
+# 按需填写 .env.docker 中的 LLM_API_KEY / DASHSCOPE_API_KEY / MinIO 密码等
+docker compose --env-file .env.docker -f docker-compose.full.yml up -d --build
+```
+
+访问地址：
+
+- 前端：http://localhost
+- 后端：http://localhost:8080
+- Python health：http://localhost:8001/python/v1/health
+- MinIO 控制台：http://localhost:9001
+- Milvus：localhost:19530
+
+超星导入推荐使用“学习通扫码授权”：前端创建授权会话，Python Playwright 打开超星官方扫码登录页，前端展示二维码，用户扫码确认后 Python 捕获登录态 Cookie 并保存到 Redis / 内存 TTL，后续导入只提交 `authSessionId + 课程 URL`。
+
+安全边界：不自动登录，不保存超星账号密码，Cookie 不返回给前端，不写入 MySQL，授权信息有 TTL，可通过“断开授权”清除。手动 Cookie / Authorization 高级模式仍保留用于排障。
+
 Interactive-Edu-Agent 是一个多服务项目，提供课件解析、脚本生成、课堂播放以及问答集成等功能。默认启动路径为 `local`，仓库同时保留了 `full` 模式，支持 MySQL/Redis/MinIO 持久化存储。
 
 ## 项目结构
@@ -222,6 +247,43 @@ npm run dev
 2. 确认后端调用了 `POST /python/v1/parse`。
 3. 等待课件状态进入可播放的路径。
 4. 在课堂页面验证文本问答功能。
+
+## 超星课程资源导入联调
+
+该链路仍使用 `local` 模式即可，不需要 MySQL、Redis、MinIO。请先启动 Python 服务、后端、前端，然后访问：
+
+```text
+http://localhost:5173/course-resource-import
+```
+
+联调输入：
+
+- 填写超星/泛雅课程页 URL，或填写 `courseid` / `clazzid` / `cpi` / `enc`
+- 在高级选项中粘贴用户显式提供的 `Cookie` 或 `Authorization`
+- 勾选“自动合成课件图片为 PDF”和“自动进入课件解析”
+
+调用链路：
+
+```text
+Frontend /course-resource-import
+  -> Backend POST /api/v1/course-resource-import/tasks
+  -> Python POST /python/v1/course-resource-import/import
+  -> manifest.json / parse_ready_manifest.json
+  -> Backend Courseware parse flow
+```
+
+如果课程资源较多，可以在根目录 `.env` 中临时调大后端等待 Python 的读取超时：
+
+```properties
+PYTHON_CLIENT_READ_TIMEOUT=180s
+```
+
+如果前端 `npm install` 遇到用户目录 npm cache 权限问题，可改用工作区缓存：
+
+```powershell
+cd Interactive-Edu-Agent\frontend
+npm install --cache .\.npm-cache
+```
 
 ## 参考
 

@@ -79,6 +79,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+.npm-cache/
 
 # 构建输出
 dist/
