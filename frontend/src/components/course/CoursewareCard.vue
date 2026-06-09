@@ -3,14 +3,14 @@
     <div class="course-card__top">
       <div>
         <p class="course-card__eyebrow">课件资源</p>
-        <h3 class="course-card__title">{{ courseware.name || '未命名课程' }}</h3>
+        <h3 class="course-card__title">{{ courseware.name || '未命名课件' }}</h3>
       </div>
       <StatusBadge :label="statusMeta.text" :tone="statusMeta.tone" />
     </div>
 
     <div class="course-card__meta">
       <div class="meta-item">
-        <span class="meta-label">上传时间</span>
+        <span class="meta-label">更新时间</span>
         <span class="meta-value">{{ createdAtLabel }}</span>
       </div>
       <div class="meta-item">
@@ -20,15 +20,15 @@
     </div>
 
     <div class="course-card__actions">
-      <AppButton variant="secondary" size="sm" @click="$emit('view-script', courseware)">
-        查看讲稿
-      </AppButton>
       <AppButton
+        v-for="action in actions"
+        :key="action.key"
+        :variant="action.variant"
         size="sm"
-        :disabled="!canEnterLecture"
-        @click="$emit('enter-lecture', courseware)"
+        :disabled="action.disabled"
+        @click="emitAction(action)"
       >
-        进入课堂
+        {{ action.label }}
       </AppButton>
     </div>
   </AppCard>
@@ -41,6 +41,7 @@ import AppCard from '@/components/ui/AppCard.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { getCoursewareStatusMeta, getTaskStatusLabel } from '@/constants/courseware'
 import { formatDate } from '@/utils'
+import { getCoursewareActions } from '@/utils/coursewareActions'
 
 const props = defineProps({
   courseware: {
@@ -49,18 +50,25 @@ const props = defineProps({
   },
 })
 
-defineEmits(['view-script', 'enter-lecture'])
+const emit = defineEmits(['view-detail', 'view-script', 'enter-lecture', 'retry'])
 
 const statusMeta = computed(() => getCoursewareStatusMeta(props.courseware.status))
 
 const createdAtLabel = computed(() => {
   const value = props.courseware.updatedAt || props.courseware.createdAt
-  return value ? formatDate(value) : '刚刚上传'
+  return value ? formatDate(value) : '刚刚创建'
 })
 
 const taskStatusLabel = computed(() => getTaskStatusLabel(props.courseware.currentTaskStatus))
 
-const canEnterLecture = computed(() => props.courseware.status === 'READY')
+const actions = computed(() => getCoursewareActions(props.courseware.status))
+
+function emitAction(action) {
+  if (action.disabled) {
+    return
+  }
+  emit(action.event, props.courseware)
+}
 </script>
 
 <style scoped>
@@ -88,9 +96,9 @@ const canEnterLecture = computed(() => props.courseware.status === 'READY')
 
 .course-card__title {
   margin: 0;
+  color: var(--text-primary);
   font-size: 1.2rem;
   line-height: 1.35;
-  color: var(--text-primary);
   word-break: break-word;
 }
 
@@ -105,19 +113,19 @@ const canEnterLecture = computed(() => props.courseware.status === 'READY')
   flex-direction: column;
   gap: 0.35rem;
   padding: 0.9rem;
+  border: 1px solid rgba(148, 157, 188, 0.12);
   border-radius: var(--radius-md);
   background: rgba(248, 250, 255, 0.9);
-  border: 1px solid rgba(148, 157, 188, 0.12);
 }
 
 .meta-label {
-  font-size: var(--font-size-xs);
   color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
 }
 
 .meta-value {
-  font-size: var(--font-size-sm);
   color: var(--text-primary);
+  font-size: var(--font-size-sm);
   font-weight: 600;
 }
 
@@ -141,3 +149,4 @@ const canEnterLecture = computed(() => props.courseware.status === 'READY')
   }
 }
 </style>
+

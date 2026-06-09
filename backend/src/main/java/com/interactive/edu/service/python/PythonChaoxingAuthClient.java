@@ -29,6 +29,7 @@ public class PythonChaoxingAuthClient {
         this.props = props;
 
         HttpClient httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(props.getConnectTimeout())
                 .build();
 
@@ -42,8 +43,8 @@ public class PythonChaoxingAuthClient {
 
     public ChaoxingAuthSessionView createSession(ChaoxingAuthSessionCreateRequest request) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("course_url", emptyToNull(request == null ? null : request.getCourseUrl()));
-        body.put("user_agent", emptyToNull(request == null ? null : request.getUserAgent()));
+        putIfPresent(body, "course_url", request == null ? null : request.getCourseUrl());
+        putIfPresent(body, "user_agent", request == null ? null : request.getUserAgent());
         JsonNode payload = post("", body);
         return toView(payload);
     }
@@ -162,5 +163,12 @@ public class PythonChaoxingAuthClient {
 
     private String emptyToNull(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    private void putIfPresent(Map<String, Object> body, String key, String value) {
+        String normalized = emptyToNull(value);
+        if (normalized != null) {
+            body.put(key, normalized);
+        }
     }
 }

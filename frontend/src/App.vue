@@ -6,7 +6,7 @@
           <span class="brand-mark"></span>
           <div>
             <strong>IEA 智能教学助手</strong>
-            <span>AI 互动教学平台</span>
+            <span>Interactive-Edu-Agent</span>
           </div>
         </RouterLink>
 
@@ -16,7 +16,7 @@
             :key="item.to"
             :to="item.to"
             class="nav-link"
-            :class="{ active: isNavActive(item.to) }"
+            :class="{ active: isNavActive(item) }"
           >
             {{ item.label }}
           </RouterLink>
@@ -40,35 +40,28 @@ import { useRoute } from 'vue-router'
 const route = useRoute()
 
 const navItems = [
-  { label: '首页', to: '/' },
-  { label: '上传课件', to: '/upload' },
-  { label: '视频资产', to: '/video-assets' },
-  { label: '课程列表', to: '/courses' },
-  { label: '我的课程', to: '/mine' },
+  { label: '首页', to: '/', match: ['/'] },
+  { label: '资源库', to: '/resources', match: ['/resources'] },
+  { label: '导入中心', to: '/imports', match: ['/imports'] },
+  { label: '课堂', to: '/resources', match: ['/resources'], secondary: true },
+  { label: '视频资产', to: '/videos', match: ['/videos'] },
+  { label: '个人中心', to: '/profile', match: ['/profile'] },
 ]
 
-const isNavActive = path => {
-  if (path === '/') {
-    return route.path === '/'
+function isNavActive(item) {
+  if (item.to === '/' && route.path === '/') {
+    return true
   }
 
-  if (path === '/courses') {
-    return (
-      route.path.startsWith('/courses') ||
-      route.path.startsWith('/script/') ||
-      route.path.startsWith('/lecture/')
-    )
+  if (item.to === '/resources') {
+    return route.path.startsWith('/resources') && route.name !== 'Lecture' && route.name !== 'Script'
   }
 
-  if (path === '/upload') {
-    return route.path.startsWith('/upload') || route.path.startsWith('/course-resource-import')
+  if (item.secondary) {
+    return route.name === 'Lecture' || route.name === 'Script'
   }
 
-  if (path === '/video-assets') {
-    return route.path.startsWith('/video-assets')
-  }
-
-  return route.path.startsWith(path)
+  return item.match.some(path => path !== '/' && route.path.startsWith(path))
 }
 </script>
 
@@ -81,9 +74,9 @@ const isNavActive = path => {
   position: sticky;
   top: 0;
   z-index: 50;
-  backdrop-filter: blur(16px);
-  background: rgba(249, 251, 255, 0.82);
   border-bottom: 1px solid rgba(138, 150, 185, 0.14);
+  background: rgba(249, 251, 255, 0.82);
+  backdrop-filter: blur(16px);
 }
 
 .app-header::after {
@@ -95,11 +88,11 @@ const isNavActive = path => {
 }
 
 .header-inner {
+  min-height: 5rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  min-height: 5rem;
 }
 
 .brand {
@@ -141,18 +134,18 @@ const isNavActive = path => {
 }
 
 .nav-link {
+  min-height: 2.5rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 2.5rem;
   padding: 0.6rem 0.95rem;
   border-radius: 999px;
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
   font-weight: 600;
   transition:
-    background var(--transition-base),
     color var(--transition-base),
+    background var(--transition-base),
     box-shadow var(--transition-base);
 }
 
@@ -174,10 +167,10 @@ const isNavActive = path => {
 @media (max-width: 768px) {
   .header-inner {
     min-height: auto;
+    flex-direction: column;
+    align-items: flex-start;
     padding-top: 0.9rem;
     padding-bottom: 0.9rem;
-    align-items: flex-start;
-    flex-direction: column;
   }
 
   .header-nav {

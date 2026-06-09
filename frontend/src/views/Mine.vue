@@ -1,133 +1,89 @@
 <template>
-  <div class="mine-page">
+  <div class="profile-page">
     <section class="page-shell page-section">
       <div class="profile-hero">
         <div class="profile-copy">
-          <span class="eyebrow">个人工作台</span>
-          <h1 class="page-title">我的课程</h1>
+          <span class="eyebrow">个人中心</span>
+          <h1 class="page-title">我的工作台</h1>
           <p class="page-description">
-            这里集中展示你上传过的课程资源、当前处理进度和最近可继续的课堂入口。
+            这里只放个人状态、授权状态和常用入口；课件列表统一在资源库查看。
           </p>
         </div>
-        <AppButton size="lg" @click="router.push('/upload')">继续上传课件</AppButton>
+        <AppButton size="lg" @click="router.push('/imports')">前往导入中心</AppButton>
       </div>
     </section>
 
     <section class="page-shell page-section">
       <div class="summary-grid">
-        <AppCard v-for="card in summaryCards" :key="card.label" tone="glass" class="summary-card">
-          <span>{{ card.label }}</span>
-          <strong>{{ card.value }}</strong>
-          <p>{{ card.description }}</p>
+        <AppCard tone="glass" class="summary-card">
+          <span>超星授权</span>
+          <strong>{{ authStatusText }}</strong>
+          <p>{{ authHint }}</p>
+          <AppButton variant="secondary" size="sm" @click="router.push('/imports/chaoxing')">
+            管理授权
+          </AppButton>
+        </AppCard>
+
+        <AppCard tone="glass" class="summary-card">
+          <span>资源库</span>
+          <strong>课件资源</strong>
+          <p>查看上传、导入、解析、讲稿和课堂入口。</p>
+          <AppButton variant="secondary" size="sm" @click="router.push('/resources')">
+            打开资源库
+          </AppButton>
+        </AppCard>
+
+        <AppCard tone="glass" class="summary-card">
+          <span>导入</span>
+          <strong>创建资源</strong>
+          <p>本地上传、超星扫码导入和普通 URL 导入都从这里开始。</p>
+          <AppButton variant="secondary" size="sm" @click="router.push('/imports')">
+            打开导入中心
+          </AppButton>
+        </AppCard>
+
+        <AppCard tone="glass" class="summary-card">
+          <span>视频资产</span>
+          <strong>HLS / MP4</strong>
+          <p>管理后续数字人和课堂播放需要的视频素材。</p>
+          <AppButton variant="secondary" size="sm" @click="router.push('/videos')">
+            查看视频资产
+          </AppButton>
         </AppCard>
       </div>
-    </section>
-
-    <section class="page-shell page-section">
-      <div class="section-header">
-        <div>
-          <span class="eyebrow">最近资源</span>
-          <h2 class="page-title section-title">最近上传的课程</h2>
-        </div>
-      </div>
-
-      <div v-if="errorMessage" class="inline-error">
-        <span>{{ errorMessage }}</span>
-        <button @click="errorMessage = ''">关闭</button>
-      </div>
-
-      <div v-if="recentCourses.length" class="course-grid">
-        <CoursewareCard
-          v-for="item in recentCourses"
-          :key="item.id"
-          :courseware="item"
-          @view-script="openScript"
-          @enter-lecture="enterLecture"
-        />
-      </div>
-
-      <AppCard v-else tone="glass">
-        <EmptyState
-          title="还没有课程记录"
-          description="上传第一份课件后，这里会开始展示你的课程统计和最近进度。"
-          action-label="上传课件"
-          @action="router.push('/upload')"
-        />
-      </AppCard>
     </section>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import CoursewareCard from '@/components/course/CoursewareCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
-import EmptyState from '@/components/ui/EmptyState.vue'
-import { listCourseware } from '@/api/courseware'
-import { getErrorMessage } from '@/utils'
+import { useChaoxingAuthStore } from '@/stores/chaoxingAuth'
 
 const router = useRouter()
+const chaoxingAuthStore = useChaoxingAuthStore()
 
-const coursewareList = ref([])
-const errorMessage = ref('')
-
-const summaryCards = computed(() => {
-  const total = coursewareList.value.length
-  const ready = coursewareList.value.filter(item => item.status === 'READY').length
-  const running = coursewareList.value.filter(item =>
-    ['PARSING', 'GENERATING_SCRIPT', 'UPLOADED', 'PARSED'].includes(item.status),
-  ).length
-  const failed = coursewareList.value.filter(item => item.status === 'FAILED').length
-
-  return [
-    { label: '课程数', value: total, description: '已上传并纳入管理的课件' },
-    { label: '已就绪', value: ready, description: '可直接进入课堂的课程' },
-    { label: '生成中', value: running, description: '等待解析或正在准备讲稿' },
-    { label: '失败', value: failed, description: '需要重新处理的课程' },
-  ]
-})
-
-const recentCourses = computed(() =>
-  [...coursewareList.value].sort((left, right) => {
-    const leftValue = new Date(left.updatedAt || left.createdAt || 0).getTime()
-    const rightValue = new Date(right.updatedAt || right.createdAt || 0).getTime()
-    return rightValue - leftValue
-  }),
-)
-
-const normalizeCourseware = item => ({
-  id: item?.id || item?.coursewareId || '',
-  name: item?.name || '未命名课程',
-  status: item?.status || 'UPLOADED',
-  createdAt: item?.createdAt || '',
-  updatedAt: item?.updatedAt || '',
-  currentTaskStatus: item?.currentTaskStatus || '',
-})
-
-const loadCoursewareList = async () => {
-  errorMessage.value = ''
-  try {
-    const response = await listCourseware()
-    coursewareList.value = Array.isArray(response.data?.items)
-      ? response.data.items.map(normalizeCourseware)
-      : []
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error, '加载我的课程失败，请稍后重试。')
+const authStatusText = computed(() => {
+  if (chaoxingAuthStore.isAuthorized) {
+    return '已授权'
   }
-}
+  if (chaoxingAuthStore.sessionId) {
+    return chaoxingAuthStore.status || '未完成'
+  }
+  return '未授权'
+})
 
-const openScript = courseware => {
-  router.push({ name: 'Script', params: { coursewareId: courseware.id } })
-}
-
-const enterLecture = courseware => {
-  router.push({ name: 'Lecture', params: { coursewareId: courseware.id } })
-}
+const authHint = computed(() => {
+  if (chaoxingAuthStore.isAuthorized) {
+    return '已保存本次授权会话 ID，不保存 Cookie。'
+  }
+  return '需要从超星导入课程时，请先扫码授权。'
+})
 
 onMounted(() => {
-  loadCoursewareList()
+  chaoxingAuthStore.restoreFromLocalStorage()
 })
 </script>
 
@@ -138,19 +94,24 @@ onMounted(() => {
   justify-content: space-between;
   gap: 1rem;
   padding: 2rem;
+  border: 1px solid rgba(123, 134, 182, 0.12);
   border-radius: calc(var(--radius-xl) + 0.15rem);
   background:
     radial-gradient(circle at top left, rgba(100, 112, 255, 0.18), transparent 34%),
     rgba(255, 255, 255, 0.88);
-  border: 1px solid rgba(123, 134, 182, 0.12);
   box-shadow: var(--shadow-md);
 }
 
-.summary-grid,
-.course-grid {
+.summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1rem;
+}
+
+.summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
 .summary-card span {
@@ -161,43 +122,21 @@ onMounted(() => {
 }
 
 .summary-card strong {
-  display: block;
-  margin-top: 0.45rem;
-  font-size: 2rem;
+  font-size: 1.45rem;
 }
 
 .summary-card p {
-  margin: 0.6rem 0 0;
+  margin: 0;
   color: var(--text-secondary);
   line-height: 1.7;
 }
 
-.section-title {
-  font-size: clamp(1.8rem, 3vw, 2.4rem);
-}
-
-.inline-error {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1rem;
-  padding: 0.95rem 1rem;
-  border-radius: var(--radius-md);
-  background: rgba(230, 84, 106, 0.08);
-  border: 1px solid rgba(230, 84, 106, 0.15);
-  color: #b93f59;
-}
-
-.inline-error button {
-  color: inherit;
-  font-weight: 600;
-  cursor: pointer;
+.summary-card .app-button {
+  margin-top: auto;
 }
 
 @media (max-width: 1080px) {
-  .summary-grid,
-  .course-grid {
+  .summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -211,9 +150,9 @@ onMounted(() => {
 }
 
 @media (max-width: 640px) {
-  .summary-grid,
-  .course-grid {
+  .summary-grid {
     grid-template-columns: 1fr;
   }
 }
 </style>
+

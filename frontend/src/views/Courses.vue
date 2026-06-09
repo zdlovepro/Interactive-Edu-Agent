@@ -1,12 +1,12 @@
 <template>
-  <div class="courses-page">
+  <div class="resources-page">
     <section class="page-shell page-section">
       <div class="section-header">
         <div>
-          <span class="eyebrow">课程工作台</span>
-          <h1 class="page-title">课程列表</h1>
+          <span class="eyebrow">资源库</span>
+          <h1 class="page-title">课件资源库</h1>
           <p class="page-description">
-            统一查看上传的课件、超星课程导入任务与后续讲稿入口，适合课前准备和课后继续处理。
+            统一查看本地上传、超星导入和 URL 导入得到的课件资源。讲稿和课堂入口会根据资源状态开放。
           </p>
         </div>
       </div>
@@ -14,20 +14,18 @@
       <AppCard tone="glass" class="toolbar-card">
         <div class="toolbar">
           <div class="toolbar-search">
-            <label for="course-search" class="visually-hidden">搜索课程</label>
+            <label for="resource-search" class="visually-hidden">搜索课件资源</label>
             <input
-              id="course-search"
+              id="resource-search"
               v-model.trim="keyword"
               class="app-input"
               type="text"
-              placeholder="搜索课程名称"
+              placeholder="搜索课件名称"
             />
           </div>
           <div class="toolbar-actions">
-            <AppButton variant="secondary" @click="router.push('/course-resource-import')">
-              从超星课程导入
-            </AppButton>
-            <AppButton @click="router.push('/upload')">上传课件</AppButton>
+            <AppButton variant="secondary" @click="router.push('/imports/chaoxing')">从超星导入</AppButton>
+            <AppButton @click="router.push('/imports/upload')">上传课件</AppButton>
           </div>
         </div>
       </AppCard>
@@ -46,7 +44,7 @@
     <section class="page-shell page-section">
       <div v-if="errorMessage" class="inline-error">
         <span>{{ errorMessage }}</span>
-        <button type="button" @click="errorMessage = ''">关闭</button>
+        <button type="button" @click="loadCoursewareList">重试</button>
       </div>
 
       <div v-if="loading" class="course-grid">
@@ -57,22 +55,24 @@
         </AppCard>
       </div>
 
-      <div v-else-if="filteredCourses.length" class="course-grid">
+      <div v-else-if="filteredCourseware.length" class="course-grid">
         <CoursewareCard
-          v-for="item in filteredCourses"
+          v-for="item in filteredCourseware"
           :key="item.id"
           :courseware="item"
+          @view-detail="openDetail"
           @view-script="openScript"
           @enter-lecture="enterLecture"
+          @retry="openDetail"
         />
       </div>
 
       <AppCard v-else tone="glass">
         <EmptyState
-          title="还没有课程资源"
+          title="还没有课件资源"
           description="你可以先上传本地课件，也可以直接从超星课程页导入课件资源。"
-          action-label="从超星课程导入"
-          @action="router.push('/course-resource-import')"
+          action-label="前往导入中心"
+          @action="router.push('/imports')"
         />
       </AppCard>
     </section>
@@ -96,7 +96,7 @@ const loading = ref(false)
 const errorMessage = ref('')
 const coursewareList = ref([])
 
-const filteredCourses = computed(() => {
+const filteredCourseware = computed(() => {
   const search = keyword.value.toLowerCase()
   if (!search) {
     return coursewareList.value
@@ -108,24 +108,24 @@ const filteredCourses = computed(() => {
 const statsCards = computed(() => {
   const total = coursewareList.value.length
   const ready = coursewareList.value.filter(item => item.status === 'READY').length
-  const processing = coursewareList.value.filter(
-    item => item.status === 'GENERATING_SCRIPT' || item.status === 'PARSING' || item.status === 'PARSED',
+  const processing = coursewareList.value.filter(item =>
+    ['UPLOADED', 'PARSING', 'PARSED', 'GENERATING_SCRIPT'].includes(item.status),
   ).length
   const failed = coursewareList.value.filter(item => item.status === 'FAILED').length
 
   return [
-    { label: '课程总数', value: total, description: '当前可继续追踪的课件与课程资源。' },
-    { label: '已就绪', value: ready, description: '可以直接查看讲稿或进入讲课页。' },
-    { label: '处理中', value: processing, description: '正在解析课件或生成讲稿的课程。' },
-    { label: '失败', value: failed, description: '需要重新上传或重新处理的课程。' },
+    { label: '资源总数', value: total, description: '当前纳入管理的课件资源。' },
+    { label: '已就绪', value: ready, description: '可以查看讲稿或进入课堂。' },
+    { label: '处理中', value: processing, description: '正在解析或等待讲稿生成。' },
+    { label: '失败', value: failed, description: '需要查看错误并重新处理。' },
   ]
 })
 
 function normalizeCourseware(item) {
   return {
     id: item?.id || item?.coursewareId || '',
-    name: item?.name || '未命名课程',
-    status: item?.status || 'UPLOADED',
+    name: item?.name || '未命名课件',
+    status: String(item?.status || 'UPLOADED').trim().toUpperCase(),
     createdAt: item?.createdAt || '',
     updatedAt: item?.updatedAt || '',
     currentTaskStatus: item?.currentTaskStatus || '',
@@ -142,10 +142,14 @@ async function loadCoursewareList() {
       ? response.data.items.map(normalizeCourseware)
       : []
   } catch (error) {
-    errorMessage.value = getErrorMessage(error, '加载课程列表失败，请稍后重试。')
+    errorMessage.value = getErrorMessage(error, '加载课件资源库失败，请稍后重试。')
   } finally {
     loading.value = false
   }
+}
+
+function openDetail(courseware) {
+  router.push({ name: 'ResourceDetail', params: { coursewareId: courseware.id } })
 }
 
 function openScript(courseware) {
@@ -217,10 +221,10 @@ onMounted(() => {
   gap: 1rem;
   margin-bottom: 1rem;
   padding: 0.95rem 1rem;
-  border-radius: var(--radius-md);
-  background: rgba(230, 84, 106, 0.08);
   border: 1px solid rgba(230, 84, 106, 0.15);
+  border-radius: var(--radius-md);
   color: #b93f59;
+  background: rgba(230, 84, 106, 0.08);
 }
 
 .inline-error button {
@@ -290,3 +294,4 @@ onMounted(() => {
   }
 }
 </style>
+

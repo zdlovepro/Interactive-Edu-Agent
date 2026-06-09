@@ -11,7 +11,7 @@
         </div>
 
         <div class="header-actions">
-          <AppButton variant="secondary" @click="goBack">返回课程列表</AppButton>
+          <AppButton variant="secondary" @click="goBack">返回资源详情</AppButton>
           <AppButton
             v-if="!scriptData && scriptStatus !== 'GENERATING_SCRIPT'"
             @click="handleGenerateScript"
@@ -289,7 +289,7 @@ const startLecturePage = () => {
 }
 
 const goBack = () => {
-  router.push('/courses')
+  router.push({ name: 'ResourceDetail', params: { coursewareId } })
 }
 
 onMounted(() => {

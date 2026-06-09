@@ -11,23 +11,55 @@ const routes = [
     },
   },
   {
-    path: '/upload',
-    name: 'Upload',
+    path: '/resources',
+    name: 'ResourceLibrary',
+    component: () => import('../views/Courses.vue'),
+    meta: {
+      title: '课件资源库',
+    },
+  },
+  {
+    path: '/resources/:coursewareId',
+    name: 'ResourceDetail',
+    component: () => import('../views/ResourceDetailView.vue'),
+    meta: {
+      title: '课件资源详情',
+    },
+  },
+  {
+    path: '/imports',
+    name: 'ImportCenter',
+    component: () => import('../views/ImportCenterView.vue'),
+    meta: {
+      title: '导入中心',
+    },
+  },
+  {
+    path: '/imports/upload',
+    name: 'LocalUpload',
     component: () => import('../views/Upload.vue'),
     meta: {
-      title: '上传课件',
+      title: '本地上传',
     },
   },
   {
-    path: '/course-resource-import',
-    name: 'CourseResourceImport',
+    path: '/imports/chaoxing',
+    name: 'ChaoxingImport',
     component: () => import('../views/CourseResourceImportView.vue'),
     meta: {
-      title: '从超星课程导入课件',
+      title: '从超星导入课件',
     },
   },
   {
-    path: '/video-assets',
+    path: '/imports/url',
+    name: 'UrlImport',
+    component: () => import('../views/UrlImportView.vue'),
+    meta: {
+      title: '普通 URL 导入',
+    },
+  },
+  {
+    path: '/videos',
     name: 'VideoAssets',
     component: () => import('../views/VideoAssetsView.vue'),
     meta: {
@@ -35,23 +67,15 @@ const routes = [
     },
   },
   {
-    path: '/courses',
-    name: 'Courses',
-    component: () => import('../views/Courses.vue'),
-    meta: {
-      title: '课程列表',
-    },
-  },
-  {
-    path: '/mine',
-    name: 'Mine',
+    path: '/profile',
+    name: 'Profile',
     component: () => import('../views/Mine.vue'),
     meta: {
-      title: '我的课程',
+      title: '个人中心',
     },
   },
   {
-    path: '/lecture/:coursewareId',
+    path: '/resources/:coursewareId/lecture',
     name: 'Lecture',
     component: () => import('../views/Lecture.vue'),
     meta: {
@@ -59,12 +83,46 @@ const routes = [
     },
   },
   {
-    path: '/script/:coursewareId',
+    path: '/resources/:coursewareId/script',
     name: 'Script',
     component: () => import('../views/Script.vue'),
     meta: {
       title: '课件讲稿',
     },
+  },
+  {
+    path: '/courses',
+    redirect: '/resources',
+  },
+  {
+    path: '/mine',
+    redirect: '/profile',
+  },
+  {
+    path: '/upload',
+    redirect: '/imports/upload',
+  },
+  {
+    path: '/course-resource-import',
+    redirect: '/imports/chaoxing',
+  },
+  {
+    path: '/video-assets',
+    redirect: '/videos',
+  },
+  {
+    path: '/lecture/:coursewareId',
+    redirect: to => ({
+      name: 'Lecture',
+      params: { coursewareId: to.params.coursewareId },
+    }),
+  },
+  {
+    path: '/script/:coursewareId',
+    redirect: to => ({
+      name: 'Script',
+      params: { coursewareId: to.params.coursewareId },
+    }),
   },
   {
     path: '/:pathMatch(.*)*',
@@ -88,3 +146,4 @@ router.beforeEach((to, from, next) => {
 })
 
 export default router
+

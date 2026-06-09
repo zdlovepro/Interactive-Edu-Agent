@@ -31,11 +31,13 @@ const TASK_STATUS_MAP = {
   SUCCESS: '已完成',
   FAILED: '失败',
   PARTIAL_SUCCESS: '部分完成',
+  WAITING_CRAWLER: '等待爬虫 worker',
 }
 
 export function getCoursewareStatusMeta(status) {
+  const normalized = String(status || '').trim().toUpperCase()
   return (
-    COURSEWARE_STATUS_MAP[String(status || '').trim()] || {
+    COURSEWARE_STATUS_MAP[normalized] || {
       text: status || '未知状态',
       tone: 'neutral',
     }
@@ -47,5 +49,6 @@ export function getTaskStatusLabel(status) {
     return '等待调度'
   }
 
-  return TASK_STATUS_MAP[String(status).trim()] || status
+  return TASK_STATUS_MAP[String(status).trim().toUpperCase()] || status
 }
+

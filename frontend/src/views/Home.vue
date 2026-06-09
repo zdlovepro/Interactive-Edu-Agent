@@ -8,9 +8,9 @@
           上传课件，自动生成讲稿、语音讲解，并支持学生实时打断提问。
         </p>
         <div class="hero-actions">
-          <AppButton size="lg" @click="router.push('/upload')">开始上传课件</AppButton>
-          <AppButton variant="secondary" size="lg" @click="router.push('/mine')">
-            查看我的课程
+          <AppButton size="lg" @click="router.push('/imports')">开始导入课件</AppButton>
+          <AppButton variant="secondary" size="lg" @click="router.push('/resources')">
+            查看资源库
           </AppButton>
         </div>
         <div class="hero-metrics">

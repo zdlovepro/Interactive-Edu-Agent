@@ -33,6 +33,7 @@ public class PythonQaClient {
         this.props = props;
 
         HttpClient httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(props.getConnectTimeout())
                 .build();
 

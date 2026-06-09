@@ -11,7 +11,8 @@ router = APIRouter(prefix="/chaoxing/auth/sessions", tags=["chaoxing-auth"], inc
 
 
 @router.post("", response_model=BaseResponse, summary="Create Chaoxing QR auth session")
-async def create_chaoxing_auth_session(request: ChaoxingAuthSessionCreateRequest) -> BaseResponse:
+async def create_chaoxing_auth_session(request: ChaoxingAuthSessionCreateRequest | None = None) -> BaseResponse:
+    request = request or ChaoxingAuthSessionCreateRequest()
     payload = await chaoxing_auth_service.create_session(
         course_url=request.course_url,
         user_agent=request.user_agent,

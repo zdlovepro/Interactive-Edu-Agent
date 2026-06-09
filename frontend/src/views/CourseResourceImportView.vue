@@ -11,7 +11,7 @@
 
         <div class="hero-actions">
           <AppButton size="lg" @click="scrollToForm">开始导入</AppButton>
-          <AppButton variant="secondary" size="lg" @click="router.push('/upload')">
+          <AppButton variant="secondary" size="lg" @click="router.push('/imports/upload')">
             改为上传本地课件
           </AppButton>
         </div>
@@ -432,15 +432,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   cancelCourseResourceImportTask,
-  closeChaoxingAuthSession,
-  createChaoxingAuthSession,
   createCourseResourceImportTask,
-  getChaoxingAuthQrCodeUrl,
-  getChaoxingAuthSession,
   getCourseResourceImportTask,
   getCourseResourceImportTaskFiles,
   retryCourseResourceImportTask,
@@ -451,9 +447,12 @@ import AppCard from '@/components/ui/AppCard.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { getCoursewareStatusMeta } from '@/constants/courseware'
+import { useChaoxingAuthStore } from '@/stores/chaoxingAuth'
+import { parseChaoxingCourseUrl } from '@/utils/chaoxing'
 import { getErrorMessage } from '@/utils'
 
 const router = useRouter()
+const chaoxingAuthStore = useChaoxingAuthStore()
 
 const TASK_STATUS_META = {
   PENDING: {
@@ -574,9 +573,7 @@ const formError = ref('')
 const pageError = ref('')
 const isSubmitting = ref(false)
 const actionLoading = ref(false)
-const authLoading = ref(false)
 const authError = ref('')
-const chaoxingAuth = ref(null)
 const task = ref(null)
 const files = ref([])
 const coursewareDetail = ref(null)
@@ -663,16 +660,15 @@ const coursewareStatusMeta = computed(() => {
   return getCoursewareStatusMeta(coursewareDetail.value?.status || '')
 })
 
-const authStatus = computed(() => String(chaoxingAuth.value?.status || '').trim().toUpperCase())
+const chaoxingAuth = computed(() => chaoxingAuthStore.session)
 
-const isChaoxingAuthorized = computed(() => authStatus.value === 'AUTHORIZED')
+const authLoading = computed(() => chaoxingAuthStore.loading)
 
-const authQrCodeUrl = computed(() => {
-  if (!chaoxingAuth.value?.sessionId) {
-    return ''
-  }
-  return getChaoxingAuthQrCodeUrl(chaoxingAuth.value.sessionId)
-})
+const authStatus = computed(() => chaoxingAuthStore.status)
+
+const isChaoxingAuthorized = computed(() => chaoxingAuthStore.isAuthorized)
+
+const authQrCodeUrl = computed(() => chaoxingAuthStore.qrCodeUrl)
 
 const authStatusText = computed(() => {
   const status = authStatus.value
@@ -796,7 +792,7 @@ function resetForm() {
   form.clazzid = ''
   form.cpi = ''
   form.enc = ''
-  form.authSessionId = ''
+  form.authSessionId = chaoxingAuthStore.sessionId || ''
   form.cookie = ''
   form.authorization = ''
   form.referer = ''
@@ -937,15 +933,32 @@ function formatConfidence(confidence) {
   return `${Math.round(numeric * 100)}%`
 }
 
-function normalizeAuthSession(payload) {
-  return {
-    sessionId: payload?.sessionId || payload?.session_id || '',
-    status: String(payload?.status || 'CREATED').trim().toUpperCase(),
-    qrCodeUrl: payload?.qrCodeUrl || payload?.qr_code_url || '',
-    message: payload?.message || '',
-    expiresAt: payload?.expiresAt || payload?.expires_at || '',
-    authorizedAt: payload?.authorizedAt || payload?.authorized_at || '',
+function applyChaoxingUrlParams(url) {
+  const parsed = parseChaoxingCourseUrl(url)
+  if (!parsed) {
+    return
   }
+
+  if (parsed.courseid) {
+    form.courseid = parsed.courseid
+  }
+  if (parsed.clazzid) {
+    form.clazzid = parsed.clazzid
+  }
+  if (parsed.cpi) {
+    form.cpi = parsed.cpi
+  }
+  if (parsed.enc) {
+    form.enc = parsed.enc
+  }
+}
+
+function syncAuthSession(session) {
+  if (!session?.sessionId) {
+    form.authSessionId = ''
+    return
+  }
+  form.authSessionId = session.sessionId
 }
 
 function stopAuthPolling() {
@@ -965,20 +978,16 @@ function startAuthPolling(sessionId) {
 async function startChaoxingAuth() {
   authError.value = ''
   formError.value = ''
-  authLoading.value = true
   try {
-    const response = await createChaoxingAuthSession({
+    const session = await chaoxingAuthStore.createSession({
       courseUrl: normalizeOptional(form.url),
     })
-    chaoxingAuth.value = normalizeAuthSession(response.data)
-    form.authSessionId = chaoxingAuth.value.sessionId
+    syncAuthSession(session)
     if (!AUTH_TERMINAL_STATUSES.has(authStatus.value)) {
-      startAuthPolling(chaoxingAuth.value.sessionId)
+      startAuthPolling(session.sessionId)
     }
   } catch (error) {
     authError.value = mapFriendlyImportMessage(error)
-  } finally {
-    authLoading.value = false
   }
 }
 
@@ -987,9 +996,8 @@ async function refreshAuthSession(sessionId) {
     return
   }
   try {
-    const response = await getChaoxingAuthSession(sessionId)
-    chaoxingAuth.value = normalizeAuthSession(response.data)
-    form.authSessionId = chaoxingAuth.value.sessionId
+    const session = await chaoxingAuthStore.refreshSession(sessionId)
+    syncAuthSession(session)
     if (AUTH_TERMINAL_STATUSES.has(authStatus.value)) {
       stopAuthPolling()
     }
@@ -1004,17 +1012,13 @@ async function disconnectChaoxingAuth() {
   stopAuthPolling()
   form.authSessionId = ''
   if (!sessionId) {
-    chaoxingAuth.value = null
+    chaoxingAuthStore.clearSession()
     return
   }
-  authLoading.value = true
   try {
-    await closeChaoxingAuthSession(sessionId)
-    chaoxingAuth.value = null
+    await chaoxingAuthStore.closeSession()
   } catch (error) {
     authError.value = mapFriendlyImportMessage(error)
-  } finally {
-    authLoading.value = false
   }
 }
 
@@ -1184,7 +1188,7 @@ function openParseResult() {
   if (!task.value?.coursewareId) {
     return
   }
-  router.push({ name: 'Script', params: { coursewareId: task.value.coursewareId } })
+  router.push({ name: 'ResourceDetail', params: { coursewareId: task.value.coursewareId } })
 }
 
 function openScriptPage() {
@@ -1201,9 +1205,19 @@ function openLecturePage() {
   router.push({ name: 'Lecture', params: { coursewareId: task.value.coursewareId } })
 }
 
-onMounted(() => {
+watch(
+  () => form.url,
+  value => {
+    applyChaoxingUrlParams(value)
+  },
+)
+
+onMounted(async () => {
   stopPolling()
   stopAuthPolling()
+  applyChaoxingUrlParams(form.url)
+  const restored = await chaoxingAuthStore.restoreFromLocalStorage()
+  syncAuthSession(restored || chaoxingAuth.value)
 })
 
 onUnmounted(() => {
