@@ -96,9 +96,21 @@ public class PythonParseClient {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record ParseSegment(int pageIndex, String title, String content, List<String> knowledgePoints) {
+    public record ParseSegment(
+            int pageIndex,
+            String title,
+            String content,
+            List<String> knowledgePoints,
+            String pageImagePath,
+            String visualSummary,
+            List<String> visualObjects
+    ) {
         public List<String> safeKnowledgePoints() {
             return knowledgePoints == null ? Collections.emptyList() : knowledgePoints;
+        }
+
+        public List<String> safeVisualObjects() {
+            return visualObjects == null ? Collections.emptyList() : visualObjects;
         }
     }
 }

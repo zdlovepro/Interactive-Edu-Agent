@@ -118,6 +118,10 @@ services:
       LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.7}
       LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-4096}
       LLM_TIMEOUT: ${LLM_TIMEOUT:-120}
+      LLM_ENABLE_THINKING: ${LLM_ENABLE_THINKING:-false}
+      LLM_REASONING_EFFORT: ${LLM_REASONING_EFFORT:-}
+      STRICT_CHAIN: ${STRICT_CHAIN:-false}
+      RENDER_BASE_DIR: /app/data/render
       CHAOXING_AUTH_HEADLESS: ${CHAOXING_AUTH_HEADLESS:-true}
       CHAOXING_AUTH_TTL_SECONDS: ${CHAOXING_AUTH_TTL_SECONDS:-7200}
       MINIO_ENDPOINT: http://minio:9000
@@ -127,6 +131,7 @@ services:
       MINIO_SECURE: "false"
     volumes:
       - course_import_data:/app/data/course-resource-import
+      - render_data:/app/data/render
     ports:
       - "${PYTHON_SERVICE_PORT:-8001}:8001"
     depends_on:
@@ -164,6 +169,8 @@ services:
       MINIO_SECURE: "false"
       PYTHON_CLIENT_BASE_URL: http://python-service:8001
       PYTHON_CLIENT_READ_TIMEOUT: ${PYTHON_CLIENT_READ_TIMEOUT:-120s}
+      STRICT_CHAIN: ${STRICT_CHAIN:-false}
+      RENDER_BASE_DIR: /app/data/render
       TTS_ENABLED: ${TTS_ENABLED:-false}
       ASR_ENABLED: ${ASR_ENABLED:-false}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
@@ -172,6 +179,7 @@ services:
     volumes:
       - backend_data:/app/data
       - course_import_data:/app/data/course-resource-import
+      - render_data:/app/data/render
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     depends_on:
@@ -206,3 +214,4 @@ volumes:
   milvus_data:
   backend_data:
   course_import_data:
+  render_data:

@@ -22,6 +22,7 @@ import com.interactive.edu.vo.courseware.ScriptView;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -51,6 +52,9 @@ public class CoursewareService {
     private final PythonScriptClient pythonScriptClient;
     private final TaskExecutor taskExecutor;
     private final TtsService ttsService;
+
+    @Value("${chain.strict:false}")
+    private boolean strictChain;
 
     private final ConcurrentMap<String, CoursewareState> coursewareStore = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, ParsedCourseware> parsedStore = new ConcurrentHashMap<>();
@@ -261,6 +265,13 @@ public class CoursewareService {
                         state.getId(),
                         ex.getMessage()
                 );
+                if (strictChain) {
+                    throw new IllegalStateException("Python parse failed in strict chain mode", ex);
+                }
+            }
+
+            if (strictChain && (payload == null || payload.safeSegments().isEmpty())) {
+                throw new IllegalStateException("Python parse returned no segments in strict chain mode");
             }
 
             ParsedCourseware parsedCourseware = toParsedCourseware(state, payload);
@@ -287,7 +298,10 @@ public class CoursewareService {
                         pageIndex,
                         defaultText(segment.title(), "第" + pageIndex + "页"),
                         defaultText(segment.content(), "本页内容正在整理中。"),
-                        segment.safeKnowledgePoints()
+                        segment.safeKnowledgePoints(),
+                        segment.pageImagePath(),
+                        segment.visualSummary(),
+                        segment.safeVisualObjects()
                 ));
                 index++;
             }
@@ -344,6 +358,9 @@ public class CoursewareService {
                     coursewareId,
                     ex.getMessage()
             );
+            if (strictChain) {
+                throw new IllegalStateException("Python script generation failed in strict chain mode", ex);
+            }
             return buildLocalScriptDraft(coursewareName, parsedCourseware);
         }
     }
@@ -363,7 +380,10 @@ public class CoursewareService {
                                         segment.pageIndex(),
                                         segment.title(),
                                         segment.content(),
-                                        segment.knowledgePoints()
+                                        segment.knowledgePoints(),
+                                        segment.pageImagePath(),
+                                        segment.visualSummary(),
+                                        segment.visualObjects()
                                 ))
                                 .toList(),
                         null
@@ -448,7 +468,10 @@ public class CoursewareService {
                     parsedSegment.title(),
                     content,
                     parsedSegment.knowledgePoints(),
-                    null
+                    null,
+                    parsedSegment.pageImagePath(),
+                    parsedSegment.visualSummary(),
+                    parsedSegment.visualObjects()
             ));
         }
 
@@ -519,7 +542,10 @@ public class CoursewareService {
                     segment.title(),
                     segment.content(),
                     segment.knowledgePoints(),
-                    audioUrl
+                    audioUrl,
+                    segment.pageImagePath(),
+                    segment.visualSummary(),
+                    segment.visualObjects()
             ));
         }
 
@@ -566,19 +592,28 @@ public class CoursewareService {
                         1,
                         "课程导入",
                         "这份课件《" + topic + "》会先帮助学生建立主题背景，并说明本节课的学习目标。",
-                        List.of(topic, "学习目标")
+                        List.of(topic, "学习目标"),
+                        null,
+                        null,
+                        List.of()
                 ),
                 new ParsedSegment(
                         2,
                         "核心概念",
                         "中间部分会围绕关键概念、典型例子和应用场景展开，帮助学生建立完整理解。",
-                        List.of("核心概念", "案例分析")
+                        List.of("核心概念", "案例分析"),
+                        null,
+                        null,
+                        List.of()
                 ),
                 new ParsedSegment(
                         3,
                         "总结回顾",
                         "最后会回顾重点知识，并提示学生如何把本节内容迁移到后续练习中。",
-                        List.of("知识总结", "课后迁移")
+                        List.of("知识总结", "课后迁移"),
+                        null,
+                        null,
+                        List.of()
                 )
         );
     }
@@ -711,7 +746,15 @@ public class CoursewareService {
     private record ParsedCourseware(String coursewareId, List<ParsedSegment> segments) {
     }
 
-    private record ParsedSegment(int pageIndex, String title, String content, List<String> knowledgePoints) {
+    private record ParsedSegment(
+            int pageIndex,
+            String title,
+            String content,
+            List<String> knowledgePoints,
+            String pageImagePath,
+            String visualSummary,
+            List<String> visualObjects
+    ) {
     }
 
     private record GeneratedScriptDraft(String opening, List<GeneratedPage> pages, String closing) {

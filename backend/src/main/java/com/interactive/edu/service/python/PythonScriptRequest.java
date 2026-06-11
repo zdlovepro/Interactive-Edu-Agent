@@ -42,5 +42,14 @@ public class PythonScriptRequest {
 
         @JsonProperty("keywords")
         private List<String> keywords;
+
+        @JsonProperty("pageImagePath")
+        private String pageImagePath;
+
+        @JsonProperty("visualSummary")
+        private String visualSummary;
+
+        @JsonProperty("visualObjects")
+        private List<String> visualObjects;
     }
 }

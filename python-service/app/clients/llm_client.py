@@ -43,14 +43,7 @@ class LLMClient:
             settings.LLM_ENABLE_THINKING,
         )
 
-        response = self._client.chat.completions.create(
-            model=settings.LLM_MODEL_NAME,
-            messages=[_to_openai_message(message) for message in messages],
-            stream=False,
-            reasoning_effort=settings.LLM_REASONING_EFFORT,
-            extra_body=_build_extra_body(),
-            timeout=settings.LLM_TIMEOUT,
-        )
+        response = self._client.chat.completions.create(**_build_chat_completion_kwargs(messages, stream=False))
 
         content = response.choices[0].message.content if response.choices else None
         if not content:
@@ -68,14 +61,7 @@ class LLMClient:
             settings.LLM_ENABLE_THINKING,
         )
 
-        stream = self._client.chat.completions.create(
-            model=settings.LLM_MODEL_NAME,
-            messages=[_to_openai_message(message) for message in messages],
-            stream=True,
-            reasoning_effort=settings.LLM_REASONING_EFFORT,
-            extra_body=_build_extra_body(),
-            timeout=settings.LLM_TIMEOUT,
-        )
+        stream = self._client.chat.completions.create(**_build_chat_completion_kwargs(messages, stream=True))
 
         emitted = False
         total_length = 0
@@ -112,6 +98,27 @@ def _build_extra_body() -> dict[str, object] | None:
     if not settings.LLM_ENABLE_THINKING:
         return None
     return {"thinking": {"type": "enabled"}}
+
+
+def _build_chat_completion_kwargs(messages: list[BaseMessage], stream: bool) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
+        "model": settings.LLM_MODEL_NAME,
+        "messages": [_to_openai_message(message) for message in messages],
+        "stream": stream,
+        "temperature": settings.LLM_TEMPERATURE,
+        "max_tokens": settings.LLM_MAX_TOKENS,
+        "timeout": settings.LLM_TIMEOUT,
+    }
+
+    reasoning_effort = (settings.LLM_REASONING_EFFORT or "").strip()
+    if reasoning_effort:
+        kwargs["reasoning_effort"] = reasoning_effort
+
+    extra_body = _build_extra_body()
+    if extra_body:
+        kwargs["extra_body"] = extra_body
+
+    return kwargs
 
 
 _llm_client: LLMClient | None = None

@@ -40,13 +40,15 @@ class Settings(BaseSettings):
     LLM_MAX_TOKENS: int = 4096
     LLM_TIMEOUT: int = 120
     LLM_REASONING_EFFORT: str = Field(
-        default="high",
+        default="",
         validation_alias=AliasChoices("LLM_REASONING_EFFORT", "DEEPSEEK_REASONING_EFFORT"),
     )
     LLM_ENABLE_THINKING: bool = Field(
-        default=True,
+        default=False,
         validation_alias=AliasChoices("LLM_ENABLE_THINKING", "DEEPSEEK_ENABLE_THINKING"),
     )
+    STRICT_CHAIN: bool = False
+    RENDER_BASE_DIR: str = "./data/render"
 
     # ---------- Vision Model Config (Optional) ----------
     VISION_API_KEY: str = Field(default="", validation_alias=AliasChoices("VISION_API_KEY", "VISION_KEY"))

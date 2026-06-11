@@ -20,6 +20,9 @@ logging:
     root: INFO
     com.interactive.edu: DEBUG
 
+chain:
+  strict: ${STRICT_CHAIN:false}
+
 python:
   client:
     parse-path: /python/v1/parse

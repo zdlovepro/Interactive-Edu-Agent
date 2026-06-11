@@ -57,7 +57,7 @@ def _parse_and_build_payload(local_path: Path, request: ParseRequest) -> dict[st
         summaries, rendered_images = generate_visual_summaries(
             parse_result=result,
             source_path=local_path,
-            output_dir=_courseware_root() / request.courseware_id / "visual" / "pages",
+            output_dir=_render_root() / request.courseware_id / "visual" / "pages",
         )
         visual_summary_by_page = {item.page_index: item for item in summaries}
         page_images = rendered_images
@@ -233,6 +233,10 @@ def _candidate_local_paths(request: ParseRequest) -> list[Path]:
 
 def _courseware_root() -> Path:
     return _repo_root() / "backend" / "data" / "courseware"
+
+
+def _render_root() -> Path:
+    return Path(settings.RENDER_BASE_DIR).expanduser().resolve()
 
 
 def _repo_root() -> Path:

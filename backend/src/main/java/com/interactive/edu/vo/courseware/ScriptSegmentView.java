@@ -9,6 +9,9 @@ public record ScriptSegmentView(
         String title,
         String content,
         List<String> knowledgePoints,
-        String audioUrl
+        String audioUrl,
+        String pageImagePath,
+        String visualSummary,
+        List<String> visualObjects
 ) {
 }

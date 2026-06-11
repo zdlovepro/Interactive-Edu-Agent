@@ -50,7 +50,7 @@ except ImportError:  # pragma: no cover - lightweight equivalent for slim runtim
 
 from app.clients.llm_client import get_llm_client
 from app.core.config import settings
-from app.core.exceptions import AppException, ModelOutputException
+from app.core.exceptions import AppException, ModelOutputException, PythonServiceException, THIRD_PARTY_SERVICE_ERROR
 from app.schemas.script import PageScript, ScriptGenerateRequest, ScriptGenerateResponse
 from app.utils.logger import logger
 
@@ -115,6 +115,11 @@ def generate_script(request: ScriptGenerateRequest) -> ScriptGenerateResponse:
             request.courseware_id,
             total_pages,
         )
+        if settings.STRICT_CHAIN:
+            raise PythonServiceException(
+                "LLM API key is missing in strict chain mode",
+                code=THIRD_PARTY_SERVICE_ERROR,
+            )
         return build_fallback_script(request)
 
     raw_output = ""
@@ -139,6 +144,8 @@ def generate_script(request: ScriptGenerateRequest) -> ScriptGenerateResponse:
             str(exc),
             _truncate_for_log(raw_output),
         )
+        if settings.STRICT_CHAIN:
+            raise
     except AppException as exc:
         logger.warning(
             "Script generation degraded to fallback. coursewareId=%s pages=%s code=%s",
@@ -146,8 +153,15 @@ def generate_script(request: ScriptGenerateRequest) -> ScriptGenerateResponse:
             total_pages,
             exc.code,
         )
+        if settings.STRICT_CHAIN:
+            raise
     except Exception:  # noqa: BLE001
         logger.exception("Unexpected script generation failure. coursewareId=%s pages=%s", request.courseware_id, total_pages)
+        if settings.STRICT_CHAIN:
+            raise PythonServiceException(
+                "script generation failed in strict chain mode",
+                code=THIRD_PARTY_SERVICE_ERROR,
+            )
 
     return build_fallback_script(request)
 
@@ -239,6 +253,12 @@ def _format_pages_content(request: ScriptGenerateRequest) -> str:
         lines.append(f"标题：{_resolve_title(page.title, page.page_index)}")
         lines.append(f"正文：{_clean_text(page.text_content) or '（本页正文为空）'}")
         lines.append(f"关键词：{_format_keywords(page.keywords)}")
+        if page.visual_summary:
+            lines.append(f"视觉摘要：{_clean_text(page.visual_summary)}")
+        if page.visual_objects:
+            lines.append(f"视觉元素：{'、'.join(page.visual_objects)}")
+        if page.page_image_path:
+            lines.append(f"页面截图路径：{page.page_image_path}")
     return "\n".join(lines)
 
 

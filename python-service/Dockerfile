@@ -4,6 +4,7 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV DEBIAN_FRONTEND=noninteractive
 
 RUN set -eux; \
     sed -i \
@@ -13,7 +14,13 @@ RUN set -eux; \
         -e 's|https://security.ubuntu.com/ubuntu/|https://mirrors.aliyun.com/ubuntu/|g' \
         /etc/apt/sources.list \
         /etc/apt/sources.list.d/*.list \
-        /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+        /etc/apt/sources.list.d/*.sources 2>/dev/null || true; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        ffmpeg \
+        fonts-noto-cjk \
+        libreoffice; \
+    rm -rf /var/lib/apt/lists/*
 
 COPY python-service/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir \

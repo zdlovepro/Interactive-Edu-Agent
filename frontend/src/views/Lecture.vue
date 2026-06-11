@@ -1007,6 +1007,9 @@ const normalizeSlide = (segment, index) => ({
   content: segment?.content || '',
   knowledgePoints: Array.isArray(segment?.knowledgePoints) ? segment.knowledgePoints : [],
   audioUrl: segment?.audioUrl || null,
+  pageImagePath: segment?.pageImagePath || null,
+  visualSummary: segment?.visualSummary || '',
+  visualObjects: Array.isArray(segment?.visualObjects) ? segment.visualObjects : [],
 })
 
 const loadSlides = async () => {

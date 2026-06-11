@@ -14,6 +14,11 @@ class PageContent(BaseModel):
     keywords: List[str] = Field(default_factory=list, description="当前页关键词列表")
 
 
+    page_image_path: str | None = Field(default=None, alias="pageImagePath")
+    visual_summary: str | None = Field(default=None, alias="visualSummary")
+    visual_objects: List[str] = Field(default_factory=list, alias="visualObjects")
+
+
 class ScriptGenerateRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
