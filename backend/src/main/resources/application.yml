@@ -30,5 +30,11 @@ python:
     qa-path: /python/v1/qa/ask-text
     course-resource-import-path: /python/v1/course-resource-import/import
     chaoxing-auth-path: /python/v1/chaoxing/auth/sessions
+    video-render-path: /python/v1/video-render/render
     connect-timeout: ${PYTHON_CLIENT_CONNECT_TIMEOUT:5s}
     read-timeout: ${PYTHON_CLIENT_READ_TIMEOUT:30s}
+
+video:
+  render:
+    base-dir: ${RENDER_BASE_DIR:./data/render}
+    backend-base-url: ${VIDEO_RENDER_BACKEND_BASE_URL:http://localhost:8080}

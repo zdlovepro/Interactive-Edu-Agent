@@ -18,6 +18,10 @@ export const SCRIPT_API = {
   GENERATE: coursewareId => `/courseware/${coursewareId}/script/generate`,
 }
 
+export const COURSEWARE_VIDEO_API = {
+  RENDER: coursewareId => `/courseware/${coursewareId}/video/render`,
+}
+
 export const LECTURE_API = {
   START: '/lecture/start',
   PAUSE: sessionId => `/lecture/${sessionId}/pause`,

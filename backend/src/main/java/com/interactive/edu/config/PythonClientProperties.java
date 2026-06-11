@@ -29,6 +29,9 @@ public class PythonClientProperties {
     /** Chaoxing QR auth API path, e.g. /python/v1/chaoxing/auth/sessions */
     private String chaoxingAuthPath = "/python/v1/chaoxing/auth/sessions";
 
+    /** Courseware video render API path, e.g. /python/v1/video-render/render */
+    private String videoRenderPath = "/python/v1/video-render/render";
+
     /** HTTP connect timeout. */
     private Duration connectTimeout = Duration.ofSeconds(5);
 

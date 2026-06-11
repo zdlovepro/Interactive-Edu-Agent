@@ -1,5 +1,5 @@
 import request from '@/utils/request'
-import { COURSEWARE_API, SCRIPT_API } from '@/constants/api'
+import { COURSEWARE_API, COURSEWARE_VIDEO_API, SCRIPT_API } from '@/constants/api'
 
 export function uploadCourseware(file, name, config = {}) {
   const formData = new FormData()
@@ -39,4 +39,12 @@ export function getCoursewareScript(coursewareId) {
 
 export function generateScript(coursewareId) {
   return request.post(SCRIPT_API.GENERATE(coursewareId))
+}
+
+export function renderCoursewareVideo(coursewareId) {
+  return request.post(COURSEWARE_VIDEO_API.RENDER(coursewareId))
+}
+
+export function getCoursewareVideoRenderTask(coursewareId) {
+  return request.get(COURSEWARE_VIDEO_API.RENDER(coursewareId))
 }

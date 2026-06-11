@@ -25,6 +25,13 @@
           >
             进入课堂
           </AppButton>
+          <AppButton
+            variant="secondary"
+            :disabled="!scriptData || videoRenderTask?.status === 'RENDERING'"
+            @click="handleRenderVideo"
+          >
+            {{ renderVideoButtonText }}
+          </AppButton>
         </div>
       </div>
     </section>
@@ -112,6 +119,36 @@
               <span class="pill">Closing</span>
               <p>{{ scriptData.closing }}</p>
             </AppCard>
+
+            <AppCard v-if="videoRenderTask" class="video-render-card" tone="glass">
+              <div class="video-render-card__header">
+                <div>
+                  <span class="pill">Lecture Video</span>
+                  <h3>课件讲解视频</h3>
+                  <p>{{ videoRenderStatusText }}</p>
+                </div>
+                <StatusBadge
+                  :label="videoRenderTask.status || 'PENDING'"
+                  :tone="videoRenderTask.status === 'READY' ? 'success' : videoRenderTask.status === 'FAILED' ? 'danger' : 'warning'"
+                />
+              </div>
+
+              <div v-if="videoRenderTask.status === 'READY' && videoRenderTask.hlsUrl" class="video-render-player">
+                <HlsVideoPlayer
+                  :src="videoRenderTask.hlsUrl"
+                  title="由课件页图、讲稿字幕和分段音频合成的 HLS 讲解视频"
+                  @error="message => (videoPlayerError = message)"
+                  @ready="videoPlayerError = ''"
+                />
+                <div v-if="videoPlayerError" class="inline-alert inline-alert--danger">
+                  {{ videoPlayerError }}
+                </div>
+              </div>
+
+              <div v-else-if="videoRenderTask.status === 'FAILED'" class="inline-alert inline-alert--danger">
+                {{ videoRenderTask.errorMessage || '视频渲染失败，请检查页图、音频或 Python ffmpeg 日志。' }}
+              </div>
+            </AppCard>
           </template>
 
           <AppCard v-else tone="glass">
@@ -139,8 +176,14 @@ import { useRoute, useRouter } from 'vue-router'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
+import HlsVideoPlayer from '@/components/video/HlsVideoPlayer.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
-import { generateScript, getCoursewareScript } from '@/api/courseware'
+import {
+  generateScript,
+  getCoursewareScript,
+  getCoursewareVideoRenderTask,
+  renderCoursewareVideo,
+} from '@/api/courseware'
 import { getCoursewareStatusMeta } from '@/constants/courseware'
 import { getErrorMessage } from '@/utils'
 
@@ -153,8 +196,11 @@ const scriptStatus = ref('')
 const activeSegmentId = ref('')
 const errorMsg = ref('')
 const segmentsRef = ref(null)
+const videoRenderTask = ref(null)
+const videoPlayerError = ref('')
 
 let pollTimer = null
+let videoRenderPollTimer = null
 
 const coursewareId = route.params.coursewareId
 
@@ -164,6 +210,31 @@ const statusMeta = computed(() => {
   }
 
   return getCoursewareStatusMeta(scriptStatus.value || 'READY')
+})
+
+const renderVideoButtonText = computed(() => {
+  if (videoRenderTask.value?.status === 'RENDERING') {
+    return `视频生成中 ${videoRenderTask.value.progress || 0}%`
+  }
+  if (videoRenderTask.value?.status === 'READY') {
+    return '重新生成讲解视频'
+  }
+  return '生成讲解视频'
+})
+
+const videoRenderStatusText = computed(() => {
+  const task = videoRenderTask.value
+  if (!task) {
+    return ''
+  }
+  if (task.status === 'READY') {
+    const seconds = task.durationMs ? Math.round(task.durationMs / 1000) : 0
+    return `已生成 ${task.segmentCount || 0} 个片段，约 ${seconds} 秒，可直接预览 HLS。`
+  }
+  if (task.status === 'FAILED') {
+    return '生成失败，保留错误信息用于排查。'
+  }
+  return task.message || '正在整理页图、讲稿和音频并调用 ffmpeg 合成。'
 })
 
 const normalizeScript = raw => {
@@ -295,13 +366,62 @@ const goBack = () => {
   router.push({ name: 'ResourceDetail', params: { coursewareId } })
 }
 
+const fetchVideoRenderTask = async ({ silent = false } = {}) => {
+  try {
+    const response = await getCoursewareVideoRenderTask(coursewareId)
+    videoRenderTask.value = response.data || null
+    return videoRenderTask.value
+  } catch (error) {
+    if (!silent) {
+      showError(error, '无法获取视频生成状态，请稍后重试。')
+    }
+    return null
+  }
+}
+
+const handleRenderVideo = async () => {
+  if (!scriptData.value) {
+    return
+  }
+  videoPlayerError.value = ''
+  errorMsg.value = ''
+
+  try {
+    const response = await renderCoursewareVideo(coursewareId)
+    videoRenderTask.value = response.data || null
+    pollVideoRenderStatus()
+  } catch (error) {
+    showError(error, '触发讲解视频生成失败，请确认讲稿和课件页图已经准备完成。')
+  }
+}
+
+const pollVideoRenderStatus = () => {
+  if (videoRenderPollTimer) {
+    clearInterval(videoRenderPollTimer)
+  }
+
+  let attempts = 0
+  videoRenderPollTimer = setInterval(async () => {
+    attempts += 1
+    const task = await fetchVideoRenderTask({ silent: true })
+    if (!task || task.status === 'READY' || task.status === 'FAILED' || attempts > 120) {
+      clearInterval(videoRenderPollTimer)
+      videoRenderPollTimer = null
+    }
+  }, 3000)
+}
+
 onMounted(() => {
   fetchScript()
+  fetchVideoRenderTask({ silent: true })
 })
 
 onUnmounted(() => {
   if (pollTimer) {
     clearInterval(pollTimer)
+  }
+  if (videoRenderPollTimer) {
+    clearInterval(videoRenderPollTimer)
   }
 })
 </script>
@@ -467,6 +587,49 @@ onUnmounted(() => {
   color: var(--primary-color);
   font-size: var(--font-size-xs);
   font-weight: 600;
+}
+
+.video-render-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.video-render-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.video-render-card__header h3 {
+  margin: 0.65rem 0 0;
+  font-size: 1.25rem;
+}
+
+.video-render-card__header p {
+  margin: 0.45rem 0 0;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.video-render-player {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.inline-alert {
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  line-height: 1.7;
+}
+
+.inline-alert--danger {
+  color: #b53f58;
+  background: rgba(240, 74, 110, 0.1);
+  border: 1px solid rgba(240, 74, 110, 0.14);
 }
 
 .generating-state {
