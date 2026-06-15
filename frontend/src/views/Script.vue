@@ -3,31 +3,66 @@
     <section class="page-shell page-section">
       <div class="section-header">
         <div>
-          <span class="eyebrow">讲稿检查</span>
+          <span class="eyebrow">Script Review</span>
           <h1 class="page-title">课件讲稿</h1>
           <p class="page-description">
-            在进入课堂前，先检查逐页讲稿、知识点与语音资源是否准备完成。
+            先检查逐页讲稿、音频与字幕素材，再进入课堂或生成讲解视频。
           </p>
         </div>
 
         <div class="header-actions">
           <AppButton variant="secondary" @click="goBack">返回资源详情</AppButton>
+
           <AppButton
             v-if="!scriptData && scriptStatus !== 'GENERATING_SCRIPT'"
             @click="handleGenerateScript"
           >
             生成讲稿
           </AppButton>
-          <AppButton
-            v-else
-            :disabled="!scriptData || scriptStatus === 'GENERATING_SCRIPT'"
-            @click="startLecturePage"
-          >
-            进入课堂
-          </AppButton>
+
+          <template v-else-if="scriptData">
+            <AppButton
+              v-if="!isEditing"
+              variant="secondary"
+              @click="beginEdit"
+            >
+              编辑讲稿
+            </AppButton>
+            <AppButton
+              v-if="isEditing"
+              variant="secondary"
+              :disabled="saving"
+              @click="cancelEdit"
+            >
+              取消编辑
+            </AppButton>
+            <AppButton
+              v-if="isEditing"
+              :disabled="saving || !isDirty"
+              @click="handleSaveScript"
+            >
+              {{ saving ? '保存中...' : '保存讲稿并补齐音频' }}
+            </AppButton>
+            <AppButton
+              v-if="!isEditing && missingAudioCount > 0"
+              variant="secondary"
+              :disabled="scriptStatus === 'GENERATING_SCRIPT'"
+              @click="handleBackfillAudio"
+            >
+              补齐缺失音频
+            </AppButton>
+            <AppButton
+              v-if="!isEditing"
+              :disabled="scriptStatus === 'GENERATING_SCRIPT'"
+              @click="startLecturePage"
+            >
+              进入课堂
+            </AppButton>
+          </template>
+
           <AppButton
             variant="secondary"
-            :disabled="!scriptData || videoRenderTask?.status === 'RENDERING'"
+            :disabled="!scriptData || isEditing || videoRenderTask?.status === 'RENDERING'"
             @click="handleRenderVideo"
           >
             {{ renderVideoButtonText }}
@@ -45,6 +80,10 @@
               <h2>{{ scriptData?.coursewareId || coursewareId }}</h2>
             </div>
             <StatusBadge :label="statusMeta.text" :tone="statusMeta.tone" />
+          </div>
+
+          <div v-if="missingAudioCount > 0" class="outline-tip">
+            还有 {{ missingAudioCount }} 页缺少音频，可先补齐再渲染视频。
           </div>
 
           <div v-if="scriptData?.outline?.length" class="outline-list">
@@ -72,20 +111,31 @@
               <span class="spinner"></span>
               <div>
                 <h3>讲稿生成中</h3>
-                <p>系统正在准备 opening、逐页讲解、过渡语和收尾内容，请稍候。</p>
+                <p>系统正在准备逐页讲解、过渡语和音频，请稍候。</p>
               </div>
             </div>
           </AppCard>
 
           <template v-else-if="scriptData">
             <AppCard v-if="scriptData.opening" class="intro-card" tone="subtle">
-              <span class="pill">Opening</span>
+              <div class="intro-card__header">
+                <span class="pill">Opening</span>
+                <span class="intro-note">当前开场白仍使用自动生成版本</span>
+              </div>
               <p>{{ scriptData.opening }}</p>
             </AppCard>
 
-            <div class="segment-list" ref="segmentsRef">
+            <AppCard v-if="isEditing" class="editor-tip-card" tone="glass">
+              <h3>编辑说明</h3>
+              <p>
+                建议把总纲页、目录页、章节封面页写得更精炼；把定义、推导、案例、公式解释页写得更展开。
+                保存后系统会只为改动页和缺失音频页重新合成音频。
+              </p>
+            </AppCard>
+
+            <div class="segment-list">
               <AppCard
-                v-for="segment in scriptData.segments"
+                v-for="segment in visibleSegments"
                 :key="segment.id"
                 :id="`segment-${segment.id}`"
                 class="segment-card"
@@ -93,18 +143,32 @@
                 tone="glass"
               >
                 <div class="segment-card__header">
-                  <div>
+                  <div class="segment-title-block">
                     <span class="pill">第 {{ segment.pageIndex }} 页</span>
-                    <h3>{{ segment.title }}</h3>
+                    <template v-if="isEditing">
+                      <input
+                        v-model.trim="segment.title"
+                        class="segment-title-input"
+                        type="text"
+                        :placeholder="`第 ${segment.pageIndex} 页标题`"
+                      />
+                    </template>
+                    <h3 v-else>{{ segment.title }}</h3>
                   </div>
                   <StatusBadge
-                    :label="segment.audioUrl ? '音频已就绪' : '待朗读'"
-                    :tone="segment.audioUrl ? 'success' : 'info'"
+                    :label="segment.audioUrl ? '音频已就绪' : '待补音频'"
+                    :tone="segment.audioUrl ? 'success' : 'warning'"
                   />
                 </div>
 
                 <div class="segment-card__content">
-                  <p>{{ segment.content }}</p>
+                  <textarea
+                    v-if="isEditing"
+                    v-model="segment.content"
+                    class="segment-textarea"
+                    rows="8"
+                  />
+                  <p v-else>{{ segment.content }}</p>
                 </div>
 
                 <div v-if="segment.knowledgePoints?.length" class="tag-list">
@@ -116,7 +180,10 @@
             </div>
 
             <AppCard v-if="scriptData.closing" class="intro-card" tone="subtle">
-              <span class="pill">Closing</span>
+              <div class="intro-card__header">
+                <span class="pill">Closing</span>
+                <span class="intro-note">当前结尾仍使用自动生成版本</span>
+              </div>
               <p>{{ scriptData.closing }}</p>
             </AppCard>
 
@@ -134,9 +201,12 @@
               </div>
 
               <div v-if="videoRenderTask.status === 'READY' && videoRenderTask.hlsUrl" class="video-render-player">
+                <div class="inline-alert inline-alert--info">
+                  如果你刚刚修改过讲稿，请点击“重新生成讲解视频”让字幕和音频同步刷新。
+                </div>
                 <HlsVideoPlayer
                   :src="videoRenderTask.hlsUrl"
-                  title="由课件页图、讲稿字幕和分段音频合成的 HLS 讲解视频"
+                  title="由课件页图、逐句字幕和分段音频合成的 HLS 讲解视频"
                   @error="message => (videoPlayerError = message)"
                   @ready="videoPlayerError = ''"
                 />
@@ -146,15 +216,15 @@
               </div>
 
               <div v-else-if="videoRenderTask.status === 'FAILED'" class="inline-alert inline-alert--danger">
-                {{ videoRenderTask.errorMessage || '视频渲染失败，请检查页图、音频或 Python ffmpeg 日志。' }}
+                {{ videoRenderTask.errorMessage || '视频生成失败，请检查页图、音频或 Python 渲染日志。' }}
               </div>
             </AppCard>
           </template>
 
           <AppCard v-else tone="glass">
             <EmptyState
-              title="暂无讲稿，请先生成讲稿。"
-              description="系统会基于解析结果自动生成可检查、可朗读的逐页讲稿内容。"
+              title="暂时还没有讲稿"
+              description="系统会基于解析结果生成可检查、可朗读的逐页讲稿。"
               action-label="生成讲稿"
               @action="handleGenerateScript"
             />
@@ -165,7 +235,7 @@
 
     <div v-if="errorMsg" class="toast" @click="errorMsg = ''">
       <span>{{ errorMsg }}</span>
-      <button>关闭</button>
+      <button type="button">关闭</button>
     </div>
   </div>
 </template>
@@ -183,6 +253,7 @@ import {
   getCoursewareScript,
   getCoursewareVideoRenderTask,
   renderCoursewareVideo,
+  updateCoursewareScript,
 } from '@/api/courseware'
 import { getCoursewareStatusMeta } from '@/constants/courseware'
 import { getErrorMessage } from '@/utils'
@@ -195,9 +266,11 @@ const scriptData = ref(null)
 const scriptStatus = ref('')
 const activeSegmentId = ref('')
 const errorMsg = ref('')
-const segmentsRef = ref(null)
 const videoRenderTask = ref(null)
 const videoPlayerError = ref('')
+const isEditing = ref(false)
+const saving = ref(false)
+const editableSegments = ref([])
 
 let pollTimer = null
 let videoRenderPollTimer = null
@@ -208,8 +281,28 @@ const statusMeta = computed(() => {
   if (scriptStatus.value === 'GENERATING_SCRIPT') {
     return getCoursewareStatusMeta('GENERATING_SCRIPT')
   }
-
   return getCoursewareStatusMeta(scriptStatus.value || 'READY')
+})
+
+const visibleSegments = computed(() => (isEditing.value ? editableSegments.value : scriptData.value?.segments || []))
+
+const missingAudioCount = computed(() => {
+  const segments = scriptData.value?.segments || []
+  return segments.filter(segment => !segment.audioUrl).length
+})
+
+const isDirty = computed(() => {
+  if (!isEditing.value || !scriptData.value) {
+    return false
+  }
+  const originalSegments = scriptData.value.segments || []
+  if (originalSegments.length !== editableSegments.value.length) {
+    return true
+  }
+  return editableSegments.value.some((segment, index) => {
+    const original = originalSegments[index]
+    return segment.title !== original.title || segment.content !== original.content
+  })
 })
 
 const renderVideoButtonText = computed(() => {
@@ -229,12 +322,12 @@ const videoRenderStatusText = computed(() => {
   }
   if (task.status === 'READY') {
     const seconds = task.durationMs ? Math.round(task.durationMs / 1000) : 0
-    return `已生成 ${task.segmentCount || 0} 个片段，约 ${seconds} 秒，可直接预览 HLS。`
+    return `已生成 ${task.segmentCount || 0} 个片段，总时长约 ${seconds} 秒，可直接预览 HLS 视频。`
   }
   if (task.status === 'FAILED') {
-    return '生成失败，保留错误信息用于排查。'
+    return '视频生成失败，保留错误信息用于排查。'
   }
-  return task.message || '正在整理页图、讲稿和音频并调用 ffmpeg 合成。'
+  return task.message || '正在整理页图、字幕与音频并调用 ffmpeg 合成。'
 })
 
 const normalizeScript = raw => {
@@ -273,6 +366,16 @@ const normalizeScript = raw => {
   }
 }
 
+const cloneSegments = segments => segments.map(segment => ({ ...segment }))
+
+const applyScriptData = raw => {
+  const normalized = raw ? normalizeScript(raw) : null
+  scriptData.value = normalized
+  scriptStatus.value = normalized?.status || raw?.status || ''
+  activeSegmentId.value = normalized?.outline?.[0]?.id || normalized?.segments?.[0]?.id || ''
+  editableSegments.value = normalized?.segments ? cloneSegments(normalized.segments) : []
+}
+
 const showError = (error, fallback) => {
   errorMsg.value = getErrorMessage(error, fallback)
 }
@@ -281,17 +384,7 @@ const fetchScript = async () => {
   loading.value = true
   try {
     const response = await getCoursewareScript(coursewareId)
-    const raw = response.data
-    const normalized = raw ? normalizeScript(raw) : null
-
-    if (normalized?.segments?.length) {
-      scriptData.value = normalized
-      scriptStatus.value = normalized.status
-      activeSegmentId.value = normalized.outline[0]?.id || normalized.segments[0]?.id || ''
-    } else {
-      scriptData.value = null
-      scriptStatus.value = raw?.status || ''
-    }
+    applyScriptData(response.data)
   } catch (error) {
     scriptData.value = null
     showError(error, '无法获取讲稿，请稍后重试。')
@@ -313,9 +406,20 @@ const handleGenerateScript = async () => {
   }
 }
 
+const handleBackfillAudio = async () => {
+  errorMsg.value = ''
+  try {
+    await generateScript(coursewareId)
+    scriptStatus.value = 'GENERATING_SCRIPT'
+    pollGenerateStatus()
+  } catch (error) {
+    showError(error, '补齐音频失败，请稍后重试。')
+  }
+}
+
 const pollGenerateStatus = () => {
   let attempts = 0
-  const maxAttempts = 40
+  const maxAttempts = 60
 
   if (pollTimer) {
     clearInterval(pollTimer)
@@ -334,17 +438,49 @@ const pollGenerateStatus = () => {
       const response = await getCoursewareScript(coursewareId)
       const raw = response.data
       const normalized = raw ? normalizeScript(raw) : null
-
       if (normalized?.segments?.length) {
         clearInterval(pollTimer)
-        scriptData.value = normalized
-        scriptStatus.value = normalized.status
-        activeSegmentId.value = normalized.outline[0]?.id || normalized.segments[0]?.id || ''
+        applyScriptData(raw)
       }
     } catch {
-      // 轮询期间忽略瞬时网络错误
+      // Ignore transient polling errors.
     }
   }, 3000)
+}
+
+const beginEdit = () => {
+  editableSegments.value = cloneSegments(scriptData.value?.segments || [])
+  isEditing.value = true
+}
+
+const cancelEdit = () => {
+  editableSegments.value = cloneSegments(scriptData.value?.segments || [])
+  isEditing.value = false
+}
+
+const handleSaveScript = async () => {
+  if (!scriptData.value) {
+    return
+  }
+  saving.value = true
+  errorMsg.value = ''
+
+  try {
+    const response = await updateCoursewareScript(coursewareId, {
+      regenerateAudio: true,
+      segments: editableSegments.value.map(segment => ({
+        id: segment.id,
+        title: segment.title,
+        content: segment.content,
+      })),
+    })
+    applyScriptData(response.data)
+    isEditing.value = false
+  } catch (error) {
+    showError(error, '保存讲稿失败，请稍后重试。')
+  } finally {
+    saving.value = false
+  }
 }
 
 const scrollToSegment = segmentId => {
@@ -383,6 +519,7 @@ const handleRenderVideo = async () => {
   if (!scriptData.value) {
     return
   }
+
   videoPlayerError.value = ''
   errorMsg.value = ''
 
@@ -391,7 +528,7 @@ const handleRenderVideo = async () => {
     videoRenderTask.value = response.data || null
     pollVideoRenderStatus()
   } catch (error) {
-    showError(error, '触发讲解视频生成失败，请确认讲稿和课件页图已经准备完成。')
+    showError(error, '触发讲解视频生成失败，请确认讲稿和页图已准备完成。')
   }
 }
 
@@ -466,6 +603,17 @@ onUnmounted(() => {
   word-break: break-all;
 }
 
+.outline-tip {
+  margin-top: 1rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: var(--radius-md);
+  background: rgba(255, 186, 56, 0.12);
+  border: 1px solid rgba(255, 186, 56, 0.18);
+  color: #8b5e00;
+  font-size: var(--font-size-sm);
+  line-height: 1.7;
+}
+
 .outline-list {
   display: flex;
   flex-direction: column;
@@ -529,11 +677,28 @@ onUnmounted(() => {
   gap: 1rem;
 }
 
-.intro-card p {
+.intro-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.intro-note {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.intro-card p,
+.editor-tip-card p {
   margin: 0.9rem 0 0;
   color: var(--text-secondary);
   line-height: 1.9;
   white-space: pre-wrap;
+}
+
+.editor-tip-card h3 {
+  margin: 0;
 }
 
 .segment-list {
@@ -558,9 +723,48 @@ onUnmounted(() => {
   gap: 1rem;
 }
 
+.segment-title-block {
+  width: 100%;
+}
+
 .segment-card__header h3 {
   margin: 0.8rem 0 0;
   font-size: 1.35rem;
+}
+
+.segment-title-input,
+.segment-textarea {
+  width: 100%;
+  border: 1px solid rgba(132, 143, 184, 0.24);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--text-primary);
+  box-shadow: inset 0 1px 2px rgba(14, 24, 44, 0.04);
+  transition:
+    border-color var(--transition-base),
+    box-shadow var(--transition-base);
+}
+
+.segment-title-input {
+  margin-top: 0.8rem;
+  min-height: 2.8rem;
+  padding: 0 0.95rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.segment-textarea {
+  min-height: 12rem;
+  padding: 0.95rem 1rem;
+  line-height: 1.9;
+  resize: vertical;
+}
+
+.segment-title-input:focus,
+.segment-textarea:focus {
+  outline: none;
+  border-color: rgba(95, 104, 255, 0.36);
+  box-shadow: 0 0 0 4px rgba(95, 104, 255, 0.1);
 }
 
 .segment-card__content p {
@@ -624,6 +828,12 @@ onUnmounted(() => {
   border-radius: var(--radius-md);
   font-size: var(--font-size-sm);
   line-height: 1.7;
+}
+
+.inline-alert--info {
+  color: #3e507c;
+  background: rgba(95, 104, 255, 0.08);
+  border: 1px solid rgba(95, 104, 255, 0.14);
 }
 
 .inline-alert--danger {
@@ -704,7 +914,9 @@ onUnmounted(() => {
     flex: 1;
   }
 
-  .segment-card__header {
+  .segment-card__header,
+  .intro-card__header,
+  .video-render-card__header {
     flex-direction: column;
   }
 }

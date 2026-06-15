@@ -12,12 +12,15 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 
 @Slf4j
 @Component
 public class PythonScriptClient {
+
+    private static final Duration MIN_SCRIPT_READ_TIMEOUT = Duration.ofMinutes(10);
 
     private final PythonClientProperties props;
     private final RestClient restClient;
@@ -31,7 +34,7 @@ public class PythonScriptClient {
                 .build();
 
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
-        requestFactory.setReadTimeout(props.getReadTimeout());
+        requestFactory.setReadTimeout(resolveReadTimeout(props));
 
         this.restClient = RestClient.builder()
                 .requestFactory(requestFactory)
@@ -88,5 +91,13 @@ public class PythonScriptClient {
             String script,
             String transition
     ) {
+    }
+
+    private static Duration resolveReadTimeout(PythonClientProperties props) {
+        Duration configured = props.getReadTimeout();
+        if (configured == null || configured.compareTo(MIN_SCRIPT_READ_TIMEOUT) < 0) {
+            return MIN_SCRIPT_READ_TIMEOUT;
+        }
+        return configured;
     }
 }

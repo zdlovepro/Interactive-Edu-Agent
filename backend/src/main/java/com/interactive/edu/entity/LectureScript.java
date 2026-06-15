@@ -3,6 +3,8 @@ package com.interactive.edu.entity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
@@ -33,11 +35,26 @@ public class LectureScript {
     @Column(name = "node_id", length = 64, nullable = false, unique = true)
     private String nodeId;
 
+    @Column(name = "title", length = 255)
+    private String title;
+
     @Column(name = "content", columnDefinition = "TEXT")
     private String content;
 
+    @Column(name = "knowledge_points_json", columnDefinition = "TEXT")
+    private String knowledgePointsJson;
+
     @Column(name = "audio_url", length = 512)
     private String audioUrl;
+
+    @Column(name = "page_image_url", length = 512)
+    private String pageImageUrl;
+
+    @Column(name = "visual_summary", columnDefinition = "TEXT")
+    private String visualSummary;
+
+    @Column(name = "visual_objects_json", columnDefinition = "TEXT")
+    private String visualObjectsJson;
 
     // AUTO, EDITED
     @Column(name = "edit_status", length = 32)
@@ -50,4 +67,20 @@ public class LectureScript {
     @LastModifiedDate
     @Column(name = "update_time")
     private LocalDateTime updateTime;
+
+    @PrePersist
+    void prePersist() {
+        LocalDateTime now = LocalDateTime.now();
+        if (createTime == null) {
+            createTime = now;
+        }
+        if (updateTime == null) {
+            updateTime = now;
+        }
+    }
+
+    @PreUpdate
+    void preUpdate() {
+        updateTime = LocalDateTime.now();
+    }
 }

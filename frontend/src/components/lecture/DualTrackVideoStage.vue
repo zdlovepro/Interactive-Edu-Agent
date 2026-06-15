@@ -1,49 +1,44 @@
 <template>
-  <section class="video-stage" :class="`mode-${activeMode}`" aria-label="课堂视频画面">
-    <div class="video-stage__viewport">
-      <video
-        ref="lectureVideoRef"
-        class="video-stage__track"
-        :class="{ active: activeMode === VIDEO_TRACK_MODE.LECTURE }"
-        :src="lectureVideoUrl"
-        muted
-        playsinline
-        loop
-        preload="auto"
-        @error="handleTrackError(VIDEO_TRACK_MODE.LECTURE)"
-      ></video>
-      <video
-        ref="standbyVideoRef"
-        class="video-stage__track"
-        :class="{ active: activeMode === VIDEO_TRACK_MODE.STANDBY }"
-        :src="standbyVideoUrl"
-        muted
-        playsinline
-        loop
-        preload="auto"
-        @error="handleTrackError(VIDEO_TRACK_MODE.STANDBY)"
-      ></video>
+  <section class="video-stage" aria-label="课堂视频画面">
+    <div class="video-stage__header">
+      <div class="video-stage__title-group">
+        <span class="video-stage__eyebrow">课堂视频</span>
+        <strong>{{ title || `第 ${currentPage} 页` }}</strong>
+      </div>
 
-      <div class="video-stage__overlay">
-        <div>
-          <span>{{ VIDEO_TRACK_LABEL[activeMode] }}</span>
-          <strong>{{ title || `第 ${currentPage} 页` }}</strong>
-        </div>
-        <span class="video-stage__state">{{ statusLabel }}</span>
+      <div class="video-stage__status-group">
+        <span class="video-stage__pill">{{ lectureStatusText }}</span>
+        <span class="video-stage__pill" :class="`is-${normalizedVideoStatus}`">
+          {{ videoStatusLabel }}
+        </span>
       </div>
     </div>
+
+    <div class="video-stage__body">
+      <HlsVideoPlayer
+        v-if="videoSrc"
+        :src="videoSrc"
+        :title="playerTitle"
+        :muted="muted"
+        @error="playerError = $event"
+        @ready="playerError = ''"
+      />
+
+      <div v-else class="video-stage__placeholder">
+        <strong>当前还没有可播放的生成视频</strong>
+        <p>{{ placeholderText }}</p>
+      </div>
+    </div>
+
+    <p class="video-stage__hint">{{ videoStatusText || defaultHint }}</p>
+    <div v-if="playerError" class="video-stage__error">{{ playerError }}</div>
   </section>
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
+import HlsVideoPlayer from '@/components/video/HlsVideoPlayer.vue'
 import { LECTURE_STATE, LECTURE_STATUS_MAP, normalizeLectureStatus } from '@/constants/lecture'
-import {
-  SAMPLE_LECTURE_VIDEO_URL,
-  SAMPLE_STANDBY_VIDEO_URL,
-  VIDEO_TRACK_LABEL,
-  VIDEO_TRACK_MODE,
-} from '@/constants/videoTracks'
 
 const props = defineProps({
   lectureStatus: {
@@ -58,179 +53,197 @@ const props = defineProps({
     type: String,
     default: '',
   },
-  isSpeaking: {
+  videoSrc: {
+    type: String,
+    default: '',
+  },
+  videoStatus: {
+    type: String,
+    default: '',
+  },
+  videoStatusText: {
+    type: String,
+    default: '',
+  },
+  muted: {
     type: Boolean,
-    default: false,
-  },
-  lectureVideoUrl: {
-    type: String,
-    default: SAMPLE_LECTURE_VIDEO_URL,
-  },
-  standbyVideoUrl: {
-    type: String,
-    default: SAMPLE_STANDBY_VIDEO_URL,
+    default: true,
   },
 })
 
-const lectureVideoRef = ref(null)
-const standbyVideoRef = ref(null)
-const failedTracks = ref(new Set())
+const playerError = ref('')
 
-const normalizedStatus = computed(() => normalizeLectureStatus(props.lectureStatus))
-const activeMode = computed(() => {
-  if (
-    normalizedStatus.value === LECTURE_STATE.INTERRUPTED ||
-    normalizedStatus.value === LECTURE_STATE.ANSWERING ||
-    normalizedStatus.value === LECTURE_STATE.RESUMING
-  ) {
-    return VIDEO_TRACK_MODE.STANDBY
-  }
-
-  return VIDEO_TRACK_MODE.LECTURE
-})
-const statusLabel = computed(
-  () => LECTURE_STATUS_MAP[normalizedStatus.value]?.text || LECTURE_STATUS_MAP[LECTURE_STATE.IDLE].text,
+const normalizedLectureStatus = computed(() => normalizeLectureStatus(props.lectureStatus))
+const normalizedVideoStatus = computed(() =>
+  String(props.videoStatus || '').trim().toUpperCase() || 'UNAVAILABLE',
 )
 
-const videoByMode = mode =>
-  mode === VIDEO_TRACK_MODE.STANDBY ? standbyVideoRef.value : lectureVideoRef.value
-
-const shouldPlayTrack = mode => {
-  if (failedTracks.value.has(mode)) {
-    return false
-  }
-  if (mode !== activeMode.value) {
-    return false
-  }
-  if (mode === VIDEO_TRACK_MODE.STANDBY) {
-    return true
-  }
-  return normalizedStatus.value === LECTURE_STATE.PLAYING && props.isSpeaking
-}
-
-const applyPlaybackState = async () => {
-  await nextTick()
-
-  for (const mode of Object.values(VIDEO_TRACK_MODE)) {
-    const video = videoByMode(mode)
-    if (!video) {
-      continue
-    }
-
-    if (shouldPlayTrack(mode)) {
-      const playPromise = video.play()
-      if (playPromise && typeof playPromise.catch === 'function') {
-        playPromise.catch(() => {
-          video.pause()
-        })
-      }
-    } else {
-      video.pause()
-    }
-  }
-}
-
-const handleTrackError = mode => {
-  const nextFailedTracks = new Set(failedTracks.value)
-  nextFailedTracks.add(mode)
-  failedTracks.value = nextFailedTracks
-}
-
-watch(
-  () => [activeMode.value, normalizedStatus.value, props.isSpeaking, props.currentPage],
-  () => {
-    void applyPlaybackState()
-  },
+const lectureStatusText = computed(
+  () =>
+    LECTURE_STATUS_MAP[normalizedLectureStatus.value]?.text ||
+    LECTURE_STATUS_MAP[LECTURE_STATE.IDLE].text,
 )
 
-onMounted(() => {
-  void applyPlaybackState()
+const videoStatusLabel = computed(() => {
+  switch (normalizedVideoStatus.value) {
+    case 'READY':
+      return '视频已就绪'
+    case 'RENDERING':
+      return '视频生成中'
+    case 'FAILED':
+      return '视频生成失败'
+    case 'PENDING':
+      return '等待生成'
+    default:
+      return '暂未生成'
+  }
 })
 
-onUnmounted(() => {
-  lectureVideoRef.value?.pause()
-  standbyVideoRef.value?.pause()
+const playerTitle = computed(() => props.title || `课堂讲解视频 · 第 ${props.currentPage} 页`)
+
+const placeholderText = computed(() => {
+  switch (normalizedVideoStatus.value) {
+    case 'RENDERING':
+      return '讲解视频正在生成中，稍后会自动出现在这里。'
+    case 'FAILED':
+      return '生成任务失败了，请回到讲稿页重新触发视频生成。'
+    default:
+      return '请先在讲稿页完成视频生成，课堂页就会直接展示真实生成结果。'
+  }
+})
+
+const defaultHint = computed(() => {
+  if (props.videoSrc) {
+    return '这里展示的是当前课件的真实生成视频，不再使用示例素材。'
+  }
+  return '当前课堂仍可继续看讲稿和问答，但视频需要先完成渲染。'
 })
 </script>
 
 <style scoped>
 .video-stage {
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem;
   border: 1px solid rgba(145, 153, 183, 0.18);
   border-radius: var(--radius-lg);
-  background: #111827;
+  background:
+    radial-gradient(circle at top left, rgba(82, 112, 255, 0.12), transparent 28%),
+    rgba(255, 255, 255, 0.92);
   box-shadow: var(--shadow-sm);
 }
 
-.video-stage__viewport {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  overflow: hidden;
-}
-
-.video-stage__track {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0;
-  transform: scale(1.01);
-  transition: opacity 220ms ease;
-}
-
-.video-stage__track.active {
-  opacity: 1;
-}
-
-.video-stage__overlay {
-  position: absolute;
-  inset: auto 0 0;
+.video-stage__header {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1rem;
-  color: #ffffff;
-  background: linear-gradient(180deg, transparent, rgba(10, 16, 30, 0.72));
 }
 
-.video-stage__overlay span {
-  display: block;
-  margin-bottom: 0.25rem;
-  color: rgba(255, 255, 255, 0.78);
+.video-stage__title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.video-stage__eyebrow {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.video-stage__title-group strong {
+  font-size: 1.15rem;
+  color: var(--text-primary);
+}
+
+.video-stage__status-group {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
+.video-stage__pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(122, 132, 181, 0.12);
+  color: var(--text-secondary);
   font-size: var(--font-size-xs);
   font-weight: 700;
 }
 
-.video-stage__overlay strong {
-  display: block;
-  max-width: 34rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--font-size-lg);
+.video-stage__pill.is-ready {
+  background: rgba(31, 157, 103, 0.12);
+  color: var(--success-color);
 }
 
-.video-stage__state {
-  flex: 0 0 auto;
-  min-width: 4.5rem;
-  padding: 0.35rem 0.6rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.16);
+.video-stage__pill.is-rendering,
+.video-stage__pill.is-pending {
+  background: rgba(95, 104, 255, 0.12);
+  color: var(--primary-color);
+}
+
+.video-stage__pill.is-failed {
+  background: rgba(203, 65, 94, 0.12);
+  color: var(--error-color);
+}
+
+.video-stage__body {
+  min-height: 16rem;
+}
+
+.video-stage__placeholder {
+  display: grid;
+  place-items: center;
+  min-height: 20rem;
+  padding: 1.5rem;
+  border-radius: calc(var(--radius-lg) + 0.1rem);
+  background:
+    radial-gradient(circle at top left, rgba(82, 112, 255, 0.18), transparent 30%),
+    linear-gradient(160deg, rgba(12, 21, 49, 0.96), rgba(22, 34, 64, 0.94));
   text-align: center;
+  color: rgba(246, 248, 255, 0.94);
 }
 
-@media (max-width: 640px) {
-  .video-stage__overlay {
-    align-items: flex-start;
+.video-stage__placeholder strong {
+  font-size: 1.15rem;
+}
+
+.video-stage__placeholder p,
+.video-stage__hint {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.video-stage__placeholder p {
+  max-width: 34rem;
+  color: rgba(222, 229, 255, 0.82);
+}
+
+.video-stage__error {
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius-md);
+  background: rgba(203, 65, 94, 0.08);
+  border: 1px solid rgba(203, 65, 94, 0.14);
+  color: var(--error-color);
+  line-height: 1.7;
+}
+
+@media (max-width: 768px) {
+  .video-stage__header {
     flex-direction: column;
   }
 
-  .video-stage__overlay strong {
-    max-width: 100%;
-    font-size: var(--font-size-md);
+  .video-stage__status-group {
+    justify-content: flex-start;
   }
 }
 </style>

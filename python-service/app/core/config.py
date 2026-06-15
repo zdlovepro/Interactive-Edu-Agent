@@ -50,6 +50,39 @@ class Settings(BaseSettings):
     STRICT_CHAIN: bool = False
     RENDER_BASE_DIR: str = "./data/render"
 
+    # ---------- Digital human / Wan reference-to-video ---------- #
+    DIGITAL_HUMAN_ENABLED: bool = False
+    DIGITAL_HUMAN_API_KEY: str = Field(
+        default="",
+        validation_alias=AliasChoices("DIGITAL_HUMAN_API_KEY", "DASHSCOPE_API_KEY"),
+    )
+    DIGITAL_HUMAN_API_BASE: str = "https://dashscope.aliyuncs.com"
+    DIGITAL_HUMAN_MODEL_NAME: str = "wan2.7-r2v"
+    DIGITAL_HUMAN_REFERENCE_IMAGE_PATH: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "DIGITAL_HUMAN_REFERENCE_IMAGE_PATH",
+            "DIGITAL_HUMAN_REF_IMAGE_PATH",
+            "DIGITAL_HUMAN_AVATAR_IMAGE_PATH",
+        ),
+    )
+    DIGITAL_HUMAN_MAX_SEGMENTS: int = 1
+    DIGITAL_HUMAN_MAX_SEGMENT_RATIO: float = 0.25
+    DIGITAL_HUMAN_MIN_PAGE_GAP: int = 2
+    DIGITAL_HUMAN_MIN_IMPORTANCE_SCORE: float = 0.55
+    DIGITAL_HUMAN_MIN_AUDIO_SECONDS: int = 2
+    DIGITAL_HUMAN_MAX_AUDIO_SECONDS: int = 10
+    DIGITAL_HUMAN_LEAD_TRIM_SECONDS: float = 1.5
+    DIGITAL_HUMAN_OVERLAY_WIDTH_RATIO: float = 0.22
+    DIGITAL_HUMAN_OVERLAY_MARGIN_TOP: int = 0
+    DIGITAL_HUMAN_OVERLAY_MARGIN_RIGHT: int = 0
+    DIGITAL_HUMAN_POLL_INTERVAL_SECONDS: int = 5
+    DIGITAL_HUMAN_TASK_TIMEOUT_SECONDS: int = 1800
+    DIGITAL_HUMAN_RESOLUTION: str = "720P"
+    DIGITAL_HUMAN_RATIO: str = "16:9"
+    DIGITAL_HUMAN_PROMPT_EXTEND: bool = False
+    DIGITAL_HUMAN_WATERMARK: bool = False
+
     # ---------- Vision Model Config (Optional) ----------
     VISION_API_KEY: str = Field(default="", validation_alias=AliasChoices("VISION_API_KEY", "VISION_KEY"))
     VISION_API_BASE: str = Field(

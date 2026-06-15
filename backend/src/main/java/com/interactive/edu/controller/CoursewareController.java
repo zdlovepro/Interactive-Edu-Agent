@@ -2,10 +2,12 @@ package com.interactive.edu.controller;
 
 import com.interactive.edu.dto.BaseResponse;
 import com.interactive.edu.dto.CoursewareUploadResult;
+import com.interactive.edu.dto.courseware.UpdateCoursewareScriptRequest;
 import com.interactive.edu.service.courseware.CoursewareService;
 import com.interactive.edu.vo.courseware.CoursewareDetailView;
 import com.interactive.edu.vo.courseware.CoursewareListView;
 import com.interactive.edu.vo.courseware.ScriptView;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
@@ -13,6 +15,8 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -57,6 +61,14 @@ public class CoursewareController {
             @PathVariable("coursewareId") @NotBlank String coursewareId
     ) {
         return BaseResponse.ok(coursewareService.getScript(coursewareId));
+    }
+
+    @PutMapping("/{coursewareId}/script")
+    public BaseResponse<ScriptView> updateScript(
+            @PathVariable("coursewareId") @NotBlank String coursewareId,
+            @Valid @RequestBody UpdateCoursewareScriptRequest request
+    ) {
+        return BaseResponse.ok(coursewareService.updateScript(coursewareId, request));
     }
 
     @PostMapping("/{coursewareId}/script/generate")

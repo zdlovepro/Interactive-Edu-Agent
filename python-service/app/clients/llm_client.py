@@ -34,7 +34,13 @@ class LLMClient:
     def client(self) -> Any:
         return self._client
 
-    def invoke(self, messages: list[BaseMessage]) -> str:
+    def invoke(
+        self,
+        messages: list[BaseMessage],
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> str:
         logger.info(
             "Invoking LLM. messageCount=%s model=%s reasoningEffort=%s thinkingEnabled=%s",
             len(messages),
@@ -43,7 +49,14 @@ class LLMClient:
             settings.LLM_ENABLE_THINKING,
         )
 
-        response = self._client.chat.completions.create(**_build_chat_completion_kwargs(messages, stream=False))
+        response = self._client.chat.completions.create(
+            **_build_chat_completion_kwargs(
+                messages,
+                stream=False,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        )
 
         content = response.choices[0].message.content if response.choices else None
         if not content:
@@ -100,13 +113,19 @@ def _build_extra_body() -> dict[str, object] | None:
     return {"thinking": {"type": "enabled"}}
 
 
-def _build_chat_completion_kwargs(messages: list[BaseMessage], stream: bool) -> dict[str, Any]:
+def _build_chat_completion_kwargs(
+    messages: list[BaseMessage],
+    stream: bool,
+    *,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         "model": settings.LLM_MODEL_NAME,
         "messages": [_to_openai_message(message) for message in messages],
         "stream": stream,
-        "temperature": settings.LLM_TEMPERATURE,
-        "max_tokens": settings.LLM_MAX_TOKENS,
+        "temperature": settings.LLM_TEMPERATURE if temperature is None else temperature,
+        "max_tokens": settings.LLM_MAX_TOKENS if max_tokens is None else max_tokens,
         "timeout": settings.LLM_TIMEOUT,
     }
 

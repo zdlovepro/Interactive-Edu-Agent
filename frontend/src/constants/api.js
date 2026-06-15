@@ -15,11 +15,13 @@ export const COURSEWARE_API = {
 
 export const SCRIPT_API = {
   GET: coursewareId => `/courseware/${coursewareId}/script`,
+  UPDATE: coursewareId => `/courseware/${coursewareId}/script`,
   GENERATE: coursewareId => `/courseware/${coursewareId}/script/generate`,
 }
 
 export const COURSEWARE_VIDEO_API = {
   RENDER: coursewareId => `/courseware/${coursewareId}/video/render`,
+  SOURCE: coursewareId => `/courseware/${coursewareId}/video/source`,
 }
 
 export const LECTURE_API = {
@@ -50,14 +52,6 @@ export const CHAOXING_AUTH_API = {
   DETAIL: sessionId => `/chaoxing/auth/sessions/${sessionId}`,
   QRCODE: sessionId => `/chaoxing/auth/sessions/${sessionId}/qrcode`,
   CLOSE: sessionId => `/chaoxing/auth/sessions/${sessionId}`,
-}
-
-export const VIDEO_ASSET_API = {
-  LIST: '/video-assets',
-  DETAIL: assetId => `/video-assets/${assetId}`,
-  UPLOAD: '/video-assets/upload',
-  IMPORT_SAMPLE: '/video-assets/import-sample',
-  TRANSCODE: assetId => `/video-assets/${assetId}/transcode`,
 }
 
 export const OTHER_API = {}

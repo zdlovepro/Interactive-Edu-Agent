@@ -9,8 +9,8 @@
         </p>
         <div class="actions">
           <AppButton @click="router.push('/')">返回首页</AppButton>
-          <AppButton variant="secondary" @click="router.push('/resources')">
-            查看资源库
+          <AppButton variant="secondary" @click="router.push('/imports')">
+            去导入中心
           </AppButton>
         </div>
       </AppCard>

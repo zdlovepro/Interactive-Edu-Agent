@@ -37,4 +37,7 @@ public class PythonClientProperties {
 
     /** HTTP read timeout. */
     private Duration readTimeout = Duration.ofSeconds(30);
+
+    /** HTTP read timeout for long-running video render requests. */
+    private Duration videoRenderReadTimeout = Duration.ofMinutes(60);
 }

@@ -6,7 +6,6 @@ import com.interactive.edu.service.courseware.ScriptCallbackService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -16,7 +15,6 @@ import org.springframework.web.bind.annotation.RestController;
 @Slf4j
 @RestController
 @Profile({"full", "prod"})
-@ConditionalOnBean(ScriptCallbackService.class)
 @RequestMapping("/api/v1/courseware/callback")
 @RequiredArgsConstructor
 public class ScriptCallbackController {

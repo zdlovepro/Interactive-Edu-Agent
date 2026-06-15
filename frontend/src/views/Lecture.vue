@@ -22,7 +22,9 @@
             :lecture-status="lectureStatus"
             :current-page="currentPage"
             :title="currentSlide?.title"
-            :is-speaking="isSpeaking"
+            :video-src="lectureVideoUrl"
+            :video-status="videoRenderTask?.status"
+            :video-status-text="videoRenderStatusText"
           />
 
           <AppCard class="lecture-script-card" tone="glass">
@@ -260,9 +262,10 @@ import DualTrackVideoStage from '@/components/lecture/DualTrackVideoStage.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { recognizeAudio } from '@/api/asr'
-import { getCoursewareScript } from '@/api/courseware'
+import { getCoursewareScript, getCoursewareVideoRenderTask } from '@/api/courseware'
 import { pauseLecture, resumeLecture, startLecture } from '@/api/lecture'
 import { askText, streamAskText } from '@/api/qa'
+import { COURSEWARE_VIDEO_API } from '@/constants/api'
 import { LECTURE_STATE, LECTURE_STATUS_MAP, normalizeLectureStatus } from '@/constants/lecture'
 import { useLectureStore } from '@/stores/lecture'
 import audioPlayer from '@/utils/audioPlayer'
@@ -274,6 +277,7 @@ import { getErrorMessage } from '@/utils'
 
 const route = useRoute()
 const lectureStore = useLectureStore()
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
 const coursewareId = route.params.coursewareId
 
@@ -294,6 +298,7 @@ const voiceInterruptHint = ref('开启后会在检测到学生说话后自动打
 const voiceVolume = ref(0)
 const recordedAudioBlob = ref(null)
 const isVadListening = ref(false)
+const videoRenderTask = ref(null)
 
 const VOICE_INTERRUPT_STATE = {
   OFF: 'off',
@@ -317,6 +322,7 @@ let hasShownSocketError = false
 let vad = null
 let qaStreamClient = null
 let activeStreamingQaItemId = null
+let videoRenderPollTimer = null
 
 const lectureStatus = computed(() => normalizeLectureStatus(lectureStore.status))
 const statusMeta = computed(
@@ -374,6 +380,38 @@ const breakpointHint = computed(() => {
     : `已保存断点 ${breakpointLabel}`
 })
 const qaStatusText = computed(() => (isStreamingAnswer.value ? '生成中' : '等待提问'))
+const lectureVideoUrl = computed(() => {
+  if (String(videoRenderTask.value?.status || '').toUpperCase() !== 'READY') {
+    return ''
+  }
+
+  if (videoRenderTask.value?.hlsUrl) {
+    return buildApiUrl(videoRenderTask.value.hlsUrl)
+  }
+
+  return buildApiUrl(COURSEWARE_VIDEO_API.SOURCE(coursewareId))
+})
+const videoRenderStatusText = computed(() => {
+  const status = String(videoRenderTask.value?.status || '').toUpperCase()
+
+  if (!status) {
+    return '当前课件还没有可播放的生成视频，请先到讲稿页触发视频生成。'
+  }
+
+  if (status === 'READY') {
+    return '课堂页现在展示的是真实生成视频，不再使用示例视频素材。'
+  }
+
+  if (status === 'RENDERING' || status === 'PENDING') {
+    return videoRenderTask.value?.message || '讲解视频正在生成中，完成后这里会自动切换到可播放视频。'
+  }
+
+  if (status === 'FAILED') {
+    return videoRenderTask.value?.errorMessage || '视频生成失败，请回到讲稿页重新触发渲染。'
+  }
+
+  return '当前课件还没有可播放的生成视频，请先到讲稿页触发视频生成。'
+})
 const voiceStatusText = computed(() => {
   switch (voiceInterruptState.value) {
     case VOICE_INTERRUPT_STATE.LISTENING:
@@ -410,6 +448,20 @@ const formatDuration = seconds => {
   return `${minutes}:${remainSeconds}`
 }
 
+const buildApiUrl = path => {
+  if (!path) {
+    return API_BASE_URL
+  }
+
+  if (/^https?:\/\//i.test(path)) {
+    return path
+  }
+
+  const normalizedBase = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return `${normalizedBase}${normalizedPath}`
+}
+
 const clampBreakpointTime = (seconds, duration = 0) => {
   const value = Number(seconds)
   if (!Number.isFinite(value) || value < 0) {
@@ -440,6 +492,44 @@ const clearError = () => {
 
 const showError = (error, fallback) => {
   lectureStore.setErrorMessage(getErrorMessage(error, fallback))
+}
+
+const stopVideoRenderPolling = () => {
+  if (videoRenderPollTimer) {
+    window.clearInterval(videoRenderPollTimer)
+    videoRenderPollTimer = null
+  }
+}
+
+const fetchVideoRenderTask = async ({ silent = true } = {}) => {
+  try {
+    const response = await getCoursewareVideoRenderTask(coursewareId)
+    videoRenderTask.value = response.data || null
+
+    const status = String(videoRenderTask.value?.status || '').toUpperCase()
+    if (status === 'PENDING' || status === 'RENDERING') {
+      if (!videoRenderPollTimer) {
+        videoRenderPollTimer = window.setInterval(async () => {
+          const nextTask = await fetchVideoRenderTask({ silent: true })
+          const nextStatus = String(nextTask?.status || '').toUpperCase()
+          if (!nextTask || (nextStatus !== 'PENDING' && nextStatus !== 'RENDERING')) {
+            stopVideoRenderPolling()
+          }
+        }, 3000)
+      }
+    } else {
+      stopVideoRenderPolling()
+    }
+
+    return videoRenderTask.value
+  } catch (error) {
+    videoRenderTask.value = null
+    stopVideoRenderPolling()
+    if (!silent) {
+      showError(error, '无法获取讲解视频状态，请稍后重试。')
+    }
+    return null
+  }
 }
 
 const handleSocketMessage = message => {
@@ -1467,6 +1557,7 @@ onMounted(async () => {
 
   lectureStore.reset()
   lectureStore.setCoursewareId(coursewareId)
+  await fetchVideoRenderTask({ silent: true })
   const loaded = await loadSlides()
   if (loaded) {
     await startLectureSession()
@@ -1478,6 +1569,7 @@ onUnmounted(() => {
   stopVadMonitoring()
   qaStreamClient?.close()
   qaStreamClient = null
+  stopVideoRenderPolling()
   disconnectLectureSocket()
   audioUnsubscribers.forEach(unsubscribe => unsubscribe())
   audioPlayer.destroy()

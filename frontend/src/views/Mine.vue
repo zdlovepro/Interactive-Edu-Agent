@@ -6,7 +6,7 @@
           <span class="eyebrow">个人中心</span>
           <h1 class="page-title">我的工作台</h1>
           <p class="page-description">
-            这里只放个人状态、授权状态和常用入口；课件列表统一在资源库查看。
+            这里聚合超星授权、导入入口和当前问答能力说明。资源库和视频资产入口已经收掉，课件流程统一从导入中心进入。
           </p>
         </div>
         <AppButton size="lg" @click="router.push('/imports')">前往导入中心</AppButton>
@@ -25,29 +25,29 @@
         </AppCard>
 
         <AppCard tone="glass" class="summary-card">
-          <span>资源库</span>
-          <strong>课件资源</strong>
-          <p>查看上传、导入、解析、讲稿和课堂入口。</p>
-          <AppButton variant="secondary" size="sm" @click="router.push('/resources')">
-            打开资源库
-          </AppButton>
-        </AppCard>
-
-        <AppCard tone="glass" class="summary-card">
-          <span>导入</span>
-          <strong>创建资源</strong>
-          <p>本地上传、超星扫码导入和普通 URL 导入都从这里开始。</p>
+          <span>导入中心</span>
+          <strong>课件流程</strong>
+          <p>本地上传、超星导入、URL 导入，以及后续讲稿和课堂链路都从这里开始。</p>
           <AppButton variant="secondary" size="sm" @click="router.push('/imports')">
             打开导入中心
           </AppButton>
         </AppCard>
 
         <AppCard tone="glass" class="summary-card">
-          <span>视频资产</span>
-          <strong>HLS / MP4</strong>
-          <p>管理后续数字人和课堂播放需要的视频素材。</p>
-          <AppButton variant="secondary" size="sm" @click="router.push('/videos')">
-            查看视频资产
+          <span>本地上传</span>
+          <strong>手动导入课件</strong>
+          <p>如果你现在只想先跑通手动导入到生成视频这条主链路，直接从这里进入最快。</p>
+          <AppButton variant="secondary" size="sm" @click="router.push('/imports/upload')">
+            上传本地课件
+          </AppButton>
+        </AppCard>
+
+        <AppCard tone="glass" class="summary-card">
+          <span>RAG 助教</span>
+          <strong>已启用课件问答</strong>
+          <p>当前助教会基于已解析课件做问答与证据返回，后续补充资料时可以继续扩展知识范围。</p>
+          <AppButton variant="secondary" size="sm" @click="router.push('/imports')">
+            查看导入与问答链路
           </AppButton>
         </AppCard>
       </div>
@@ -77,9 +77,9 @@ const authStatusText = computed(() => {
 
 const authHint = computed(() => {
   if (chaoxingAuthStore.isAuthorized) {
-    return '已保存本次授权会话 ID，不保存 Cookie。'
+    return '当前只保存本次授权会话 ID，不会在前端保存完整 Cookie。'
   }
-  return '需要从超星导入课程时，请先扫码授权。'
+  return '需要从超星导入课程时，请先完成扫码授权。'
 })
 
 onMounted(() => {
@@ -155,4 +155,3 @@ onMounted(() => {
   }
 }
 </style>
-

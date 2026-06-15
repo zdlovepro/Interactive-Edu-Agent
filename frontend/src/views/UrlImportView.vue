@@ -45,7 +45,7 @@
             <AppButton type="submit" :disabled="urlImportDisabled">
               {{ urlImportLoading ? '提交中...' : '创建 URL 导入任务' }}
             </AppButton>
-            <AppButton variant="secondary" @click="router.push('/resources')">去资源库</AppButton>
+            <AppButton variant="secondary" @click="router.push('/imports/upload')">去本地上传</AppButton>
           </div>
         </form>
 
@@ -291,4 +291,3 @@ onUnmounted(() => {
   }
 }
 </style>
-

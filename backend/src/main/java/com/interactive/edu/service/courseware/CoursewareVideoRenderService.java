@@ -1,8 +1,10 @@
 package com.interactive.edu.service.courseware;
 
+import com.interactive.edu.entity.CoursewareVideoRenderTask;
 import com.interactive.edu.exception.BusinessException;
 import com.interactive.edu.exception.ErrorCode;
 import com.interactive.edu.exception.ServiceException;
+import com.interactive.edu.repository.CoursewareVideoRenderTaskRepository;
 import com.interactive.edu.service.python.PythonVideoRenderClient;
 import com.interactive.edu.service.python.PythonVideoRenderRequest;
 import com.interactive.edu.vo.courseware.CoursewareVideoRenderTaskView;
@@ -11,6 +13,7 @@ import com.interactive.edu.vo.courseware.ScriptView;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
@@ -38,6 +41,7 @@ public class CoursewareVideoRenderService {
 
     private final CoursewareService coursewareService;
     private final PythonVideoRenderClient pythonVideoRenderClient;
+    private final ObjectProvider<CoursewareVideoRenderTaskRepository> taskRepositoryProvider;
     @Qualifier("taskExecutor")
     private final TaskExecutor taskExecutor;
 
@@ -59,20 +63,21 @@ public class CoursewareVideoRenderService {
             throw new BusinessException(ErrorCode.STATE_CONFLICT, "Script is empty, cannot render video");
         }
 
-        VideoRenderTaskState existing = taskStore.get(coursewareId);
+        VideoRenderTaskState existing = loadTaskState(coursewareId);
         if (existing != null && "RENDERING".equals(existing.getStatus())) {
             return toView(existing);
         }
 
         VideoRenderTaskState state = new VideoRenderTaskState(coursewareId, outputDirFor(coursewareId));
         taskStore.put(coursewareId, state);
+        persistTaskState(state);
         taskExecutor.execute(() -> runRender(state, script));
         return toView(state);
     }
 
     public CoursewareVideoRenderTaskView getTask(String coursewareId) {
         ensureCoursewareId(coursewareId);
-        VideoRenderTaskState state = taskStore.get(coursewareId);
+        VideoRenderTaskState state = loadTaskState(coursewareId);
         if (state == null) {
             throw new NoSuchElementException("Courseware video render task not found");
         }
@@ -105,6 +110,8 @@ public class CoursewareVideoRenderService {
     private void runRender(VideoRenderTaskState state, ScriptView script) {
         try {
             state.markRendering("Preparing render input");
+            persistTaskState(state);
+
             PythonVideoRenderRequest request = PythonVideoRenderRequest.builder()
                     .coursewareId(state.getCoursewareId())
                     .outputDir(state.getOutputDir().toString())
@@ -115,11 +122,13 @@ public class CoursewareVideoRenderService {
 
             PythonVideoRenderClient.VideoRenderResult result = pythonVideoRenderClient.render(request);
             state.markReady(result);
+            persistTaskState(state);
         } catch (Exception ex) {
             log.error("Courseware video render failed. coursewareId={}", state.getCoursewareId(), ex);
             state.markFailed(ex instanceof ServiceException serviceException
                     ? serviceException.getFriendlyMessage()
                     : ex.getMessage());
+            persistTaskState(state);
         }
     }
 
@@ -138,6 +147,8 @@ public class CoursewareVideoRenderService {
                             segment.title(),
                             segment.content(),
                             segment.pageImagePath(),
+                            segment.knowledgePoints(),
+                            segment.visualSummary(),
                             segment.audioUrl()
                     );
                 })
@@ -145,11 +156,61 @@ public class CoursewareVideoRenderService {
     }
 
     private VideoRenderTaskState requireReadyTask(String coursewareId) {
-        VideoRenderTaskState state = taskStore.get(coursewareId);
+        VideoRenderTaskState state = loadTaskState(coursewareId);
         if (state == null || !"READY".equals(state.getStatus())) {
             throw new NoSuchElementException("Courseware rendered video is not ready");
         }
         return state;
+    }
+
+    private VideoRenderTaskState loadTaskState(String coursewareId) {
+        VideoRenderTaskState cached = taskStore.get(coursewareId);
+        if (cached != null) {
+            return cached;
+        }
+
+        if (!isPersistentMode()) {
+            return null;
+        }
+
+        return taskRepository().findById(coursewareId)
+                .map(entity -> {
+                    VideoRenderTaskState state = VideoRenderTaskState.fromEntity(entity, outputDirFor(coursewareId));
+                    taskStore.put(coursewareId, state);
+                    return state;
+                })
+                .orElse(null);
+    }
+
+    private void persistTaskState(VideoRenderTaskState state) {
+        if (!isPersistentMode()) {
+            return;
+        }
+
+        CoursewareVideoRenderTask entity = taskRepository().findById(state.getCoursewareId())
+                .orElseGet(CoursewareVideoRenderTask::new);
+        entity.setCoursewareId(state.getCoursewareId());
+        entity.setStatus(state.getStatus());
+        entity.setProgress(state.getProgress());
+        entity.setMessage(state.getMessage());
+        entity.setMp4Path(state.getMp4Path());
+        entity.setHlsPlaylistPath(state.getHlsPlaylistPath());
+        entity.setDurationMs(state.getDurationMs());
+        entity.setSegmentCount(state.getSegmentCount());
+        entity.setErrorMessage(state.getErrorMessage());
+        taskRepository().save(entity);
+    }
+
+    private boolean isPersistentMode() {
+        return taskRepositoryProvider.getIfAvailable() != null;
+    }
+
+    private CoursewareVideoRenderTaskRepository taskRepository() {
+        CoursewareVideoRenderTaskRepository repository = taskRepositoryProvider.getIfAvailable();
+        if (repository == null) {
+            throw new IllegalStateException("CoursewareVideoRenderTaskRepository is unavailable in the current profile");
+        }
+        return repository;
     }
 
     private CoursewareVideoRenderTaskView toView(VideoRenderTaskState state) {
@@ -203,11 +264,11 @@ public class CoursewareVideoRenderService {
     private static final class VideoRenderTaskState {
         private final String coursewareId;
         private final Path outputDir;
-        private final Instant createdAt = Instant.now();
-        private volatile Instant updatedAt = createdAt;
-        private volatile String status = "PENDING";
-        private volatile int progress = 0;
-        private volatile String message = "Video render task pending";
+        private final Instant createdAt;
+        private volatile Instant updatedAt;
+        private volatile String status;
+        private volatile int progress;
+        private volatile String message;
         private volatile String mp4Path;
         private volatile String hlsPlaylistPath;
         private volatile Long durationMs;
@@ -215,8 +276,52 @@ public class CoursewareVideoRenderService {
         private volatile String errorMessage;
 
         private VideoRenderTaskState(String coursewareId, Path outputDir) {
+            this(coursewareId, outputDir, Instant.now(), Instant.now(), "PENDING", 0, "Video render task pending", null, null, null, null, null);
+        }
+
+        private VideoRenderTaskState(
+                String coursewareId,
+                Path outputDir,
+                Instant createdAt,
+                Instant updatedAt,
+                String status,
+                int progress,
+                String message,
+                String mp4Path,
+                String hlsPlaylistPath,
+                Long durationMs,
+                Integer segmentCount,
+                String errorMessage
+        ) {
             this.coursewareId = coursewareId;
             this.outputDir = outputDir;
+            this.createdAt = createdAt;
+            this.updatedAt = updatedAt;
+            this.status = status;
+            this.progress = progress;
+            this.message = message;
+            this.mp4Path = mp4Path;
+            this.hlsPlaylistPath = hlsPlaylistPath;
+            this.durationMs = durationMs;
+            this.segmentCount = segmentCount;
+            this.errorMessage = errorMessage;
+        }
+
+        private static VideoRenderTaskState fromEntity(CoursewareVideoRenderTask entity, Path outputDir) {
+            return new VideoRenderTaskState(
+                    entity.getCoursewareId(),
+                    outputDir,
+                    entity.getCreateTime() == null ? Instant.now() : entity.getCreateTime().atZone(java.time.ZoneId.systemDefault()).toInstant(),
+                    entity.getUpdateTime() == null ? Instant.now() : entity.getUpdateTime().atZone(java.time.ZoneId.systemDefault()).toInstant(),
+                    entity.getStatus(),
+                    entity.getProgress() == null ? 0 : entity.getProgress(),
+                    StringUtils.hasText(entity.getMessage()) ? entity.getMessage() : "Video render task pending",
+                    entity.getMp4Path(),
+                    entity.getHlsPlaylistPath(),
+                    entity.getDurationMs(),
+                    entity.getSegmentCount(),
+                    entity.getErrorMessage()
+            );
         }
 
         private void markRendering(String message) {

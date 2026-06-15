@@ -3,13 +3,13 @@
     <section class="page-shell page-section">
       <div class="section-header">
         <div>
-          <span class="eyebrow">课件资源详情</span>
+          <span class="eyebrow">课件详情</span>
           <h1 class="page-title">{{ detail?.name || coursewareId }}</h1>
           <p class="page-description">
             这里展示课件解析、讲稿生成和课堂入口的当前可用状态，避免在资源未准备好时误入空页面。
           </p>
         </div>
-        <AppButton variant="secondary" @click="router.push('/resources')">返回资源库</AppButton>
+        <AppButton variant="secondary" @click="router.push('/imports')">返回导入中心</AppButton>
       </div>
     </section>
 
@@ -80,9 +80,9 @@
       <AppCard v-else tone="glass">
         <EmptyState
           title="未找到课件资源"
-          description="请回到资源库确认该资源是否仍然存在。"
-          action-label="返回资源库"
-          @action="router.push('/resources')"
+          description="请回到导入中心确认该资源是否仍然存在。"
+          action-label="返回导入中心"
+          @action="router.push('/imports')"
         />
       </AppCard>
     </section>
@@ -276,4 +276,3 @@ onMounted(() => {
   }
 }
 </style>
-

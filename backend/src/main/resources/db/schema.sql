@@ -1,78 +1,100 @@
--- 1. 课件表
 CREATE TABLE IF NOT EXISTS courseware (
-    id VARCHAR(64) PRIMARY KEY COMMENT '课件唯一ID，如 cware_xxxxx',
-    name VARCHAR(255) NOT NULL COMMENT '课件名称',
-    file_url VARCHAR(512) NOT NULL COMMENT '在 MinIO 中的存储路径/URL',
-    file_type VARCHAR(32) NOT NULL COMMENT '文件类型：PDF/PPTX 等',
-    status VARCHAR(64) NOT NULL DEFAULT 'UPLOADED' COMMENT '状态：UPLOADED, PARSING, PARSED, GENERATING, READY, FAILED',
-    uploader_id VARCHAR(64) COMMENT '上传教师ID',
-    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='课件基础信息表';
+    id VARCHAR(64) PRIMARY KEY COMMENT 'Courseware id',
+    name VARCHAR(255) NOT NULL COMMENT 'Display name',
+    file_url VARCHAR(512) NOT NULL COMMENT 'Storage key or local path',
+    storage_type VARCHAR(32) NOT NULL DEFAULT 'local' COMMENT 'local or minio',
+    original_filename VARCHAR(255) COMMENT 'Original file name',
+    file_type VARCHAR(128) NOT NULL COMMENT 'MIME type',
+    status VARCHAR(64) NOT NULL DEFAULT 'UPLOADED' COMMENT 'Courseware status',
+    current_task_status VARCHAR(32) NOT NULL DEFAULT 'PENDING' COMMENT 'Task status',
+    script_opening TEXT COMMENT 'Script opening text',
+    script_closing TEXT COMMENT 'Script closing text',
+    uploader_id VARCHAR(64) COMMENT 'Uploader user id',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'Created at',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated at'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Courseware metadata';
 
--- 2. 课件解析页面表
 CREATE TABLE IF NOT EXISTS courseware_page (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    courseware_id VARCHAR(64) NOT NULL COMMENT '关联课件ID',
-    page_index INT NOT NULL COMMENT '页码，从1开始',
-    original_text TEXT COMMENT '通过 Python 解析引擎提取的原文',
-    image_url VARCHAR(512) COMMENT '该页的截图/截图地址',
-    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    courseware_id VARCHAR(64) NOT NULL COMMENT 'Courseware id',
+    page_index INT NOT NULL COMMENT '1-based page index',
+    title VARCHAR(255) COMMENT 'Page title',
+    original_text TEXT COMMENT 'Parsed text content',
+    knowledge_points_json TEXT COMMENT 'Knowledge points JSON',
+    image_url VARCHAR(512) COMMENT 'Page image path',
+    visual_summary TEXT COMMENT 'Visual summary',
+    visual_objects_json TEXT COMMENT 'Visual objects JSON',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'Created at',
     INDEX idx_cw_page (courseware_id, page_index)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='课件分页解析内容表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Parsed courseware pages';
 
--- 3. 讲稿脚本表
 CREATE TABLE IF NOT EXISTS lecture_script (
-    id VARCHAR(64) PRIMARY KEY COMMENT '主键ID',
-    courseware_id VARCHAR(64) NOT NULL COMMENT '关联课件ID',
-    page_index INT NOT NULL COMMENT '所在页码',
-    node_id VARCHAR(64) NOT NULL COMMENT '讲授片段节点ID，例如 node_001',
-    content TEXT COMMENT '由大模型生成的讲授文本脚本',
-    audio_url VARCHAR(512) COMMENT 'TTS 语音播报地址',
-    edit_status VARCHAR(32) DEFAULT 'AUTO' COMMENT '编辑状态：AUTO(AI生成), EDITED(教师修改过)',
-    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    id VARCHAR(64) PRIMARY KEY COMMENT 'Primary key',
+    courseware_id VARCHAR(64) NOT NULL COMMENT 'Courseware id',
+    page_index INT NOT NULL COMMENT '1-based page index',
+    node_id VARCHAR(64) NOT NULL COMMENT 'Script node id',
+    title VARCHAR(255) COMMENT 'Page title',
+    content TEXT COMMENT 'Generated script content',
+    knowledge_points_json TEXT COMMENT 'Knowledge points JSON',
+    audio_url VARCHAR(512) COMMENT 'Generated audio URL',
+    page_image_url VARCHAR(512) COMMENT 'Page image URL',
+    visual_summary TEXT COMMENT 'Visual summary',
+    visual_objects_json TEXT COMMENT 'Visual objects JSON',
+    edit_status VARCHAR(32) DEFAULT 'AUTO' COMMENT 'AUTO or EDITED',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'Created at',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated at',
     UNIQUE KEY uk_node_id (node_id),
-    INDEX idx_cw_script (courseware_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='结构化讲稿表';
+    INDEX idx_cw_script (courseware_id, page_index)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Lecture script nodes';
 
--- 4. 问答记录表
+CREATE TABLE IF NOT EXISTS courseware_video_render_task (
+    courseware_id VARCHAR(64) PRIMARY KEY COMMENT 'Courseware id',
+    status VARCHAR(32) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/RENDERING/READY/FAILED',
+    progress INT NOT NULL DEFAULT 0 COMMENT 'Progress percentage',
+    message VARCHAR(255) COMMENT 'Stage message',
+    mp4_path VARCHAR(1024) COMMENT 'Rendered mp4 path',
+    hls_playlist_path VARCHAR(1024) COMMENT 'Rendered hls playlist path',
+    duration_ms BIGINT COMMENT 'Rendered duration',
+    segment_count INT COMMENT 'Rendered segment count',
+    error_message VARCHAR(1024) COMMENT 'Failure reason',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'Created at',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated at'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Courseware video render task';
+
 CREATE TABLE IF NOT EXISTS qa_record (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
-    session_id VARCHAR(128) NOT NULL COMMENT '讲课交互会话ID',
-    courseware_id VARCHAR(64) NOT NULL COMMENT '关联的课件ID',
-    node_id VARCHAR(64) COMMENT '当前打断在哪一个节点ID',
-    user_id VARCHAR(64) NOT NULL COMMENT '提问的用户(学生)ID',
-    ask_text TEXT NOT NULL COMMENT '学生的提问内容',
-    answer_text TEXT COMMENT '大模型的回答内容',
-    reference_fragments JSON COMMENT '引用的溯源课件片段',
-    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '产生时间',
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT 'Primary key',
+    session_id VARCHAR(128) NOT NULL COMMENT 'Lecture session id',
+    courseware_id VARCHAR(64) NOT NULL COMMENT 'Courseware id',
+    node_id VARCHAR(64) COMMENT 'Current node id',
+    user_id VARCHAR(64) NOT NULL COMMENT 'Student id',
+    ask_text TEXT NOT NULL COMMENT 'Question',
+    answer_text TEXT COMMENT 'Answer',
+    reference_fragments JSON COMMENT 'Referenced fragments',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'Created at',
     INDEX idx_session_cw (session_id, courseware_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='实时问答交互记录表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='QA records';
 
--- 5. 讲课会话与进度表
 CREATE TABLE IF NOT EXISTS lecture_session (
-    id VARCHAR(128) PRIMARY KEY COMMENT '会话ID，如 sess_xxxxx',
-    courseware_id VARCHAR(64) NOT NULL COMMENT '正在学习的课件ID',
-    user_id VARCHAR(64) NOT NULL COMMENT '学习该课件的学生/用户ID',
-    current_page_index INT DEFAULT 1 COMMENT '当前播放到的页码',
-    current_node_id VARCHAR(64) COMMENT '当前播放/打断的具体节点ID',
-    resume_token VARCHAR(255) COMMENT '恢复讲课所需的续接 Token',
-    status VARCHAR(32) DEFAULT 'ACTIVE' COMMENT '状态：ACTIVE(进行中), PAUSED(暂停), FINISHED(已完成)',
-    understanding_level VARCHAR(32) DEFAULT 'NORMAL' COMMENT 'AI判定的学生理解度：POOR, NORMAL, GOOD (用于动态调速)',
-    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '会话开始时间',
-    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '最近一次进度更新时间',
+    id VARCHAR(128) PRIMARY KEY COMMENT 'Session id',
+    courseware_id VARCHAR(64) NOT NULL COMMENT 'Courseware id',
+    user_id VARCHAR(64) NOT NULL COMMENT 'User id',
+    current_page_index INT DEFAULT 1 COMMENT 'Current page index',
+    current_node_id VARCHAR(64) COMMENT 'Current node id',
+    resume_token VARCHAR(255) COMMENT 'Resume token',
+    status VARCHAR(32) DEFAULT 'ACTIVE' COMMENT 'ACTIVE/PAUSED/FINISHED',
+    understanding_level VARCHAR(32) DEFAULT 'NORMAL' COMMENT 'POOR/NORMAL/GOOD',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'Created at',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated at',
     INDEX idx_user_cw (user_id, courseware_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='讲课交互会话与学习进度表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Lecture sessions';
 
--- 6. 系统用户表
 CREATE TABLE IF NOT EXISTS sys_user (
-    id VARCHAR(64) PRIMARY KEY COMMENT '用户ID',
-    username VARCHAR(128) NOT NULL COMMENT '用户名/学号/工号',
-    password VARCHAR(255) NOT NULL COMMENT '密码哈希',
-    real_name VARCHAR(64) COMMENT '真实姓名',
-    role VARCHAR(32) NOT NULL DEFAULT 'STUDENT' COMMENT '角色：TEACHER, STUDENT, ADMIN',
-    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '注册时间',
-    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    id VARCHAR(64) PRIMARY KEY COMMENT 'User id',
+    username VARCHAR(128) NOT NULL COMMENT 'Username',
+    password VARCHAR(255) NOT NULL COMMENT 'Password hash',
+    real_name VARCHAR(64) COMMENT 'Real name',
+    role VARCHAR(32) NOT NULL DEFAULT 'STUDENT' COMMENT 'TEACHER/STUDENT/ADMIN',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'Created at',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated at',
     UNIQUE KEY uk_username (username)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统用户表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='System users';

@@ -9,8 +9,8 @@
         </p>
         <div class="hero-actions">
           <AppButton size="lg" @click="router.push('/imports')">开始导入课件</AppButton>
-          <AppButton variant="secondary" size="lg" @click="router.push('/resources')">
-            查看资源库
+          <AppButton variant="secondary" size="lg" @click="router.push('/imports/upload')">
+            上传本地课件
           </AppButton>
         </div>
         <div class="hero-metrics">

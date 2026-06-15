@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from app.clients import llm_client as llm_client_module
@@ -24,7 +26,7 @@ def _build_request(
             PageContent(
                 page_index=1,
                 title="递归定义",
-                text_content="递归是函数直接或间接调用自身的一种方法，通常需要有终止条件来避免无限循环。",
+                text_content="递归是函数直接或间接调用自身的一种方法，通常需要有终止条件来避免无限展开。",
                 keywords=["递归", "终止条件"],
             )
         ],
@@ -36,7 +38,7 @@ def test_extract_json_payload_supports_pure_json():
     {
       "courseware_id": "cware_script_1",
       "opening": "开场",
-      "pages": [{"page_index": 1, "script": "讲解", "transition": "过渡"}],
+      "pages": [{"page_index": 1, "script": "讲解", "transition": ""}],
       "closing": "结尾"
     }
     """
@@ -52,7 +54,7 @@ def test_extract_json_payload_supports_json_fence():
 {
   "courseware_id": "cware_script_1",
   "opening": "开场",
-  "pages": [{"page_index": 1, "script": "讲解", "transition": "过渡"}],
+  "pages": [{"page_index": 1, "script": "讲解", "transition": ""}],
   "closing": "结尾"
 }
 ```"""
@@ -63,29 +65,13 @@ def test_extract_json_payload_supports_json_fence():
     assert '"opening": "开场"' in extracted
 
 
-def test_extract_json_payload_supports_plain_fence():
-    raw_output = """```
-{
-  "courseware_id": "cware_script_1",
-  "opening": "开场",
-  "pages": [{"page_index": 1, "script": "讲解", "transition": "过渡"}],
-  "closing": "结尾"
-}
-```"""
-
-    extracted = extract_json_payload(raw_output)
-
-    assert extracted.startswith("{")
-    assert '"closing": "结尾"' in extracted
-
-
 def test_extract_json_payload_supports_explanatory_text():
     raw_output = """
     下面是整理后的 JSON，请直接使用：
     {
       "courseware_id": "cware_script_1",
       "opening": "开场",
-      "pages": [{"page_index": 1, "script": "讲解", "transition": "过渡"}],
+      "pages": [{"page_index": 1, "script": "讲解", "transition": ""}],
       "closing": "结尾"
     }
     以上就是结果。
@@ -106,81 +92,53 @@ def test_extract_json_payload_non_json_returns_stripped_text():
     assert extracted == raw_output
 
 
-def test_parse_model_output_overrides_courseware_id_and_fills_transition():
+def test_parse_model_output_repairs_multiline_string_and_backfills_missing_page():
+    request = _build_request(
+        pages=[
+            PageContent(
+                page_index=1,
+                title="递归定义",
+                text_content="递归是函数直接或间接调用自身的一种方法，通常需要有终止条件。",
+                keywords=["递归", "终止条件"],
+            ),
+            PageContent(
+                page_index=2,
+                title="卷积层例题",
+                text_content="Input volume: 32x32x3 10 filters 5x5 stride 1 pad 2 Output volume size: ?",
+                keywords=["卷积", "输出尺寸"],
+            ),
+        ]
+    )
     raw_output = """
     {
       "courseware_id": "wrong_id",
       "opening": "同学们好，我们先建立整体认识。",
-      "pages": [{"page_index": 1, "script": "这一页先介绍递归的基本定义。", "transition": "   "}],
+      "pages": [
+        {
+          "page_index": 1,
+          "script": "递归的核心在于问题会被拆成结构相同的子问题。
+同时必须设置终止条件，否则调用会一直展开。",
+          "transition": "下一页我们继续看"
+        }
+      ],
       "closing": "今天的内容就梳理到这里。"
     }
     """
 
-    result = parse_model_output(raw_output, "cware_script_1")
+    result = parse_model_output(raw_output, request)
 
     assert result.courseware_id == "cware_script_1"
-    assert result.pages[0].transition
-    assert ScriptGenerateResponse.model_validate(result.model_dump()) == result
+    assert len(result.pages) == 2
+    assert result.pages[0].page_index == 1
+    assert "终止条件" in result.pages[0].script
+    assert result.pages[0].transition == ""
+    assert result.pages[1].page_index == 2
+    assert "输出尺寸" in result.pages[1].script
 
 
 def test_parse_model_output_non_json_raises_model_output_exception():
     with pytest.raises(ModelOutputException, match="合法 JSON"):
-        parse_model_output("not json at all", "cware_script_1")
-
-
-def test_parse_model_output_missing_pages_raises_model_output_exception():
-    raw_output = """
-    {
-      "courseware_id": "cware_script_1",
-      "opening": "开场",
-      "closing": "结尾"
-    }
-    """
-
-    with pytest.raises(ModelOutputException, match="pages"):
-        parse_model_output(raw_output, "cware_script_1")
-
-
-def test_parse_model_output_empty_pages_raises_model_output_exception():
-    raw_output = """
-    {
-      "courseware_id": "cware_script_1",
-      "opening": "开场",
-      "pages": [],
-      "closing": "结尾"
-    }
-    """
-
-    with pytest.raises(ModelOutputException, match="pages"):
-        parse_model_output(raw_output, "cware_script_1")
-
-
-def test_parse_model_output_empty_script_raises_model_output_exception():
-    raw_output = """
-    {
-      "courseware_id": "cware_script_1",
-      "opening": "开场",
-      "pages": [{"page_index": 1, "script": "   ", "transition": "过渡"}],
-      "closing": "结尾"
-    }
-    """
-
-    with pytest.raises(ModelOutputException, match="script"):
-        parse_model_output(raw_output, "cware_script_1")
-
-
-def test_parse_model_output_invalid_page_index_raises_model_output_exception():
-    raw_output = """
-    {
-      "courseware_id": "cware_script_1",
-      "opening": "开场",
-      "pages": [{"page_index": 0, "script": "讲解内容", "transition": "过渡"}],
-      "closing": "结尾"
-    }
-    """
-
-    with pytest.raises(ModelOutputException, match="page_index"):
-        parse_model_output(raw_output, "cware_script_1")
+        parse_model_output("not json at all", _build_request())
 
 
 def test_generate_script_falls_back_when_api_key_missing(monkeypatch):
@@ -191,9 +149,9 @@ def test_generate_script_falls_back_when_api_key_missing(monkeypatch):
 
     assert isinstance(result, ScriptGenerateResponse)
     assert result.courseware_id == "cware_script_1"
-    assert "递归示例" in result.opening
-    assert len(result.pages) == 1
+    assert "递归" in result.opening
     assert "递归定义" in result.pages[0].script
+    assert "现在我们来看第" not in result.pages[0].script
     assert result.closing
 
 
@@ -203,10 +161,11 @@ def test_generate_script_uses_general_subject_when_subject_missing(monkeypatch):
 
     result = generate_script(_build_request(subject=None))
 
-    assert "通用课程" in result.opening
+    assert result.opening
+    assert "通用课程" not in result.opening
 
 
-def test_generate_script_fallback_handles_blank_page_text(monkeypatch):
+def test_generate_script_fallback_handles_blank_page_text_without_page_filler(monkeypatch):
     monkeypatch.setattr(settings, "LLM_API_KEY", "")
     monkeypatch.setattr(llm_client_module, "_llm_client", None)
 
@@ -223,34 +182,80 @@ def test_generate_script_fallback_handles_blank_page_text(monkeypatch):
 
     result = generate_script(request)
 
-    assert "原始文字比较少" in result.pages[0].script
-    assert "学习目标、课程导入" in result.pages[0].script
+    assert "现在我们来看第" not in result.pages[0].script
+    assert "课程导入" in result.pages[0].script
 
 
-def test_generate_script_prompt_contains_total_pages_and_page_content(monkeypatch):
+def test_generate_script_fallback_turns_english_cnn_slide_into_chinese_explanation(monkeypatch):
+    monkeypatch.setattr(settings, "LLM_API_KEY", "")
+    monkeypatch.setattr(llm_client_module, "_llm_client", None)
+
+    request = _build_request(
+        pages=[
+            PageContent(
+                page_index=1,
+                title="Convolution Layer: Example",
+                text_content="Input volume: 32x32x3\n10 5x5 filters with stride 1, pad 2\nOutput volume size: ?",
+                keywords=["Convolution Layer", "output size"],
+            )
+        ]
+    )
+
+    result = generate_script(request)
+
+    assert "输出尺寸" in result.pages[0].script
+    assert "卷积层" in result.pages[0].script
+    assert "现在我们来看第" not in result.pages[0].script
+    assert "Machine Learning" not in result.pages[0].script
+
+
+def test_generate_script_fallback_keeps_low_value_page_short(monkeypatch):
+    monkeypatch.setattr(settings, "LLM_API_KEY", "")
+    monkeypatch.setattr(llm_client_module, "_llm_client", None)
+
+    request = _build_request(
+        pages=[
+            PageContent(
+                page_index=1,
+                title="Upload your answer to",
+                text_content="Upload your answer to",
+                keywords=["upload"],
+            )
+        ]
+    )
+
+    result = generate_script(request)
+
+    assert "练习" in result.pages[0].script
+    assert len(result.pages[0].script) < 80
+    assert "重点关注" not in result.pages[0].script
+
+
+def test_generate_script_prompt_contains_json_constraints_and_examples(monkeypatch):
     captured: dict[str, str] = {}
 
     class _FakeLLMClient:
-        def invoke(self, messages):
+        def invoke(self, messages, *, temperature=None, max_tokens=None):
             captured["system"] = messages[0].content
             captured["human"] = messages[1].content
+            captured["temperature"] = str(temperature)
             return """
             {
               "courseware_id": "ignored-by-parser",
-              "opening": "同学们好，我们先来建立整体认识。",
+              "opening": "这节内容重点讲递归的核心思路。",
               "pages": [
                 {
                   "page_index": 1,
-                  "script": "这一页先解释递归的基本定义和终止条件。",
-                  "transition": "理解定义后，我们继续看下一页。"
+                  "script": "递归的关键是把问题拆成结构相同的子问题，并且一定要有终止条件。",
+                  "transition": ""
                 },
                 {
                   "page_index": 2,
-                  "script": "这一页进一步说明递归展开时的执行过程。",
-                  "transition": "两页内容串起来后，我们就能做总结了。"
+                  "script": "调用栈会随着递归展开，再随着结果返回逐层收拢。",
+                  "transition": ""
                 }
               ],
-              "closing": "今天的主要内容就梳理到这里。"
+              "closing": "这部分内容先梳理到这里。"
             }
             """
 
@@ -279,27 +284,189 @@ def test_generate_script_prompt_contains_total_pages_and_page_content(monkeypatc
 
     assert isinstance(result, ScriptGenerateResponse)
     assert ScriptGenerateResponse.model_validate(result.model_dump()) == result
-    assert "只能输出合法 JSON" in captured["system"]
+    assert "只输出合法 JSON" in captured["system"]
+    assert "不要出现半角双引号" in captured["system"]
     assert "总页数：2" in captured["human"]
     assert "学科：通用课程" in captured["human"]
-    assert "标题：递归定义" in captured["human"]
-    assert "正文：递归是函数直接或间接调用自身的一种方法。" in captured["human"]
-    assert "关键词：调用栈、返回" in captured["human"]
+    assert "错误示例 1" in captured["human"]
+    assert "禁止写法与修正方向" in captured["human"]
+    assert "title: 递归定义" in captured["human"]
+    assert "clean_text: 递归是函数直接或间接调用自身的一种方法" in captured["human"]
+    assert captured["temperature"] == "0.0"
 
 
-def test_generate_script_falls_back_when_model_output_invalid(monkeypatch):
+def test_generate_script_retries_chunk_with_retry_prompt(monkeypatch):
+    captured_humans: list[str] = []
+
     class _FakeLLMClient:
-        def invoke(self, _messages):
-            return "这里不是 JSON，只是一段坏掉的模型输出。"
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def invoke(self, messages, *, temperature=None, max_tokens=None):
+            self.calls += 1
+            captured_humans.append(messages[1].content)
+            if self.calls == 1:
+                return "not json"
+            return """
+            {
+              "pages": [
+                {
+                  "page_index": 1,
+                  "script": "递归的关键是把问题拆成结构相同的子问题，同时一定要设置终止条件。",
+                  "transition": ""
+                },
+                {
+                  "page_index": 2,
+                  "script": "调用栈会随着递归展开，再在结果返回时逐层收拢，这样整个求解过程才完整闭合。",
+                  "transition": ""
+                }
+              ]
+            }
+            """
+
+    fake_client = _FakeLLMClient()
+    monkeypatch.setattr(settings, "LLM_API_KEY", "test-key")
+    monkeypatch.setattr(script_service, "get_llm_client", lambda: fake_client)
+
+    request = _build_request(
+        pages=[
+            PageContent(
+                page_index=1,
+                title="递归定义",
+                text_content="递归是函数直接或间接调用自身的一种方法。",
+                keywords=["递归", "终止条件"],
+            ),
+            PageContent(
+                page_index=2,
+                title="执行过程",
+                text_content="调用栈会随着递归层级不断展开，再逐层返回。",
+                keywords=["调用栈", "返回"],
+            ),
+        ],
+    )
+
+    result = generate_script(request)
+
+    assert fake_client.calls == 2
+    assert len(captured_humans) == 2
+    assert "上一轮输出没有通过校验" in captured_humans[1]
+    assert "错误示例" in captured_humans[1]
+    assert "递归的关键" in result.pages[0].script
+    assert "调用栈" in result.pages[1].script
+
+
+def test_generate_script_splits_chunk_after_retry_exhausted(monkeypatch):
+    monkeypatch.setattr(script_service, "SCRIPT_PAGE_CHUNK_SIZE", 2)
+    captured_humans: list[str] = []
+
+    class _FakeLLMClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def invoke(self, messages, *, temperature=None, max_tokens=None):
+            self.calls += 1
+            human = messages[1].content
+            captured_humans.append(human)
+            if self.calls <= 2:
+                return "not json"
+
+            match = re.search(r"--- page (\d+) /", human)
+            page_index = int(match.group(1))
+            return f"""
+            {{
+              "pages": [
+                {{
+                  "page_index": {page_index},
+                  "script": "第{page_index}个知识点重点是理解递归调用和返回之间的对应关系，真正要掌握的是问题拆解与收敛逻辑。",
+                  "transition": ""
+                }}
+              ]
+            }}
+            """
+
+    fake_client = _FakeLLMClient()
+    monkeypatch.setattr(settings, "LLM_API_KEY", "test-key")
+    monkeypatch.setattr(script_service, "get_llm_client", lambda: fake_client)
+
+    request = _build_request(
+        pages=[
+            PageContent(
+                page_index=1,
+                title="递归定义",
+                text_content="递归是函数直接或间接调用自身的一种方法。",
+                keywords=["递归", "终止条件"],
+            ),
+            PageContent(
+                page_index=2,
+                title="执行过程",
+                text_content="调用栈会随着递归层级不断展开，再逐层返回。",
+                keywords=["调用栈", "返回"],
+            ),
+        ],
+    )
+
+    result = generate_script(request)
+
+    assert fake_client.calls == 4
+    assert any("第 1.1 批" in human for human in captured_humans)
+    assert any("第 1.2 批" in human for human in captured_humans)
+    assert len(result.pages) == 2
+    assert "问题拆解" in result.pages[0].script
+    assert "收敛逻辑" in result.pages[1].script
+
+
+def test_refine_teacher_style_rewrites_english_slide_reading_to_chinese():
+    refined = script_service._refine_teacher_style_script(
+        "Convolution layer computes activation map with 5x5 filter and stride 1.",
+        title="Convolution Layer: Example",
+        text_content="Input volume: 32x32x3 10 filters 5x5 stride 1 pad 2 Output volume size: ?",
+        keywords=["Convolution Layer", "output size"],
+        page_role="formula_detail",
+    )
+
+    assert "卷积层" in refined
+    assert "输出尺寸" in refined or "步长" in refined
+    assert not script_service._is_mostly_english(refined)
+
+
+def test_generate_script_cleans_model_filler_and_transition(monkeypatch):
+    class _FakeLLMClient:
+        def invoke(self, _messages, *, temperature=None, max_tokens=None):
+            return """
+            {
+              "courseware_id": "ignored-by-parser",
+              "opening": "这节内容主要讲卷积层。",
+              "pages": [
+                {
+                  "page_index": 1,
+                  "script": "这一页主要在讲卷积层怎样提取局部特征。下一页我们继续看输出尺寸。",
+                  "transition": "理解完我们继续下一页"
+                }
+              ],
+              "closing": "这部分内容先讲到这里。"
+            }
+            """
 
     monkeypatch.setattr(settings, "LLM_API_KEY", "test-key")
     monkeypatch.setattr(script_service, "get_llm_client", lambda: _FakeLLMClient())
 
-    result = generate_script(_build_request())
+    request = _build_request(
+        pages=[
+            PageContent(
+                page_index=1,
+                title="Convolution Layer",
+                text_content="32x32x3 image 5x5x3 filter dot product activation map",
+                keywords=["convolution", "filter"],
+            )
+        ]
+    )
 
-    assert isinstance(result, ScriptGenerateResponse)
-    assert result.courseware_id == "cware_script_1"
-    assert result.pages[0].script
+    result = generate_script(request)
+
+    assert "下一页" not in result.pages[0].script
+    assert "这一页主要在讲" not in result.pages[0].script
+    assert result.pages[0].transition == ""
+    assert "卷积层" in result.pages[0].script
 
 
 def test_generate_script_endpoint_returns_base_response_when_api_key_missing(request_app, monkeypatch):
@@ -336,7 +503,7 @@ def test_generate_script_endpoint_returns_base_response_when_api_key_missing(req
 
 def test_generate_script_endpoint_returns_base_response_when_model_output_invalid(request_app, monkeypatch):
     class _FakeLLMClient:
-        def invoke(self, _messages):
+        def invoke(self, _messages, *, temperature=None, max_tokens=None):
             return "不是 JSON"
 
     monkeypatch.setattr(settings, "LLM_API_KEY", "test-key")

@@ -9,6 +9,9 @@ public class MinioProperties {
     /** MinIO endpoint, e.g. http://localhost:9000. */
     private String endpoint;
 
+    /** Public endpoint exposed to browsers, e.g. http://localhost:9000. */
+    private String publicEndpoint;
+
     private String accessKey;
 
     private String secretKey;

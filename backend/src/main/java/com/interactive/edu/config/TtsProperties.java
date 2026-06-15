@@ -17,6 +17,12 @@ public class TtsProperties {
     /** Default signed URL expiry, in minutes. */
     private int presignedExpiryMinutes = 60;
 
+    /** Retry count for transient synthesis failures. */
+    private int retryCount = 2;
+
+    /** Linear backoff delay between retries, in milliseconds. */
+    private long retryBackoffMillis = 1500L;
+
     private Aliyun aliyun = new Aliyun();
 
     @Data

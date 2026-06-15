@@ -40,28 +40,31 @@ import { useRoute } from 'vue-router'
 const route = useRoute()
 
 const navItems = [
-  { label: '首页', to: '/', match: ['/'] },
-  { label: '资源库', to: '/resources', match: ['/resources'] },
-  { label: '导入中心', to: '/imports', match: ['/imports'] },
-  { label: '课堂', to: '/resources', match: ['/resources'], secondary: true },
-  { label: '视频资产', to: '/videos', match: ['/videos'] },
-  { label: '个人中心', to: '/profile', match: ['/profile'] },
+  { label: '首页', to: '/' },
+  { label: '导入中心', to: '/imports' },
+  { label: '个人中心', to: '/profile' },
 ]
 
 function isNavActive(item) {
-  if (item.to === '/' && route.path === '/') {
-    return true
+  if (item.to === '/') {
+    return route.path === '/'
   }
 
-  if (item.to === '/resources') {
-    return route.path.startsWith('/resources') && route.name !== 'Lecture' && route.name !== 'Script'
+  if (item.to === '/imports') {
+    return (
+      route.path.startsWith('/imports') ||
+      route.path.startsWith('/courseware/') ||
+      route.path.startsWith('/lecture/') ||
+      route.path.startsWith('/script/') ||
+      route.path.startsWith('/resources/')
+    )
   }
 
-  if (item.secondary) {
-    return route.name === 'Lecture' || route.name === 'Script'
+  if (item.to === '/profile') {
+    return route.path.startsWith('/profile') || route.path.startsWith('/mine')
   }
 
-  return item.match.some(path => path !== '/' && route.path.startsWith(path))
+  return route.path.startsWith(item.to)
 }
 </script>
 
@@ -181,7 +184,7 @@ function isNavActive(item) {
 
   .nav-link {
     flex: 1;
-    min-width: calc(50% - 0.25rem);
+    min-width: calc(33.33% - 0.35rem);
   }
 }
 </style>

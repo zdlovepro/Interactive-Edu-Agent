@@ -37,6 +37,10 @@ export function getCoursewareScript(coursewareId) {
   return request.get(SCRIPT_API.GET(coursewareId))
 }
 
+export function updateCoursewareScript(coursewareId, payload) {
+  return request.put(SCRIPT_API.UPDATE(coursewareId), payload)
+}
+
 export function generateScript(coursewareId) {
   return request.post(SCRIPT_API.GENERATE(coursewareId))
 }

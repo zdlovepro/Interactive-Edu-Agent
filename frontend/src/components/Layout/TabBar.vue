@@ -14,28 +14,32 @@
 </template>
 
 <script setup>
-/**
- * 底部导航栏组件
- * 根据 tabs 配置渲染固定项，每项匹配当前路由后高亮
- */
 import { useRoute } from 'vue-router'
 
 const route = useRoute()
 
-/** 底部导航项配置，顺序即显示顺序 */
 const tabs = [
   { path: '/', icon: '🏠', label: '首页' },
-  { path: '/upload', icon: '📤', label: '上传' },
-  { path: '/courses', icon: '📚', label: '课程' },
-  { path: '/mine', icon: '👤', label: '我的' },
+  { path: '/imports/upload', icon: '📤', label: '上传' },
+  { path: '/imports', icon: '🧭', label: '导入' },
+  { path: '/profile', icon: '👤', label: '我的' },
 ]
 
-/**
- * 判断导航项是否处于激活状态
- * 首页使用精确匹配，其他页面使用路径前缀匹配（支持子路由高亮）
- */
-const isActive = (path) => {
-  if (path === '/') return route.path === '/'
+const isActive = path => {
+  if (path === '/') {
+    return route.path === '/'
+  }
+
+  if (path === '/imports') {
+    return (
+      route.path.startsWith('/imports') ||
+      route.path.startsWith('/courseware/') ||
+      route.path.startsWith('/lecture/') ||
+      route.path.startsWith('/script/') ||
+      route.path.startsWith('/resources/')
+    )
+  }
+
   return route.path.startsWith(path)
 }
 </script>

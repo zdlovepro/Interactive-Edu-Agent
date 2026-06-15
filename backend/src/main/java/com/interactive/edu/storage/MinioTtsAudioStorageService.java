@@ -16,6 +16,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
+import java.net.URI;
 import java.time.LocalDate;
 import java.util.Map;
 import java.util.UUID;
@@ -88,9 +89,10 @@ public class MinioTtsAudioStorageService implements TtsAudioStorageService {
                             .expiry(expiry, TimeUnit.MINUTES)
                             .build()
             );
+            String publicUrl = rewriteToPublicEndpoint(url);
 
             log.info("TTS audio uploaded and signed: key={}, bytes={}, expiryMins={}", objectKey, audioData.length, expiry);
-            return url;
+            return publicUrl;
 
         } catch (Exception e) {
             log.error("TTS audio upload/sign failed: key={}, error={}", objectKey, e.getMessage(), e);
@@ -110,5 +112,29 @@ public class MinioTtsAudioStorageService implements TtsAudioStorageService {
         return String.format("tts-audio/%d/%02d/%s.%s",
                 today.getYear(), today.getMonthValue(),
                 UUID.randomUUID(), format != null ? format : "wav");
+    }
+
+    private String rewriteToPublicEndpoint(String presignedUrl) {
+        String publicEndpoint = minioProperties.getPublicEndpoint();
+        if (publicEndpoint == null || publicEndpoint.isBlank()) {
+            return presignedUrl;
+        }
+        try {
+            URI signed = URI.create(presignedUrl);
+            URI exposed = URI.create(publicEndpoint);
+            return new URI(
+                    exposed.getScheme(),
+                    signed.getUserInfo(),
+                    exposed.getHost(),
+                    exposed.getPort(),
+                    signed.getPath(),
+                    signed.getQuery(),
+                    signed.getFragment()
+            ).toString();
+        } catch (Exception ex) {
+            log.warn("Failed to rewrite MinIO presigned URL to public endpoint. endpoint={}, error={}",
+                    publicEndpoint, ex.getMessage());
+            return presignedUrl;
+        }
     }
 }

@@ -20,6 +20,7 @@ spring:
 
 minio:
   endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  public-endpoint: ${MINIO_PUBLIC_ENDPOINT:${MINIO_ENDPOINT:http://localhost:9000}}
   access-key: ${MINIO_ACCESS_KEY:change-me-minio-access-key}
   secret-key: ${MINIO_SECRET_KEY:change-me-minio-secret-key}
   bucket: ${MINIO_BUCKET:courseware}

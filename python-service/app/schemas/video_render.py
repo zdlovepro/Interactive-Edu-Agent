@@ -12,6 +12,8 @@ class VideoRenderSegment(BaseModel):
     script_text: str = Field(default="", alias="scriptText")
     page_image_path: str = Field(..., min_length=1, alias="pageImagePath")
     page_image_url: str | None = Field(default=None, alias="pageImageUrl")
+    knowledge_points: list[str] = Field(default_factory=list, alias="knowledgePoints")
+    visual_summary: str | None = Field(default=None, alias="visualSummary")
     audio_path: str | None = Field(default=None, alias="audioPath")
     audio_url: str | None = Field(default=None, alias="audioUrl")
     duration_ms: int | None = Field(default=None, alias="durationMs")

@@ -31,7 +31,7 @@ public class PythonVideoRenderClient {
                 .build();
 
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
-        requestFactory.setReadTimeout(props.getReadTimeout());
+        requestFactory.setReadTimeout(props.getVideoRenderReadTimeout());
 
         this.restClient = RestClient.builder()
                 .requestFactory(requestFactory)

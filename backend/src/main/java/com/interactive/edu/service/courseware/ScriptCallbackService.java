@@ -12,7 +12,6 @@ import com.interactive.edu.repository.LectureScriptRepository;
 import com.interactive.edu.service.tts.TtsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,11 +25,6 @@ import java.util.UUID;
 @Slf4j
 @Service
 @Profile({"full", "prod"})
-@ConditionalOnBean({
-        CoursewareRepository.class,
-        CoursewarePageRepository.class,
-        LectureScriptRepository.class
-})
 @RequiredArgsConstructor
 public class ScriptCallbackService {
 
@@ -70,6 +64,7 @@ public class ScriptCallbackService {
                     request.getErrorMessage()
             );
             courseware.setStatus(CoursewareStatus.FAILED.name());
+            courseware.setCurrentTaskStatus(TaskStatus.FAILED.name());
             coursewareRepository.save(courseware);
             return;
         }
@@ -85,6 +80,7 @@ public class ScriptCallbackService {
         }
 
         courseware.setStatus(CoursewareStatus.READY.name());
+        courseware.setCurrentTaskStatus(TaskStatus.SUCCESS.name());
         coursewareRepository.save(courseware);
         log.info("Script callback persisted successfully. coursewareId={}, status={}", courseware.getId(), CoursewareStatus.READY.name());
     }
@@ -98,7 +94,13 @@ public class ScriptCallbackService {
         log.warn("Courseware missing when callback arrived. Create placeholder. coursewareId={}", coursewareId);
         Courseware courseware = new Courseware();
         courseware.setId(coursewareId);
+        courseware.setName(coursewareId);
+        courseware.setFileUrl("unknown");
+        courseware.setStorageType("unknown");
+        courseware.setOriginalFilename(coursewareId);
+        courseware.setFileType("APPLICATION/OCTET-STREAM");
         courseware.setStatus(CoursewareStatus.GENERATING_SCRIPT.name());
+        courseware.setCurrentTaskStatus(TaskStatus.RUNNING.name());
         return coursewareRepository.save(courseware);
     }
 
@@ -117,6 +119,7 @@ public class ScriptCallbackService {
             CoursewarePage cwPage = new CoursewarePage();
             cwPage.setCoursewareId(coursewareId);
             cwPage.setPageIndex(page.getPageIndex());
+            cwPage.setTitle("第 " + page.getPageIndex() + " 页");
             cwPage.setOriginalText(page.getOriginalText());
             coursewarePageRepository.save(cwPage);
 
@@ -130,6 +133,7 @@ public class ScriptCallbackService {
                 script.setCoursewareId(coursewareId);
                 script.setPageIndex(page.getPageIndex());
                 script.setNodeId(buildScopedNodeId(coursewareId, page.getPageIndex(), node.getNodeId()));
+                script.setTitle("第 " + page.getPageIndex() + " 页");
                 script.setContent(node.getContent());
                 script.setAudioUrl(synthesizeAudioUrlSafely(coursewareId, page.getPageIndex(), node.getContent()));
                 script.setEditStatus("AUTO");

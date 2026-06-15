@@ -33,6 +33,7 @@ python:
     video-render-path: /python/v1/video-render/render
     connect-timeout: ${PYTHON_CLIENT_CONNECT_TIMEOUT:5s}
     read-timeout: ${PYTHON_CLIENT_READ_TIMEOUT:30s}
+    video-render-read-timeout: ${PYTHON_VIDEO_RENDER_READ_TIMEOUT:60m}
 
 video:
   render:
