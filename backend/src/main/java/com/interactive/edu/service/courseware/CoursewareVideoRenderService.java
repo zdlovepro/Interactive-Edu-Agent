@@ -55,6 +55,7 @@ public class CoursewareVideoRenderService {
     private int hlsSegmentSeconds;
 
     private final ConcurrentMap<String, VideoRenderTaskState> taskStore = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, Boolean> activeRenderJobs = new ConcurrentHashMap<>();
 
     public CoursewareVideoRenderTaskView triggerRender(String coursewareId) {
         ensureCoursewareId(coursewareId);
@@ -65,12 +66,22 @@ public class CoursewareVideoRenderService {
 
         VideoRenderTaskState existing = loadTaskState(coursewareId);
         if (existing != null && "RENDERING".equals(existing.getStatus())) {
-            return toView(existing);
+            if (Boolean.TRUE.equals(activeRenderJobs.get(coursewareId))) {
+                return toView(existing);
+            }
+
+            log.warn(
+                    "Restarting stale courseware video render task. coursewareId={}, lastUpdate={}, message={}",
+                    coursewareId,
+                    existing.getUpdatedAt(),
+                    existing.getMessage()
+            );
         }
 
         VideoRenderTaskState state = new VideoRenderTaskState(coursewareId, outputDirFor(coursewareId));
         taskStore.put(coursewareId, state);
         persistTaskState(state);
+        activeRenderJobs.put(coursewareId, Boolean.TRUE);
         taskExecutor.execute(() -> runRender(state, script));
         return toView(state);
     }
@@ -129,6 +140,8 @@ public class CoursewareVideoRenderService {
                     ? serviceException.getFriendlyMessage()
                     : ex.getMessage());
             persistTaskState(state);
+        } finally {
+            activeRenderJobs.remove(state.getCoursewareId());
         }
     }
 
