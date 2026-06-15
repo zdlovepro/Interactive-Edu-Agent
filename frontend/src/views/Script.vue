@@ -6,7 +6,7 @@
           <span class="eyebrow">Script Review</span>
           <h1 class="page-title">课件讲稿</h1>
           <p class="page-description">
-            先检查逐页讲稿、音频与字幕素材，再进入课堂或生成讲解视频。
+            逐页检查课件页面、讲稿、音频和数字人设置，确认后再进入课堂或生成讲解视频。
           </p>
         </div>
 
@@ -41,7 +41,7 @@
               :disabled="saving || !isDirty"
               @click="handleSaveScript"
             >
-              {{ saving ? '保存中...' : '保存讲稿并补齐音频' }}
+              {{ saving ? '保存中...' : '保存讲稿设置' }}
             </AppButton>
             <AppButton
               v-if="!isEditing && missingAudioCount > 0"
@@ -76,14 +76,14 @@
         <AppCard class="script-outline-card" tone="glass">
           <div class="outline-header">
             <div>
-              <p class="outline-label">课件信息</p>
+              <p class="outline-label">Script Map</p>
               <h2>{{ scriptData?.coursewareId || coursewareId }}</h2>
             </div>
             <StatusBadge :label="statusMeta.text" :tone="statusMeta.tone" />
           </div>
 
           <div v-if="missingAudioCount > 0" class="outline-tip">
-            还有 {{ missingAudioCount }} 页缺少音频，可先补齐再渲染视频。
+            还有 {{ missingAudioCount }} 页缺少音频，建议先补齐再渲染视频。
           </div>
 
           <div v-if="scriptData?.outline?.length" class="outline-list">
@@ -99,7 +99,7 @@
             </button>
           </div>
           <div v-else class="outline-empty">
-            讲稿生成后，这里会显示逐页导航和页面结构。
+            讲稿生成后，这里会显示逐页目录并支持定位到右侧对应讲稿。
           </div>
         </AppCard>
 
@@ -111,7 +111,7 @@
               <span class="spinner"></span>
               <div>
                 <h3>讲稿生成中</h3>
-                <p>系统正在准备逐页讲解、过渡语和音频，请稍候。</p>
+                <p>系统正在整理逐页讲解和音频，请稍候。</p>
               </div>
             </div>
           </AppCard>
@@ -126,10 +126,10 @@
             </AppCard>
 
             <AppCard v-if="isEditing" class="editor-tip-card" tone="glass">
-              <h3>编辑说明</h3>
+              <h3>编辑提示</h3>
               <p>
-                建议把总纲页、目录页、章节封面页写得更精炼；把定义、推导、案例、公式解释页写得更展开。
-                保存后系统会只为改动页和缺失音频页重新合成音频。
+                每张课件页面会显示在对应讲稿上方。你可以一边看页面，一边改讲稿，也可以勾选哪些页需要做成数字人片段。
+                连续勾选的页面会自动合并成一次 `videoretalk` 生成任务。
               </p>
             </AppCard>
 
@@ -137,11 +137,20 @@
               <AppCard
                 v-for="segment in visibleSegments"
                 :key="segment.id"
-                :id="`segment-${segment.id}`"
+                :id="segmentAnchorId(segment.id)"
+                :data-segment-id="segment.id"
                 class="segment-card"
                 :class="{ active: activeSegmentId === segment.id }"
                 tone="glass"
               >
+                <figure v-if="segment.pageImageUrl || segment.pageImagePath" class="segment-preview">
+                  <img
+                    :src="segment.pageImageUrl || segment.pageImagePath"
+                    :alt="`${segment.title} 课件页`"
+                  />
+                  <figcaption>第 {{ segment.pageIndex }} 页课件</figcaption>
+                </figure>
+
                 <div class="segment-card__header">
                   <div class="segment-title-block">
                     <span class="pill">第 {{ segment.pageIndex }} 页</span>
@@ -155,10 +164,24 @@
                     </template>
                     <h3 v-else>{{ segment.title }}</h3>
                   </div>
-                  <StatusBadge
-                    :label="segment.audioUrl ? '音频已就绪' : '待补音频'"
-                    :tone="segment.audioUrl ? 'success' : 'warning'"
-                  />
+
+                  <div class="segment-side">
+                    <StatusBadge
+                      :label="segment.audioUrl ? '音频已就绪' : '待补音频'"
+                      :tone="segment.audioUrl ? 'success' : 'warning'"
+                    />
+
+                    <label v-if="isEditing" class="digital-human-toggle">
+                      <input v-model="segment.digitalHumanEnabled" type="checkbox" />
+                      <span>数字人片段</span>
+                    </label>
+                    <span
+                      v-else-if="segment.digitalHumanEnabled"
+                      class="digital-human-badge"
+                    >
+                      数字人
+                    </span>
+                  </div>
                 </div>
 
                 <div class="segment-card__content">
@@ -171,10 +194,15 @@
                   <p v-else>{{ segment.content }}</p>
                 </div>
 
-                <div v-if="segment.knowledgePoints?.length" class="tag-list">
-                  <span v-for="point in segment.knowledgePoints" :key="point" class="tag-chip">
-                    {{ point }}
-                  </span>
+                <div class="segment-footer">
+                  <div v-if="segment.knowledgePoints?.length" class="tag-list">
+                    <span v-for="point in segment.knowledgePoints" :key="point" class="tag-chip">
+                      {{ point }}
+                    </span>
+                  </div>
+                  <p v-if="segment.digitalHumanEnabled" class="segment-hint">
+                    连续勾选的页面会自动合并为一段数字人视频，仍然使用当前页对应的原始 TTS 音频。
+                  </p>
                 </div>
               </AppCard>
             </div>
@@ -202,11 +230,11 @@
 
               <div v-if="videoRenderTask.status === 'READY' && videoRenderTask.hlsUrl" class="video-render-player">
                 <div class="inline-alert inline-alert--info">
-                  如果你刚刚修改过讲稿，请点击“重新生成讲解视频”让字幕和音频同步刷新。
+                  如果你修改了讲稿或数字人勾选，请重新生成讲解视频，让字幕、音频和数字人片段保持同步。
                 </div>
                 <HlsVideoPlayer
                   :src="videoRenderTask.hlsUrl"
-                  title="由课件页图、逐句字幕和分段音频合成的 HLS 讲解视频"
+                  title="课件讲解视频"
                   @error="message => (videoPlayerError = message)"
                   @ready="videoPlayerError = ''"
                 />
@@ -216,7 +244,7 @@
               </div>
 
               <div v-else-if="videoRenderTask.status === 'FAILED'" class="inline-alert inline-alert--danger">
-                {{ videoRenderTask.errorMessage || '视频生成失败，请检查页图、音频或 Python 渲染日志。' }}
+                {{ videoRenderTask.errorMessage || '视频生成失败，请检查页面图、音频或 Python 日志。' }}
               </div>
             </AppCard>
           </template>
@@ -224,7 +252,7 @@
           <AppCard v-else tone="glass">
             <EmptyState
               title="暂时还没有讲稿"
-              description="系统会基于解析结果生成可检查、可朗读的逐页讲稿。"
+              description="系统会基于解析结果生成可检查、可修改的逐页讲稿。"
               action-label="生成讲稿"
               @action="handleGenerateScript"
             />
@@ -241,7 +269,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
@@ -274,6 +302,7 @@ const editableSegments = ref([])
 
 let pollTimer = null
 let videoRenderPollTimer = null
+let segmentObserver = null
 
 const coursewareId = route.params.coursewareId
 
@@ -301,7 +330,11 @@ const isDirty = computed(() => {
   }
   return editableSegments.value.some((segment, index) => {
     const original = originalSegments[index]
-    return segment.title !== original.title || segment.content !== original.content
+    return (
+      segment.title !== original.title ||
+      segment.content !== original.content ||
+      Boolean(segment.digitalHumanEnabled) !== Boolean(original.digitalHumanEnabled)
+    )
   })
 })
 
@@ -322,13 +355,15 @@ const videoRenderStatusText = computed(() => {
   }
   if (task.status === 'READY') {
     const seconds = task.durationMs ? Math.round(task.durationMs / 1000) : 0
-    return `已生成 ${task.segmentCount || 0} 个片段，总时长约 ${seconds} 秒，可直接预览 HLS 视频。`
+    return `已生成 ${task.segmentCount || 0} 个片段，总时长约 ${seconds} 秒，可直接预览。`
   }
   if (task.status === 'FAILED') {
-    return '视频生成失败，保留错误信息用于排查。'
+    return '视频生成失败，请根据错误信息排查。'
   }
-  return task.message || '正在整理页图、字幕与音频并调用 ffmpeg 合成。'
+  return task.message || '正在整理页面图、字幕和音频。'
 })
+
+const segmentAnchorId = segmentId => `segment-${segmentId}`
 
 const normalizeScript = raw => {
   const segments = Array.isArray(raw?.segments)
@@ -341,8 +376,10 @@ const normalizeScript = raw => {
         knowledgePoints: Array.isArray(segment?.knowledgePoints) ? segment.knowledgePoints : [],
         audioUrl: segment?.audioUrl || null,
         pageImagePath: segment?.pageImagePath || null,
+        pageImageUrl: segment?.pageImageUrl || segment?.pageImagePath || null,
         visualSummary: segment?.visualSummary || '',
         visualObjects: Array.isArray(segment?.visualObjects) ? segment.visualObjects : [],
+        digitalHumanEnabled: Boolean(segment?.digitalHumanEnabled),
       }))
     : []
 
@@ -366,14 +403,55 @@ const normalizeScript = raw => {
   }
 }
 
-const cloneSegments = segments => segments.map(segment => ({ ...segment }))
+const cloneSegments = segments =>
+  segments.map(segment => ({
+    ...segment,
+    knowledgePoints: [...(segment.knowledgePoints || [])],
+    visualObjects: [...(segment.visualObjects || [])],
+  }))
+
+const teardownSegmentObserver = () => {
+  if (segmentObserver) {
+    segmentObserver.disconnect()
+    segmentObserver = null
+  }
+}
+
+const setupSegmentObserver = async () => {
+  teardownSegmentObserver()
+  await nextTick()
+
+  const elements = Array.from(document.querySelectorAll('[data-segment-id]'))
+  if (!elements.length || typeof IntersectionObserver === 'undefined') {
+    return
+  }
+
+  segmentObserver = new IntersectionObserver(
+    entries => {
+      const visibleEntry = entries
+        .filter(entry => entry.isIntersecting)
+        .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0]
+
+      if (visibleEntry?.target?.dataset?.segmentId) {
+        activeSegmentId.value = visibleEntry.target.dataset.segmentId
+      }
+    },
+    {
+      rootMargin: '-18% 0px -55% 0px',
+      threshold: [0.2, 0.4, 0.7],
+    },
+  )
+
+  elements.forEach(element => segmentObserver.observe(element))
+}
 
 const applyScriptData = raw => {
   const normalized = raw ? normalizeScript(raw) : null
   scriptData.value = normalized
   scriptStatus.value = normalized?.status || raw?.status || ''
-  activeSegmentId.value = normalized?.outline?.[0]?.id || normalized?.segments?.[0]?.id || ''
+  activeSegmentId.value = normalized?.segments?.[0]?.id || normalized?.outline?.[0]?.id || ''
   editableSegments.value = normalized?.segments ? cloneSegments(normalized.segments) : []
+  setupSegmentObserver()
 }
 
 const showError = (error, fallback) => {
@@ -429,8 +507,9 @@ const pollGenerateStatus = () => {
     attempts += 1
     if (attempts > maxAttempts) {
       clearInterval(pollTimer)
+      pollTimer = null
       scriptStatus.value = ''
-      errorMsg.value = '讲稿生成超时，请稍后再试。'
+      errorMsg.value = '讲稿生成超时，请稍后重试。'
       return
     }
 
@@ -440,6 +519,7 @@ const pollGenerateStatus = () => {
       const normalized = raw ? normalizeScript(raw) : null
       if (normalized?.segments?.length) {
         clearInterval(pollTimer)
+        pollTimer = null
         applyScriptData(raw)
       }
     } catch {
@@ -451,11 +531,13 @@ const pollGenerateStatus = () => {
 const beginEdit = () => {
   editableSegments.value = cloneSegments(scriptData.value?.segments || [])
   isEditing.value = true
+  setupSegmentObserver()
 }
 
 const cancelEdit = () => {
   editableSegments.value = cloneSegments(scriptData.value?.segments || [])
   isEditing.value = false
+  setupSegmentObserver()
 }
 
 const handleSaveScript = async () => {
@@ -472,6 +554,7 @@ const handleSaveScript = async () => {
         id: segment.id,
         title: segment.title,
         content: segment.content,
+        digitalHumanEnabled: Boolean(segment.digitalHumanEnabled),
       })),
     })
     applyScriptData(response.data)
@@ -483,9 +566,10 @@ const handleSaveScript = async () => {
   }
 }
 
-const scrollToSegment = segmentId => {
+const scrollToSegment = async segmentId => {
   activeSegmentId.value = segmentId
-  const element = document.getElementById(`segment-${segmentId}`)
+  await nextTick()
+  const element = document.getElementById(segmentAnchorId(segmentId))
   if (element) {
     element.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
@@ -528,7 +612,7 @@ const handleRenderVideo = async () => {
     videoRenderTask.value = response.data || null
     pollVideoRenderStatus()
   } catch (error) {
-    showError(error, '触发讲解视频生成失败，请确认讲稿和页图已准备完成。')
+    showError(error, '触发讲解视频生成失败，请确认讲稿和页面图已准备完成。')
   }
 }
 
@@ -554,6 +638,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  teardownSegmentObserver()
   if (pollTimer) {
     clearInterval(pollTimer)
   }
@@ -716,6 +801,25 @@ onUnmounted(() => {
   box-shadow: 0 20px 44px rgba(95, 104, 255, 0.12);
 }
 
+.segment-preview {
+  margin: 0 0 1rem;
+}
+
+.segment-preview img {
+  width: 100%;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(132, 143, 184, 0.16);
+  background: rgba(242, 246, 255, 0.72);
+  display: block;
+}
+
+.segment-preview figcaption {
+  margin-top: 0.6rem;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.04em;
+}
+
 .segment-card__header {
   display: flex;
   align-items: flex-start;
@@ -730,6 +834,13 @@ onUnmounted(() => {
 .segment-card__header h3 {
   margin: 0.8rem 0 0;
   font-size: 1.35rem;
+}
+
+.segment-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.75rem;
 }
 
 .segment-title-input,
@@ -772,6 +883,48 @@ onUnmounted(() => {
   color: var(--text-secondary);
   line-height: 1.95;
   white-space: pre-wrap;
+}
+
+.segment-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.digital-human-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(95, 104, 255, 0.16);
+  background: rgba(95, 104, 255, 0.08);
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+.digital-human-toggle input {
+  margin: 0;
+}
+
+.digital-human-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.38rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(34, 181, 115, 0.12);
+  color: #13814f;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+}
+
+.segment-hint {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.7;
 }
 
 .tag-list {
@@ -848,45 +1001,13 @@ onUnmounted(() => {
   gap: 1rem;
 }
 
-.generating-state h3 {
-  margin: 0;
-}
-
-.generating-state p {
-  margin: 0.5rem 0 0;
-  line-height: 1.7;
-}
-
 .spinner {
-  width: 2.4rem;
-  height: 2.4rem;
-  flex-shrink: 0;
-  border-radius: 50%;
-  border: 3px solid rgba(95, 104, 255, 0.14);
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 999px;
+  border: 2px solid rgba(95, 104, 255, 0.16);
   border-top-color: var(--primary-color);
-  animation: spin 0.8s linear infinite;
-}
-
-.toast {
-  position: fixed;
-  right: 1.25rem;
-  bottom: 1.25rem;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  max-width: min(24rem, calc(100vw - 2rem));
-  padding: 0.95rem 1rem;
-  border-radius: var(--radius-md);
-  background: rgba(203, 65, 94, 0.96);
-  color: #ffffff;
-  box-shadow: var(--shadow-md);
-  cursor: pointer;
-  z-index: 40;
-}
-
-.toast button {
-  color: inherit;
-  font-weight: 700;
+  animation: spin 0.9s linear infinite;
 }
 
 @keyframes spin {
@@ -895,7 +1016,7 @@ onUnmounted(() => {
   }
 }
 
-@media (max-width: 1080px) {
+@media (max-width: 1024px) {
   .script-layout {
     grid-template-columns: 1fr;
   }
@@ -903,29 +1024,15 @@ onUnmounted(() => {
   .script-outline-card {
     position: static;
   }
-}
-
-@media (max-width: 768px) {
-  .header-actions {
-    width: 100%;
-  }
-
-  .header-actions > * {
-    flex: 1;
-  }
 
   .segment-card__header,
-  .intro-card__header,
-  .video-render-card__header {
+  .video-render-card__header,
+  .intro-card__header {
     flex-direction: column;
   }
-}
 
-@media (max-width: 640px) {
-  .toast {
-    left: 1rem;
-    right: 1rem;
-    max-width: none;
+  .segment-side {
+    align-items: flex-start;
   }
 }
 </style>

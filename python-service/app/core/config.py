@@ -50,14 +50,22 @@ class Settings(BaseSettings):
     STRICT_CHAIN: bool = False
     RENDER_BASE_DIR: str = "./data/render"
 
-    # ---------- Digital human / Wan reference-to-video ---------- #
+    # ---------- Digital human / DashScope VideoRetalk ---------- #
     DIGITAL_HUMAN_ENABLED: bool = False
     DIGITAL_HUMAN_API_KEY: str = Field(
         default="",
         validation_alias=AliasChoices("DIGITAL_HUMAN_API_KEY", "DASHSCOPE_API_KEY"),
     )
     DIGITAL_HUMAN_API_BASE: str = "https://dashscope.aliyuncs.com"
-    DIGITAL_HUMAN_MODEL_NAME: str = "wan2.7-r2v"
+    DIGITAL_HUMAN_MODEL_NAME: str = "videoretalk"
+    DIGITAL_HUMAN_REFERENCE_VIDEO_PATH: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "DIGITAL_HUMAN_REFERENCE_VIDEO_PATH",
+            "DIGITAL_HUMAN_REF_VIDEO_PATH",
+            "DIGITAL_HUMAN_AVATAR_VIDEO_PATH",
+        ),
+    )
     DIGITAL_HUMAN_REFERENCE_IMAGE_PATH: str = Field(
         default="",
         validation_alias=AliasChoices(

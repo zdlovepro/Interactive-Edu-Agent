@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS lecture_script (
     page_image_url VARCHAR(512) COMMENT 'Page image URL',
     visual_summary TEXT COMMENT 'Visual summary',
     visual_objects_json TEXT COMMENT 'Visual objects JSON',
+    digital_human_enabled TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Whether this segment should use digital human overlay',
     edit_status VARCHAR(32) DEFAULT 'AUTO' COMMENT 'AUTO or EDITED',
     create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'Created at',
     update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated at',

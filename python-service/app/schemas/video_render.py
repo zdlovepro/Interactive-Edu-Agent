@@ -17,6 +17,7 @@ class VideoRenderSegment(BaseModel):
     audio_path: str | None = Field(default=None, alias="audioPath")
     audio_url: str | None = Field(default=None, alias="audioUrl")
     duration_ms: int | None = Field(default=None, alias="durationMs")
+    digital_human_enabled: bool = Field(default=False, alias="digitalHumanEnabled")
 
 
 class VideoRenderRequest(BaseModel):

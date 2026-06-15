@@ -27,5 +27,7 @@ public class UpdateCoursewareScriptRequest {
 
         @NotBlank
         private String content;
+
+        private Boolean digitalHumanEnabled;
     }
 }

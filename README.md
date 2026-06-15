@@ -79,12 +79,13 @@ Copy-Item .env.docker.example .env.docker
 
 - `DIGITAL_HUMAN_ENABLED=true`
 - `DIGITAL_HUMAN_API_KEY`
+- `DIGITAL_HUMAN_REF_VIDEO_PATH`
 - `DIGITAL_HUMAN_REF_IMAGE_PATH`
 
-`Docker full` 默认会把仓库根目录只读挂载到容器内的 `/workspace`，所以像你当前放在根目录的
-人物图片，可以直接配置成：
+`Docker full` 默认会把仓库根目录只读挂载到容器内的 `/workspace`，所以如果你把数字人参考视频和人物图片放在仓库根目录，可以直接配置成：
 
 ```properties
+DIGITAL_HUMAN_REF_VIDEO_PATH=/workspace/your_digital_human.mp4
 DIGITAL_HUMAN_REF_IMAGE_PATH=/workspace/OIP.png
 ```
 
@@ -241,8 +242,9 @@ npm run dev
 当前视频链路默认仍然是“课件页图 + 讲稿 + 音频/静音占位 + 字幕”的主闭环。
 如果开启 `DIGITAL_HUMAN_ENABLED=true`，Python 渲染层会额外做这些事：
 
-- 自动挑少量高价值讲解页，不会整节课全程放数字人
-- 复用每页 TTS 音频做参考音色，截取前几秒核心讲解送到阿里云 `wan2.7-r2v`
+- 只处理你在讲稿页手动勾选的段落
+- 连续勾选的页面会自动合并成一段 `videoretalk` 任务
+- 复用现有 TTS 音频，并先把参考人物视频拉伸到相同长度再送到阿里云 `videoretalk`
 - 把生成的人像视频缩放后叠加到右上角小窗
 - 数字人片段会移除自身音轨，最终成片继续使用原始 TTS 音频
 - 如果阿里云任务失败，会自动降级回普通课件视频，不阻断主渲染

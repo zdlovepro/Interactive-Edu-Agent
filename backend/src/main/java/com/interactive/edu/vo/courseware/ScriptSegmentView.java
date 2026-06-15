@@ -11,7 +11,9 @@ public record ScriptSegmentView(
         List<String> knowledgePoints,
         String audioUrl,
         String pageImagePath,
+        String pageImageUrl,
         String visualSummary,
-        List<String> visualObjects
+        List<String> visualObjects,
+        boolean digitalHumanEnabled
 ) {
 }

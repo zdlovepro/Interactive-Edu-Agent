@@ -32,10 +32,9 @@ class DashScopeDigitalHumanClient:
 
         self._api_key = api_key
         self._base_url = settings.DIGITAL_HUMAN_API_BASE.rstrip("/")
-        self._model_name = (settings.DIGITAL_HUMAN_MODEL_NAME or "wan2.7-r2v").strip()
+        self._model_name = _normalize_model_name(settings.DIGITAL_HUMAN_MODEL_NAME)
         self._timeout = aiohttp.ClientTimeout(total=max(60, settings.DIGITAL_HUMAN_TASK_TIMEOUT_SECONDS + 60))
         self._session: aiohttp.ClientSession | None = None
-        self._reference_image_upload: UploadedResource | None = None
 
     async def __aenter__(self) -> "DashScopeDigitalHumanClient":
         self._session = aiohttp.ClientSession(timeout=self._timeout)
@@ -49,26 +48,22 @@ class DashScopeDigitalHumanClient:
     async def render_clip(
         self,
         *,
-        reference_image_path: Path,
-        reference_voice_path: Path | None,
-        prompt: str,
+        reference_video_path: Path,
+        reference_audio_path: Path,
         output_path: Path,
-        duration_seconds: int,
+        enable_video_extension: bool = False,
     ) -> Path:
         session = self._require_session()
-        image_resource = await self._ensure_reference_image_uploaded(session, reference_image_path)
-        voice_resource = (
-            await self._upload_file(session, reference_voice_path)
-            if reference_voice_path is not None
-            else None
+        video_resource, audio_resource = await asyncio.gather(
+            self._upload_file(session, reference_video_path),
+            self._upload_file(session, reference_audio_path),
         )
 
         task_id = await self._submit_task(
             session,
-            prompt=prompt,
-            reference_image_url=image_resource.resource_url,
-            reference_voice_url=voice_resource.resource_url if voice_resource else None,
-            duration_seconds=duration_seconds,
+            video_url=video_resource.resource_url,
+            audio_url=audio_resource.resource_url,
+            enable_video_extension=enable_video_extension,
         )
         result_url = await self._wait_for_task_result(session, task_id)
         await self._download_file(session, result_url, output_path)
@@ -78,15 +73,6 @@ class DashScopeDigitalHumanClient:
         if self._session is None:
             raise RuntimeError("DashScopeDigitalHumanClient must be used as an async context manager")
         return self._session
-
-    async def _ensure_reference_image_uploaded(
-        self,
-        session: aiohttp.ClientSession,
-        reference_image_path: Path,
-    ) -> UploadedResource:
-        if self._reference_image_upload is None:
-            self._reference_image_upload = await self._upload_file(session, reference_image_path)
-        return self._reference_image_upload
 
     async def _upload_file(
         self,
@@ -134,19 +120,11 @@ class DashScopeDigitalHumanClient:
         self,
         session: aiohttp.ClientSession,
         *,
-        prompt: str,
-        reference_image_url: str,
-        reference_voice_url: str | None,
-        duration_seconds: int,
+        video_url: str,
+        audio_url: str,
+        enable_video_extension: bool,
     ) -> str:
-        task_url = f"{self._base_url}/api/v1/services/aigc/video-generation/video-synthesis"
-        media_item: dict[str, Any] = {
-            "type": "reference_image",
-            "url": reference_image_url,
-        }
-        if reference_voice_url:
-            media_item["reference_voice"] = reference_voice_url
-
+        task_url = f"{self._base_url}/api/v1/services/aigc/image2video/video-synthesis/"
         response = await self._request_json(
             session,
             "POST",
@@ -159,15 +137,12 @@ class DashScopeDigitalHumanClient:
             json_body={
                 "model": self._model_name,
                 "input": {
-                    "prompt": prompt,
-                    "media": [media_item],
+                    "video_url": video_url,
+                    "audio_url": audio_url,
+                    "ref_image_url": "",
                 },
                 "parameters": {
-                    "resolution": settings.DIGITAL_HUMAN_RESOLUTION,
-                    "ratio": settings.DIGITAL_HUMAN_RATIO,
-                    "duration": max(2, min(15, duration_seconds)),
-                    "prompt_extend": settings.DIGITAL_HUMAN_PROMPT_EXTEND,
-                    "watermark": settings.DIGITAL_HUMAN_WATERMARK,
+                    "video_extension": enable_video_extension,
                 },
             },
         )
@@ -179,9 +154,9 @@ class DashScopeDigitalHumanClient:
             or response.get("taskId")
         )
         if not task_id:
-            raise PythonServiceException("DashScope digital human task did not return a task id")
+            raise PythonServiceException("DashScope videoretalk task did not return a task id")
 
-        logger.info("DashScope digital human task submitted. taskId=%s", task_id)
+        logger.info("DashScope videoretalk task submitted. taskId=%s", task_id)
         return str(task_id)
 
     async def _wait_for_task_result(
@@ -214,16 +189,16 @@ class DashScopeDigitalHumanClient:
             if task_status in {"SUCCEEDED", "SUCCESS"}:
                 result_url = _extract_result_video_url(output) or _extract_result_video_url(response)
                 if not result_url:
-                    raise PythonServiceException("DashScope digital human task succeeded without a downloadable video URL")
-                logger.info("DashScope digital human task finished. taskId=%s", task_id)
+                    raise PythonServiceException("DashScope videoretalk task succeeded without a downloadable video URL")
+                logger.info("DashScope videoretalk task finished. taskId=%s", task_id)
                 return result_url
 
             if task_status in {"FAILED", "FAIL", "CANCELED", "CANCELLED"}:
                 message = _extract_error_message(output) or _extract_error_message(response) or "unknown error"
-                raise PythonServiceException(f"DashScope digital human task failed: {message}")
+                raise PythonServiceException(f"DashScope videoretalk task failed: {message}")
 
             if asyncio.get_running_loop().time() >= deadline:
-                raise PythonServiceException("DashScope digital human task timed out")
+                raise PythonServiceException("DashScope videoretalk task timed out")
 
             await asyncio.sleep(poll_interval)
 
@@ -238,12 +213,12 @@ class DashScopeDigitalHumanClient:
             if response.status >= 400:
                 text = await response.text()
                 raise PythonServiceException(
-                    f"DashScope digital human result download failed with status {response.status}: {text[:200]}"
+                    f"DashScope videoretalk result download failed with status {response.status}: {text[:200]}"
                 )
             output_path.write_bytes(await response.read())
 
         if not output_path.exists() or output_path.stat().st_size <= 0:
-            raise PythonServiceException("DashScope digital human result is empty")
+            raise PythonServiceException("DashScope videoretalk result is empty")
 
     async def _request_json(
         self,
@@ -276,6 +251,16 @@ class DashScopeDigitalHumanClient:
         if not isinstance(data, dict):
             raise PythonServiceException("DashScope returned an invalid JSON envelope")
         return data
+
+
+def _normalize_model_name(configured_model_name: str | None) -> str:
+    model_name = (configured_model_name or "").strip()
+    if not model_name:
+        return "videoretalk"
+    if "wan" in model_name.lower():
+        logger.warning("Legacy digital human model '%s' detected, forcing videoretalk.", model_name)
+        return "videoretalk"
+    return model_name
 
 
 def _extract_result_video_url(payload: Any) -> str | None:
@@ -318,7 +303,7 @@ def _normalize_optional_policy_value(raw_value: Any) -> str | None:
     if raw_value in (None, ""):
         return None
     if isinstance(raw_value, bool):
-        return str(raw_value).lower()
+        return "true" if raw_value else "false"
     return str(raw_value)
 
 
@@ -335,29 +320,26 @@ def _upload_dashscope_temp_file(
     forbid_overwrite: str | None,
     timeout_seconds: int,
 ) -> None:
-    multipart_fields: list[tuple[str, tuple[None, str] | tuple[str, Any, str]]] = [
-        ("OSSAccessKeyId", (None, access_key_id)),
-        ("Signature", (None, signature)),
-        ("policy", (None, policy)),
-    ]
-    if object_acl:
-        multipart_fields.append(("x-oss-object-acl", (None, object_acl)))
-    if forbid_overwrite:
-        multipart_fields.append(("x-oss-forbid-overwrite", (None, forbid_overwrite)))
-    multipart_fields.extend(
-        [
-            ("key", (None, object_key)),
-            ("success_action_status", (None, "200")),
-        ]
-    )
-
     with file_path.open("rb") as file_handle:
-        multipart_fields.append(("file", (file_path.name, file_handle, content_type)))
-        response = requests.post(upload_host, files=multipart_fields, timeout=timeout_seconds)
+        files = {"file": (file_path.name, file_handle, content_type)}
+        data: dict[str, str] = {
+            "OSSAccessKeyId": access_key_id,
+            "Signature": signature,
+            "policy": policy,
+            "key": object_key,
+            "success_action_status": "200",
+        }
+        if object_acl:
+            data["x-oss-object-acl"] = object_acl
+        if forbid_overwrite:
+            data["x-oss-forbid-overwrite"] = forbid_overwrite
+
+        response = requests.post(upload_host, data=data, files=files, timeout=timeout_seconds)
 
     if response.status_code >= 400:
         raise PythonServiceException(
-            f"DashScope temporary upload failed with status {response.status_code}: {response.text[:200]}"
+            f"DashScope temporary file upload failed with status {response.status_code}: {response.text[:200]}",
+            code=THIRD_PARTY_SERVICE_ERROR,
         )
 
 

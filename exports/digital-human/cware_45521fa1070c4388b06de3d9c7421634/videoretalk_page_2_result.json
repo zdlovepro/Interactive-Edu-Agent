@@ -1,0 +1,27 @@
+{
+  "model": "videoretalk",
+  "audio_duration": 10.056,
+  "raw_video_duration": 10.0,
+  "prepared_video_duration": 10.067,
+  "output_video_duration": 10.034,
+  "prepared_video": "/tmp/digital_human_page_2_match_audio_for_videoretalk.mp4",
+  "audio_file": "/workspace/exports/digital-human/cware_45521fa1070c4388b06de3d9c7421634/digital_human_page_2_audio.mp3",
+  "output_video": "/tmp/videoretalk_page_2_result.mp4",
+  "task_response": {
+    "request_id": "b0201b9b-391a-92ac-8a41-33935f35d9d2",
+    "output": {
+      "task_id": "acf3150c-e465-4d77-ab33-b982efe0e93a",
+      "task_status": "SUCCEEDED",
+      "submit_time": "2026-06-15 16:29:56.099",
+      "scheduled_time": "2026-06-15 16:30:06.400",
+      "end_time": "2026-06-15 16:31:49.462",
+      "video_url": "http://dashscope-7c2c.oss-cn-shanghai.aliyuncs.com/1d/7d/20260615/62d535c9/acf3150c-e465-4d77-ab33-b982efe0e93a.mp4?Expires=1781598709&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=CBRDyIGWKLnXYRpiQkMjpztWxWc%3D"
+    },
+    "usage": {
+      "video_duration": 10.03,
+      "size": "1280*720",
+      "video_ratio": "standard",
+      "fps": 30
+    }
+  }
+}

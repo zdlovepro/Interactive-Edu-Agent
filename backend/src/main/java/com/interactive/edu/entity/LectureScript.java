@@ -56,6 +56,9 @@ public class LectureScript {
     @Column(name = "visual_objects_json", columnDefinition = "TEXT")
     private String visualObjectsJson;
 
+    @Column(name = "digital_human_enabled", nullable = false)
+    private Boolean digitalHumanEnabled = Boolean.FALSE;
+
     // AUTO, EDITED
     @Column(name = "edit_status", length = 32)
     private String editStatus = "AUTO";

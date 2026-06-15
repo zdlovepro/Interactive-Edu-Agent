@@ -33,7 +33,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -328,15 +331,20 @@ public class CoursewareService {
 
             if (update == null) {
                 rewrittenSegments.add(segment);
-                rewrittenOutline.add(new OutlineItemView(segment.nodeId(), segment.title()));
+                rewrittenOutline.add(new OutlineItemView(segment.id(), segment.title()));
                 continue;
             }
 
             String resolvedTitle = defaultText(update.getTitle(), segment.title());
             String resolvedContent = defaultText(update.getContent(), segment.content());
-            boolean changed = !Objects.equals(resolvedTitle, segment.title())
+            boolean resolvedDigitalHumanEnabled = update.getDigitalHumanEnabled() != null
+                    ? update.getDigitalHumanEnabled()
+                    : segment.digitalHumanEnabled();
+            boolean contentChanged = !Objects.equals(resolvedTitle, segment.title())
                     || !Objects.equals(resolvedContent, segment.content());
-            boolean needsAudioRefresh = changed || !StringUtils.hasText(segment.audioUrl());
+            boolean digitalHumanChanged = resolvedDigitalHumanEnabled != segment.digitalHumanEnabled();
+            boolean changed = contentChanged || digitalHumanChanged;
+            boolean needsAudioRefresh = contentChanged || !StringUtils.hasText(segment.audioUrl());
 
             if (changed) {
                 editedSegmentIds.add(segment.id());
@@ -352,11 +360,13 @@ public class CoursewareService {
                     segment.knowledgePoints(),
                     needsAudioRefresh ? null : segment.audioUrl(),
                     segment.pageImagePath(),
+                    segment.pageImageUrl(),
                     segment.visualSummary(),
-                    segment.visualObjects()
+                    segment.visualObjects(),
+                    resolvedDigitalHumanEnabled
             );
             rewrittenSegments.add(rewrittenSegment);
-            rewrittenOutline.add(new OutlineItemView(segment.nodeId(), resolvedTitle));
+            rewrittenOutline.add(new OutlineItemView(segment.id(), resolvedTitle));
         }
 
         if (!updatesById.isEmpty()) {
@@ -418,6 +428,27 @@ public class CoursewareService {
     public CurrentNodeView getCurrentNode(String coursewareId, int pageIndex) {
         ScriptSegmentView segment = getSegmentForPage(coursewareId, pageIndex);
         return new CurrentNodeView(segment.nodeId(), segment.pageIndex(), segment.content(), segment.audioUrl());
+    }
+
+    public PageMediaResource getScriptPageImageResource(String coursewareId, int pageIndex) {
+        ScriptSegmentView segment = getSegmentForPage(coursewareId, pageIndex);
+        if (!StringUtils.hasText(segment.pageImagePath())) {
+            throw new NoSuchElementException("Page image not found");
+        }
+
+        if (isHttpUrl(segment.pageImagePath())) {
+            throw new IllegalStateException("Remote page images should be accessed directly via pageImageUrl");
+        }
+
+        Path imagePath = Path.of(segment.pageImagePath()).toAbsolutePath().normalize();
+        if (!Files.exists(imagePath) || !Files.isRegularFile(imagePath)) {
+            throw new NoSuchElementException("Page image not found");
+        }
+
+        return new PageMediaResource(
+                new FileSystemResource(imagePath),
+                resolveMediaType(imagePath)
+        );
     }
 
     private boolean shouldBackfillMissingAudio(ScriptView script) {
@@ -703,8 +734,10 @@ public class CoursewareService {
                     parsedSegment.knowledgePoints(),
                     null,
                     parsedSegment.pageImagePath(),
+                    resolvePageImageAccessUrl(coursewareId, parsedSegment.pageIndex(), parsedSegment.pageImagePath()),
                     parsedSegment.visualSummary(),
-                    parsedSegment.visualObjects()
+                    parsedSegment.visualObjects(),
+                    false
             ));
         }
 
@@ -825,8 +858,10 @@ public class CoursewareService {
                     segment.knowledgePoints(),
                     resolvedAudioUrl,
                     segment.pageImagePath(),
+                    segment.pageImageUrl(),
                     segment.visualSummary(),
-                    segment.visualObjects()
+                    segment.visualObjects(),
+                    segment.digitalHumanEnabled()
             ));
         }
 
@@ -1000,7 +1035,7 @@ public class CoursewareService {
 
         List<OutlineItemView> outline = scripts.stream()
                 .map(script -> new OutlineItemView(
-                        script.getNodeId(),
+                        script.getId(),
                         defaultText(script.getTitle(), "第 " + script.getPageIndex() + " 页")
                 ))
                 .toList();
@@ -1031,8 +1066,10 @@ public class CoursewareService {
                 deserializeList(script.getKnowledgePointsJson()),
                 script.getAudioUrl(),
                 script.getPageImageUrl(),
+                resolvePageImageAccessUrl(script.getCoursewareId(), script.getPageIndex(), script.getPageImageUrl()),
                 script.getVisualSummary(),
-                deserializeList(script.getVisualObjectsJson())
+                deserializeList(script.getVisualObjectsJson()),
+                Boolean.TRUE.equals(script.getDigitalHumanEnabled())
         );
     }
 
@@ -1085,7 +1122,9 @@ public class CoursewareService {
         List<LectureScript> scripts = new ArrayList<>();
         for (ScriptSegmentView segment : scriptView.segments()) {
             LectureScript script = new LectureScript();
-            script.setId("script_" + UUID.randomUUID().toString().replace("-", ""));
+            script.setId(StringUtils.hasText(segment.id())
+                    ? segment.id()
+                    : "script_" + UUID.randomUUID().toString().replace("-", ""));
             script.setCoursewareId(state.getId());
             script.setPageIndex(segment.pageIndex());
             script.setNodeId(segment.nodeId());
@@ -1096,6 +1135,7 @@ public class CoursewareService {
             script.setPageImageUrl(segment.pageImagePath());
             script.setVisualSummary(segment.visualSummary());
             script.setVisualObjectsJson(serializeList(segment.visualObjects()));
+            script.setDigitalHumanEnabled(segment.digitalHumanEnabled());
             script.setEditStatus(editedSegmentIds.contains(segment.id())
                     ? "EDITED"
                     : existingEditStatus.getOrDefault(segment.nodeId(), "AUTO"));
@@ -1273,8 +1313,34 @@ public class CoursewareService {
         return StringUtils.hasText(text) ? text.trim() : fallback;
     }
 
+    private String resolvePageImageAccessUrl(String coursewareId, int pageIndex, String pageImagePath) {
+        if (!StringUtils.hasText(pageImagePath)) {
+            return null;
+        }
+        if (isHttpUrl(pageImagePath)) {
+            return pageImagePath;
+        }
+        return "/api/v1/courseware/%s/pages/%s/image".formatted(coursewareId, pageIndex);
+    }
+
+    private boolean isHttpUrl(String value) {
+        if (!StringUtils.hasText(value)) {
+            return false;
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        return normalized.startsWith("http://") || normalized.startsWith("https://");
+    }
+
     private String textOf(LocalDateTime dateTime) {
         return dateTime == null ? null : dateTime.toString();
+    }
+
+    private MediaType resolveMediaType(Path file) {
+        try {
+            return MediaType.parseMediaType(probeContentType(file));
+        } catch (Exception ignored) {
+            return MediaType.APPLICATION_OCTET_STREAM;
+        }
     }
 
     private String probeContentType(Path path) {
@@ -1297,6 +1363,15 @@ public class CoursewareService {
         if (lowerName.endsWith(".ppt")) {
             return "application/vnd.ms-powerpoint";
         }
+        if (lowerName.endsWith(".png")) {
+            return "image/png";
+        }
+        if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) {
+            return "image/jpeg";
+        }
+        if (lowerName.endsWith(".webp")) {
+            return "image/webp";
+        }
         return "application/octet-stream";
     }
 
@@ -1305,6 +1380,9 @@ public class CoursewareService {
             return Instant.now();
         }
         return time.atZone(ZoneId.systemDefault()).toInstant();
+    }
+
+    public record PageMediaResource(Resource resource, MediaType mediaType) {
     }
 
     private record ParsedCourseware(String coursewareId, List<ParsedSegment> segments) {

@@ -11,6 +11,8 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -61,6 +63,17 @@ public class CoursewareController {
             @PathVariable("coursewareId") @NotBlank String coursewareId
     ) {
         return BaseResponse.ok(coursewareService.getScript(coursewareId));
+    }
+
+    @GetMapping("/{coursewareId}/pages/{pageIndex}/image")
+    public ResponseEntity<Resource> getScriptPageImage(
+            @PathVariable("coursewareId") @NotBlank String coursewareId,
+            @PathVariable("pageIndex") int pageIndex
+    ) {
+        CoursewareService.PageMediaResource mediaResource = coursewareService.getScriptPageImageResource(coursewareId, pageIndex);
+        return ResponseEntity.ok()
+                .contentType(mediaResource.mediaType())
+                .body(mediaResource.resource());
     }
 
     @PutMapping("/{coursewareId}/script")

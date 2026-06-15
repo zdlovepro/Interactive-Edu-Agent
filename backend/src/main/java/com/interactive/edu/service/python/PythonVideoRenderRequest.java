@@ -48,6 +48,9 @@ public class PythonVideoRenderRequest {
         @JsonProperty("pageImagePath")
         private String pageImagePath;
 
+        @JsonProperty("pageImageUrl")
+        private String pageImageUrl;
+
         @JsonProperty("knowledgePoints")
         private List<String> knowledgePoints;
 
@@ -56,5 +59,8 @@ public class PythonVideoRenderRequest {
 
         @JsonProperty("audioUrl")
         private String audioUrl;
+
+        @JsonProperty("digitalHumanEnabled")
+        private Boolean digitalHumanEnabled;
     }
 }

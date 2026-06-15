@@ -51,10 +51,18 @@ class DigitalHumanSelection:
 @dataclass(frozen=True)
 class DigitalHumanOverlayClip:
     video_path: Path
-    start_offset_ms: int
+    source_offset_ms: int
     visible_ms: int
-    score: float
+    group_id: str
     reason: str
+
+
+@dataclass(frozen=True)
+class DigitalHumanOverlayGroup:
+    group_id: str
+    segments: tuple[PreparedRenderSegment, ...]
+    segment_visible_ms: tuple[int, ...]
+    total_visible_ms: int
 
 
 _SUBTITLE_SENTENCE_BREAK_RE = re.compile(r"(?<=[。！？!?])\s*")
@@ -274,89 +282,106 @@ def _build_digital_human_overlays(
     if not _digital_human_enabled():
         return {}, []
 
-    reference_image_path = _resolve_digital_human_reference_image()
-    if reference_image_path is None:
-        logger.info("Digital human rendering skipped because no reference image path is configured.")
+    reference_video_path = _resolve_digital_human_reference_video()
+    if reference_video_path is None:
+        logger.info("Digital human rendering skipped because no reference video path is configured.")
         return {}, []
 
-    selected = _select_digital_human_segments(prepared_segments)
-    if not selected:
-        logger.info("Digital human rendering skipped because no high-value segments were selected.")
+    selected_groups = _group_selected_digital_human_segments(prepared_segments)
+    if not selected_groups:
+        logger.info("Digital human rendering skipped because no script segments were selected for digital human.")
         return {}, []
 
-    return asyncio.run(_generate_digital_human_overlays(selected, reference_image_path, input_dir))
+    return asyncio.run(_generate_digital_human_overlays(selected_groups, reference_video_path, input_dir))
 
 
 async def _generate_digital_human_overlays(
-    selected_segments: list[tuple[PreparedRenderSegment, DigitalHumanSelection]],
-    reference_image_path: Path,
+    selected_groups: list[DigitalHumanOverlayGroup],
+    reference_video_path: Path,
     input_dir: Path,
 ) -> tuple[dict[str, DigitalHumanOverlayClip], list[dict[str, object]]]:
     overlay_plan: dict[str, DigitalHumanOverlayClip] = {}
     manifest: list[dict[str, object]] = []
 
     async with DashScopeDigitalHumanClient() as client:
-        for prepared, selection in selected_segments:
-            overlay_audio_path = input_dir / f"digital_human_audio_{prepared.index:03d}.mp3"
-            overlay_video_path = input_dir / f"digital_human_video_{prepared.index:03d}.mp4"
-
-            visible_ms = _create_overlay_audio_clip(prepared.audio_path, overlay_audio_path)
-            if visible_ms < settings.DIGITAL_HUMAN_MIN_AUDIO_SECONDS * 1000:
-                manifest.append(
-                    {
-                        "pageIndex": prepared.segment.page_index,
-                        "segmentId": prepared.segment.segment_id,
-                        "status": "skipped",
-                        "reason": "segment audio is shorter than the digital human minimum duration",
-                        "score": round(selection.score, 3),
-                    }
-                )
-                continue
+        for group in selected_groups:
+            overlay_audio_parts: list[Path] = []
+            overlay_audio_path = input_dir / f"digital_human_audio_{group.group_id}.mp3"
+            prepared_video_path = input_dir / f"digital_human_source_{group.group_id}.mp4"
+            overlay_video_path = input_dir / f"digital_human_video_{group.group_id}.mp4"
 
             try:
-                prompt = _build_digital_human_prompt(prepared.segment, visible_ms)
+                for index, segment in enumerate(group.segments, start=1):
+                    clip_audio_path = input_dir / f"digital_human_audio_{group.group_id}_{index:02d}.mp3"
+                    visible_ms = _create_overlay_audio_clip(
+                        segment.audio_path,
+                        clip_audio_path,
+                        clip_ms=group.segment_visible_ms[index - 1],
+                    )
+                    if visible_ms <= 0:
+                        raise PythonServiceException(
+                            f"Digital human audio clip is empty for page {segment.segment.page_index}"
+                        )
+                    overlay_audio_parts.append(clip_audio_path)
+
+                combined_visible_ms = _concat_overlay_audio_clips(overlay_audio_parts, overlay_audio_path)
+                if combined_visible_ms < settings.DIGITAL_HUMAN_MIN_AUDIO_SECONDS * 1000:
+                    raise PythonServiceException("Combined digital human audio is shorter than the minimum duration")
+
+                _stretch_reference_video_to_duration(reference_video_path, combined_visible_ms, prepared_video_path)
                 await client.render_clip(
-                    reference_image_path=reference_image_path,
-                    reference_voice_path=overlay_audio_path,
-                    prompt=prompt,
+                    reference_video_path=prepared_video_path,
+                    reference_audio_path=overlay_audio_path,
                     output_path=overlay_video_path,
-                    duration_seconds=_overlay_duration_seconds(visible_ms),
+                    enable_video_extension=False,
                 )
-                start_offset_ms, final_visible_ms = _finalize_digital_human_clip(overlay_video_path, visible_ms)
-                overlay_plan[prepared.key] = DigitalHumanOverlayClip(
-                    video_path=overlay_video_path,
-                    start_offset_ms=start_offset_ms,
-                    visible_ms=final_visible_ms,
-                    score=selection.score,
-                    reason=selection.reason,
-                )
-                manifest.append(
-                    {
-                        "pageIndex": prepared.segment.page_index,
-                        "segmentId": prepared.segment.segment_id,
-                        "status": "success",
-                        "reason": selection.reason,
-                        "score": round(selection.score, 3),
-                        "overlayStartSeconds": round(start_offset_ms / 1000, 3),
-                        "overlaySeconds": round(final_visible_ms / 1000, 3),
-                        "videoPath": str(overlay_video_path),
-                    }
-                )
+                final_duration_ms = _normalize_digital_human_clip(overlay_video_path)
+
+                source_offset_ms = 0
+                for visible_ms, prepared in zip(group.segment_visible_ms, group.segments, strict=False):
+                    if source_offset_ms >= final_duration_ms:
+                        break
+                    effective_visible_ms = min(visible_ms, max(0, final_duration_ms - source_offset_ms))
+                    if effective_visible_ms <= 0:
+                        break
+
+                    overlay_plan[prepared.key] = DigitalHumanOverlayClip(
+                        video_path=overlay_video_path,
+                        source_offset_ms=source_offset_ms,
+                        visible_ms=effective_visible_ms,
+                        group_id=group.group_id,
+                        reason="manual digital human selection",
+                    )
+                    manifest.append(
+                        {
+                            "pageIndex": prepared.segment.page_index,
+                            "segmentId": prepared.segment.segment_id,
+                            "status": "success",
+                            "reason": "manual digital human selection",
+                            "groupId": group.group_id,
+                            "sourceOffsetSeconds": round(source_offset_ms / 1000, 3),
+                            "overlaySeconds": round(effective_visible_ms / 1000, 3),
+                            "videoPath": str(overlay_video_path),
+                        }
+                    )
+                    source_offset_ms += effective_visible_ms
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
-                    "Digital human generation failed. pageIndex=%s reason=%s",
-                    prepared.segment.page_index,
+                    "Digital human generation failed. groupId=%s pages=%s reason=%s",
+                    group.group_id,
+                    [item.segment.page_index for item in group.segments],
                     str(exc),
                 )
-                manifest.append(
-                    {
-                        "pageIndex": prepared.segment.page_index,
-                        "segmentId": prepared.segment.segment_id,
-                        "status": "failed",
-                        "reason": str(exc),
-                        "score": round(selection.score, 3),
-                    }
-                )
+                for prepared in group.segments:
+                    manifest.append(
+                        {
+                            "pageIndex": prepared.segment.page_index,
+                            "segmentId": prepared.segment.segment_id,
+                            "status": "failed",
+                            "reason": str(exc),
+                            "groupId": group.group_id,
+                        }
+                    )
 
     return overlay_plan, manifest
 
@@ -370,79 +395,88 @@ def _digital_human_enabled() -> bool:
     return True
 
 
-def _resolve_digital_human_reference_image() -> Path | None:
-    configured = (settings.DIGITAL_HUMAN_REFERENCE_IMAGE_PATH or "").strip()
+def _resolve_digital_human_reference_video() -> Path | None:
+    configured = (settings.DIGITAL_HUMAN_REFERENCE_VIDEO_PATH or "").strip()
     if configured:
-        return _resolve_existing_file(configured, "digital human reference image")
+        return _resolve_existing_file(configured, "digital human reference video")
 
     workspace_root = Path("/workspace")
     if not workspace_root.exists():
         return None
 
-    image_candidates = sorted(
+    video_candidates = sorted(
         (
             path
             for path in workspace_root.iterdir()
-            if path.is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
+            if path.is_file() and path.suffix.lower() in {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
         ),
         key=lambda item: item.stat().st_size,
         reverse=True,
     )
-    if not image_candidates:
+    if not video_candidates:
         return None
 
-    selected = image_candidates[0].resolve()
-    logger.info("Digital human reference image auto-selected. path=%s", selected)
+    selected = video_candidates[0].resolve()
+    logger.info("Digital human reference video auto-selected. path=%s", selected)
     return selected
 
 
-def _select_digital_human_segments(
+def _group_selected_digital_human_segments(
     prepared_segments: list[PreparedRenderSegment],
-) -> list[tuple[PreparedRenderSegment, DigitalHumanSelection]]:
-    candidates: list[tuple[PreparedRenderSegment, DigitalHumanSelection]] = []
+) -> list[DigitalHumanOverlayGroup]:
+    groups: list[DigitalHumanOverlayGroup] = []
     min_duration_ms = settings.DIGITAL_HUMAN_MIN_AUDIO_SECONDS * 1000
+    max_duration_ms = _effective_digital_human_max_audio_seconds() * 1000
+
+    current_segments: list[PreparedRenderSegment] = []
+    current_visible_ms: list[int] = []
+    current_total_ms = 0
+
+    def flush_current_group() -> None:
+        nonlocal current_segments, current_visible_ms, current_total_ms
+        if current_segments and current_total_ms >= min_duration_ms:
+            group_index = len(groups) + 1
+            groups.append(
+                DigitalHumanOverlayGroup(
+                    group_id=f"group_{group_index:03d}",
+                    segments=tuple(current_segments),
+                    segment_visible_ms=tuple(current_visible_ms),
+                    total_visible_ms=current_total_ms,
+                )
+            )
+        current_segments = []
+        current_visible_ms = []
+        current_total_ms = 0
 
     for prepared in prepared_segments:
-        if not prepared.has_real_audio or prepared.duration_ms < min_duration_ms:
+        if not prepared.segment.digital_human_enabled or not prepared.has_real_audio or prepared.duration_ms <= 0:
+            flush_current_group()
             continue
-        selection = _estimate_digital_human_importance(prepared)
-        if selection.score >= settings.DIGITAL_HUMAN_MIN_IMPORTANCE_SCORE:
-            candidates.append((prepared, selection))
 
-    if not candidates:
-        return []
+        is_consecutive = not current_segments or prepared.segment.page_index == current_segments[-1].segment.page_index + 1
+        if not is_consecutive:
+            flush_current_group()
 
-    max_segments = max(
-        1,
-        min(
-            settings.DIGITAL_HUMAN_MAX_SEGMENTS,
-            math.ceil(len(prepared_segments) * max(0.05, settings.DIGITAL_HUMAN_MAX_SEGMENT_RATIO)),
-        ),
-    )
-    min_page_gap = max(0, settings.DIGITAL_HUMAN_MIN_PAGE_GAP)
+        remaining_ms = max_duration_ms - current_total_ms
+        if current_segments and remaining_ms <= 0:
+            flush_current_group()
+            remaining_ms = max_duration_ms
 
-    chosen: list[tuple[PreparedRenderSegment, DigitalHumanSelection]] = []
-    chosen_pages: list[int] = []
+        visible_ms = min(prepared.duration_ms, remaining_ms)
+        if visible_ms <= 0:
+            flush_current_group()
+            visible_ms = min(prepared.duration_ms, max_duration_ms)
 
-    for prepared, selection in sorted(
-        candidates,
-        key=lambda item: (-item[1].score, item[0].segment.page_index),
-    ):
-        if any(abs(prepared.segment.page_index - page_index) <= min_page_gap for page_index in chosen_pages):
-            continue
-        chosen.append((prepared, selection))
-        chosen_pages.append(prepared.segment.page_index)
-        if len(chosen) >= max_segments:
-            break
+        current_segments.append(prepared)
+        current_visible_ms.append(visible_ms)
+        current_total_ms += visible_ms
 
-    chosen.sort(key=lambda item: item[0].segment.page_index)
-    logger.info(
-        "Digital human segment plan prepared. selected=%s candidates=%s maxSegments=%s",
-        len(chosen),
-        len(candidates),
-        max_segments,
-    )
-    return chosen
+        if current_total_ms >= max_duration_ms:
+            flush_current_group()
+
+    flush_current_group()
+    logger.info("Digital human group plan prepared. groups=%s", len(groups))
+    return groups
 
 
 def _estimate_digital_human_importance(prepared: PreparedRenderSegment) -> DigitalHumanSelection:
@@ -504,15 +538,14 @@ def _matches_any_pattern(text: str, patterns: tuple[str, ...]) -> bool:
     return any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
 
 
-def _create_overlay_audio_clip(source_audio_path: Path, output_path: Path) -> int:
+def _create_overlay_audio_clip(source_audio_path: Path, output_path: Path, *, clip_ms: int | None = None) -> int:
     total_ms = _probe_audio_duration_ms(source_audio_path)
     if total_ms <= 0:
         return 0
 
-    min_ms = max(1, settings.DIGITAL_HUMAN_MIN_AUDIO_SECONDS) * 1000
     max_ms = _effective_digital_human_max_audio_seconds() * 1000
-    clip_ms = min(total_ms, max_ms)
-    if clip_ms < min_ms:
+    normalized_clip_ms = min(total_ms, max_ms, max(0, clip_ms if clip_ms is not None else total_ms))
+    if normalized_clip_ms <= 0:
         return 0
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -523,7 +556,7 @@ def _create_overlay_audio_clip(source_audio_path: Path, output_path: Path) -> in
         str(source_audio_path),
         "-vn",
         "-t",
-        f"{clip_ms / 1000:.3f}",
+        f"{normalized_clip_ms / 1000:.3f}",
         "-ac",
         "1",
         "-ar",
@@ -539,11 +572,7 @@ def _create_overlay_audio_clip(source_audio_path: Path, output_path: Path) -> in
 
 
 def _effective_digital_human_max_audio_seconds() -> int:
-    configured = max(settings.DIGITAL_HUMAN_MIN_AUDIO_SECONDS, settings.DIGITAL_HUMAN_MAX_AUDIO_SECONDS)
-    model_name = (settings.DIGITAL_HUMAN_MODEL_NAME or "").strip().lower()
-    if "wan2.7-r2v" in model_name:
-        return min(configured, 10)
-    return configured
+    return max(settings.DIGITAL_HUMAN_MIN_AUDIO_SECONDS, min(settings.DIGITAL_HUMAN_MAX_AUDIO_SECONDS, 15))
 
 
 def _digital_human_lead_trim_ms(total_ms: int) -> int:
@@ -644,6 +673,86 @@ def _finalize_digital_human_clip(video_path: Path, requested_visible_ms: int) ->
     if final_duration_ms <= 0:
         final_duration_ms = max(0, requested_visible_ms - trim_ms)
     return trim_ms, min(max(0, requested_visible_ms - trim_ms), final_duration_ms)
+
+
+def _concat_overlay_audio_clips(audio_parts: list[Path], output_path: Path) -> int:
+    if not audio_parts:
+        return 0
+
+    concat_file = output_path.with_suffix(".concat.txt")
+    concat_file.write_text(
+        "\n".join(f"file '{path.as_posix()}'" for path in audio_parts),
+        encoding="utf-8",
+    )
+    command = [
+        "ffmpeg",
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        str(concat_file),
+        "-ac",
+        "1",
+        "-ar",
+        "24000",
+        "-c:a",
+        "libmp3lame",
+        "-b:a",
+        "128k",
+        str(output_path),
+    ]
+    _run(command, f"concat digital human audio {output_path.name}")
+    return _probe_audio_duration_ms(output_path)
+
+
+def _stretch_reference_video_to_duration(source_video_path: Path, target_duration_ms: int, output_path: Path) -> int:
+    source_duration_ms = _probe_media_duration_ms(source_video_path)
+    if source_duration_ms <= 0:
+        raise PythonServiceException(f"Cannot probe source digital human video duration: {source_video_path}")
+    if target_duration_ms <= 0:
+        raise PythonServiceException("Digital human target video duration must be positive")
+
+    speed_ratio = max(0.05, target_duration_ms / source_duration_ms)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(source_video_path),
+        "-an",
+        "-vf",
+        f"setpts={speed_ratio:.8f}*PTS",
+        "-r",
+        "25",
+        "-t",
+        f"{target_duration_ms / 1000:.3f}",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "18",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        str(output_path),
+    ]
+    _run(command, f"stretch digital human source video {output_path.name}")
+    duration_ms = _probe_media_duration_ms(output_path)
+    if duration_ms <= 0:
+        raise PythonServiceException(f"Failed to stretch digital human source video: {output_path}")
+    return duration_ms
+
+
+def _normalize_digital_human_clip(video_path: Path) -> int:
+    _strip_audio_track(video_path)
+    final_duration_ms = _probe_media_duration_ms(video_path)
+    if final_duration_ms <= 0:
+        raise PythonServiceException(f"Digital human clip is invalid: {video_path}")
+    return final_duration_ms
 
 
 def _resolve_output_dir(request: VideoRenderRequest) -> Path:
@@ -905,7 +1014,7 @@ def _build_filter_graph(
 
     if overlay_clip is not None:
         overlay_width = max(160, int(width * max(0.08, settings.DIGITAL_HUMAN_OVERLAY_WIDTH_RATIO)))
-        overlay_start_seconds = max(0.0, overlay_clip.start_offset_ms / 1000)
+        overlay_start_seconds = max(0.0, overlay_clip.source_offset_ms / 1000)
         overlay_seconds = max(0.5, overlay_clip.visible_ms / 1000)
         margin_top = max(0, settings.DIGITAL_HUMAN_OVERLAY_MARGIN_TOP)
         margin_right = max(0, settings.DIGITAL_HUMAN_OVERLAY_MARGIN_RIGHT)
@@ -913,11 +1022,13 @@ def _build_filter_graph(
         y_expr = "0" if margin_top == 0 else str(margin_top)
         steps.extend(
             [
-                f"[2:v]scale={overlay_width}:-2:flags=lanczos[avatar]",
                 (
-                f"[base][avatar]overlay="
-                f"x={x_expr}:y={y_expr}:eof_action=pass:"
-                f"enable='between(t,{overlay_start_seconds:.3f},{overlay_start_seconds + overlay_seconds:.3f})'[composite]"
+                    f"[2:v]trim=start={overlay_start_seconds:.3f}:duration={overlay_seconds:.3f},"
+                    f"setpts=PTS-STARTPTS,scale={overlay_width}:-2:flags=lanczos[avatar]"
+                ),
+                (
+                    f"[base][avatar]overlay="
+                    f"x={x_expr}:y={y_expr}:eof_action=pass[composite]"
                 ),
             ]
         )

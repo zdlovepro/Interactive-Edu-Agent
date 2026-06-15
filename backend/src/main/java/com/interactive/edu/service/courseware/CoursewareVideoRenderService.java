@@ -160,9 +160,11 @@ public class CoursewareVideoRenderService {
                             segment.title(),
                             segment.content(),
                             segment.pageImagePath(),
+                            segment.pageImageUrl(),
                             segment.knowledgePoints(),
                             segment.visualSummary(),
-                            segment.audioUrl()
+                            segment.audioUrl(),
+                            segment.digitalHumanEnabled()
                     );
                 })
                 .toList();
