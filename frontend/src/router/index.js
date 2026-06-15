@@ -7,7 +7,7 @@ const routes = [
     name: 'Home',
     component: Home,
     meta: {
-      title: '首页',
+      title: 'Home',
     },
   },
   {
@@ -15,7 +15,15 @@ const routes = [
     name: 'ImportCenter',
     component: () => import('../views/ImportCenterView.vue'),
     meta: {
-      title: '导入中心',
+      title: 'Import Center',
+    },
+  },
+  {
+    path: '/classroom',
+    name: 'ClassroomHub',
+    component: () => import('../views/ClassroomHubView.vue'),
+    meta: {
+      title: 'Classroom',
     },
   },
   {
@@ -23,7 +31,7 @@ const routes = [
     name: 'LocalUpload',
     component: () => import('../views/Upload.vue'),
     meta: {
-      title: '本地上传',
+      title: 'Local Upload',
     },
   },
   {
@@ -31,7 +39,7 @@ const routes = [
     name: 'ChaoxingImport',
     component: () => import('../views/CourseResourceImportView.vue'),
     meta: {
-      title: '超星课程导入',
+      title: 'Chaoxing Import',
     },
   },
   {
@@ -39,7 +47,7 @@ const routes = [
     name: 'UrlImport',
     component: () => import('../views/UrlImportView.vue'),
     meta: {
-      title: 'URL 导入',
+      title: 'URL Import',
     },
   },
   {
@@ -47,7 +55,7 @@ const routes = [
     name: 'ResourceDetail',
     component: () => import('../views/ResourceDetailView.vue'),
     meta: {
-      title: '课件详情',
+      title: 'Courseware Detail',
     },
   },
   {
@@ -55,7 +63,7 @@ const routes = [
     name: 'Lecture',
     component: () => import('../views/Lecture.vue'),
     meta: {
-      title: '互动课堂',
+      title: 'Lecture',
     },
   },
   {
@@ -63,7 +71,7 @@ const routes = [
     name: 'Script',
     component: () => import('../views/Script.vue'),
     meta: {
-      title: '课件讲稿',
+      title: 'Script',
     },
   },
   {
@@ -71,12 +79,12 @@ const routes = [
     name: 'Profile',
     component: () => import('../views/Mine.vue'),
     meta: {
-      title: '个人中心',
+      title: 'Profile',
     },
   },
   {
     path: '/resources',
-    redirect: '/imports',
+    redirect: '/classroom',
   },
   {
     path: '/resources/:coursewareId',
@@ -101,15 +109,15 @@ const routes = [
   },
   {
     path: '/courses',
-    redirect: '/imports',
+    redirect: '/classroom',
   },
   {
     path: '/videos',
-    redirect: '/imports',
+    redirect: '/classroom',
   },
   {
     path: '/video-assets',
-    redirect: '/imports',
+    redirect: '/classroom',
   },
   {
     path: '/mine',
@@ -128,7 +136,7 @@ const routes = [
     name: 'NotFound',
     component: () => import('../views/NotFound.vue'),
     meta: {
-      title: '页面不存在',
+      title: 'Not Found',
     },
   },
 ]

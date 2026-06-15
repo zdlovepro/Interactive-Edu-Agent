@@ -42,6 +42,7 @@ const route = useRoute()
 const navItems = [
   { label: '首页', to: '/' },
   { label: '导入中心', to: '/imports' },
+  { label: '课堂', to: '/classroom' },
   { label: '个人中心', to: '/profile' },
 ]
 
@@ -51,8 +52,12 @@ function isNavActive(item) {
   }
 
   if (item.to === '/imports') {
+    return route.path.startsWith('/imports')
+  }
+
+  if (item.to === '/classroom') {
     return (
-      route.path.startsWith('/imports') ||
+      route.path.startsWith('/classroom') ||
       route.path.startsWith('/courseware/') ||
       route.path.startsWith('/lecture/') ||
       route.path.startsWith('/script/') ||
@@ -184,7 +189,7 @@ function isNavActive(item) {
 
   .nav-link {
     flex: 1;
-    min-width: calc(33.33% - 0.35rem);
+    min-width: calc(25% - 0.4rem);
   }
 }
 </style>

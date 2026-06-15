@@ -459,6 +459,9 @@ const buildApiUrl = path => {
 
   const normalizedBase = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL
   const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  if (normalizedPath === normalizedBase || normalizedPath.startsWith(`${normalizedBase}/`)) {
+    return normalizedPath
+  }
   return `${normalizedBase}${normalizedPath}`
 }
 

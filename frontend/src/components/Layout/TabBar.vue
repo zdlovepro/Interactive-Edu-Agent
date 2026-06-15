@@ -20,8 +20,8 @@ const route = useRoute()
 
 const tabs = [
   { path: '/', icon: '🏠', label: '首页' },
-  { path: '/imports/upload', icon: '📤', label: '上传' },
-  { path: '/imports', icon: '🧭', label: '导入' },
+  { path: '/imports', icon: '📥', label: '导入' },
+  { path: '/classroom', icon: '🎓', label: '课堂' },
   { path: '/profile', icon: '👤', label: '我的' },
 ]
 
@@ -31,8 +31,12 @@ const isActive = path => {
   }
 
   if (path === '/imports') {
+    return route.path.startsWith('/imports')
+  }
+
+  if (path === '/classroom') {
     return (
-      route.path.startsWith('/imports') ||
+      route.path.startsWith('/classroom') ||
       route.path.startsWith('/courseware/') ||
       route.path.startsWith('/lecture/') ||
       route.path.startsWith('/script/') ||

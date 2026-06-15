@@ -148,6 +148,7 @@ const attachSource = async () => {
 
   if (isHlsSource(props.src) && video.canPlayType('application/vnd.apple.mpegurl')) {
     video.src = props.src
+    video.load()
     return
   }
 
@@ -184,6 +185,7 @@ const attachSource = async () => {
   }
 
   video.src = props.src
+  video.load()
   await playIfNeeded()
 }
 
