@@ -5,6 +5,8 @@ public record CoursewareListItem(
         String name,
         String status,
         String createdAt,
-        String currentTaskStatus
+        String currentTaskStatus,
+        String courseCode,
+        String accessMode
 ) {
 }

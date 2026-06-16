@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS courseware (
     script_opening TEXT COMMENT 'Script opening text',
     script_closing TEXT COMMENT 'Script closing text',
     uploader_id VARCHAR(64) COMMENT 'Uploader user id',
+    course_code VARCHAR(64) COMMENT 'Teacher shared course code',
     create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'Created at',
     update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated at'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Courseware metadata';

@@ -1,5 +1,6 @@
 export const USER_API = {
   LOGIN: '/user/login',
+  REGISTER: '/user/register',
   LOGOUT: '/user/logout',
   PROFILE: '/user/profile',
   UPDATE: '/user/update',
@@ -11,6 +12,7 @@ export const COURSEWARE_API = {
   URL_IMPORT_TASK: taskId => `/courseware/import-url/tasks/${taskId}`,
   LIST: '/courseware',
   DETAIL: id => `/courseware/${id}`,
+  UPDATE_COURSE_CODE: id => `/courseware/${id}/course-code`,
 }
 
 export const SCRIPT_API = {

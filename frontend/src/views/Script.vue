@@ -14,7 +14,7 @@
           <AppButton variant="secondary" @click="goBack">返回资源详情</AppButton>
 
           <AppButton
-            v-if="!scriptData && scriptStatus !== 'GENERATING_SCRIPT'"
+            v-if="!scriptData && scriptStatus !== 'GENERATING_SCRIPT' && canModifyScript"
             @click="handleGenerateScript"
           >
             生成讲稿
@@ -22,14 +22,14 @@
 
           <template v-else-if="scriptData">
             <AppButton
-              v-if="!isEditing"
+              v-if="!isEditing && canModifyScript"
               variant="secondary"
               @click="beginEdit"
             >
               编辑讲稿
             </AppButton>
             <AppButton
-              v-if="isEditing"
+              v-if="isEditing && canModifyScript"
               variant="secondary"
               :disabled="saving"
               @click="cancelEdit"
@@ -37,14 +37,14 @@
               取消编辑
             </AppButton>
             <AppButton
-              v-if="isEditing"
+              v-if="isEditing && canModifyScript"
               :disabled="saving || !isDirty"
               @click="handleSaveScript"
             >
               {{ saving ? '保存中...' : '保存讲稿设置' }}
             </AppButton>
             <AppButton
-              v-if="!isEditing && missingAudioCount > 0"
+              v-if="!isEditing && missingAudioCount > 0 && canModifyScript"
               variant="secondary"
               :disabled="scriptStatus === 'GENERATING_SCRIPT'"
               @click="handleBackfillAudio"
@@ -61,6 +61,7 @@
           </template>
 
           <AppButton
+            v-if="canModifyScript"
             variant="secondary"
             :disabled="!scriptData || isEditing || videoRenderTask?.status === 'RENDERING'"
             @click="handleRenderVideo"
@@ -82,7 +83,7 @@
             <StatusBadge :label="statusMeta.text" :tone="statusMeta.tone" />
           </div>
 
-          <div v-if="missingAudioCount > 0" class="outline-tip">
+          <div v-if="missingAudioCount > 0 && canModifyScript" class="outline-tip">
             还有 {{ missingAudioCount }} 页缺少音频，建议先补齐再渲染视频。
           </div>
 
@@ -125,7 +126,7 @@
               <p>{{ scriptData.opening }}</p>
             </AppCard>
 
-            <AppCard v-if="isEditing" class="editor-tip-card" tone="glass">
+            <AppCard v-if="isEditing && canModifyScript" class="editor-tip-card" tone="glass">
               <h3>编辑提示</h3>
               <p>
                 每张课件页面会显示在对应讲稿上方。你可以一边看页面，一边改讲稿，也可以勾选哪些页需要做成数字人片段。
@@ -229,7 +230,7 @@
               </div>
 
               <div v-if="videoRenderTask.status === 'READY' && videoRenderTask.hlsUrl" class="video-render-player">
-                <div class="inline-alert inline-alert--info">
+                <div v-if="canModifyScript" class="inline-alert inline-alert--info">
                   如果你修改了讲稿或数字人勾选，请重新生成讲解视频，让字幕、音频和数字人片段保持同步。
                 </div>
                 <HlsVideoPlayer
@@ -252,9 +253,11 @@
           <AppCard v-else tone="glass">
             <EmptyState
               title="暂时还没有讲稿"
-              description="系统会基于解析结果生成可检查、可修改的逐页讲稿。"
-              action-label="生成讲稿"
-              @action="handleGenerateScript"
+              :description="canModifyScript
+                ? '系统会基于解析结果生成可检查、可修改的逐页讲稿。'
+                : '这份共享课件的讲稿尚未准备完成，请稍后再进入查看。'"
+              :action-label="canModifyScript ? '生成讲稿' : undefined"
+              @action="canModifyScript && handleGenerateScript()"
             />
           </AppCard>
         </div>
@@ -278,19 +281,23 @@ import HlsVideoPlayer from '@/components/video/HlsVideoPlayer.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import {
   generateScript,
+  getCoursewareDetail,
   getCoursewareScript,
   getCoursewareVideoRenderTask,
   renderCoursewareVideo,
   updateCoursewareScript,
 } from '@/api/courseware'
 import { getCoursewareStatusMeta } from '@/constants/courseware'
+import { useAuthStore } from '@/stores/auth'
 import { getErrorMessage } from '@/utils'
 
 const router = useRouter()
 const route = useRoute()
+const authStore = useAuthStore()
 
 const loading = ref(true)
 const scriptData = ref(null)
+const coursewareDetail = ref(null)
 const scriptStatus = ref('')
 const activeSegmentId = ref('')
 const errorMsg = ref('')
@@ -305,6 +312,9 @@ let videoRenderPollTimer = null
 let segmentObserver = null
 
 const coursewareId = route.params.coursewareId
+const routeCourseCode = computed(() => String(route.query.courseCode || '').trim().toUpperCase())
+const accessMode = computed(() => String(coursewareDetail.value?.accessMode || 'OWNED').trim().toUpperCase())
+const canModifyScript = computed(() => accessMode.value !== 'SHARED')
 
 const statusMeta = computed(() => {
   if (scriptStatus.value === 'GENERATING_SCRIPT') {
@@ -480,6 +490,15 @@ const showError = (error, fallback) => {
   errorMsg.value = getErrorMessage(error, fallback)
 }
 
+const loadCoursewareDetail = async () => {
+  try {
+    const response = await getCoursewareDetail(coursewareId)
+    coursewareDetail.value = response.data || null
+  } catch {
+    coursewareDetail.value = null
+  }
+}
+
 const fetchScript = async () => {
   loading.value = true
   try {
@@ -494,6 +513,9 @@ const fetchScript = async () => {
 }
 
 const handleGenerateScript = async () => {
+  if (!canModifyScript.value) {
+    return
+  }
   scriptStatus.value = 'GENERATING_SCRIPT'
   errorMsg.value = ''
 
@@ -507,6 +529,9 @@ const handleGenerateScript = async () => {
 }
 
 const handleBackfillAudio = async () => {
+  if (!canModifyScript.value) {
+    return
+  }
   errorMsg.value = ''
   try {
     await generateScript(coursewareId)
@@ -563,7 +588,7 @@ const cancelEdit = () => {
 }
 
 const handleSaveScript = async () => {
-  if (!scriptData.value) {
+  if (!scriptData.value || !canModifyScript.value) {
     return
   }
   saving.value = true
@@ -598,15 +623,18 @@ const scrollToSegment = async segmentId => {
 }
 
 const startLecturePage = () => {
-  router.push({
-    name: 'Lecture',
-    params: { coursewareId },
-  })
+  router.push(buildSharedRouteLocation('Lecture'))
 }
 
 const goBack = () => {
-  router.push({ name: 'ResourceDetail', params: { coursewareId } })
+  router.push(buildSharedRouteLocation('ResourceDetail'))
 }
+
+const buildSharedRouteLocation = name => ({
+  name,
+  params: { coursewareId },
+  query: routeCourseCode.value ? { courseCode: routeCourseCode.value } : undefined,
+})
 
 const fetchVideoRenderTask = async ({ silent = false } = {}) => {
   try {
@@ -622,7 +650,7 @@ const fetchVideoRenderTask = async ({ silent = false } = {}) => {
 }
 
 const handleRenderVideo = async () => {
-  if (!scriptData.value) {
+  if (!scriptData.value || !canModifyScript.value) {
     return
   }
 
@@ -655,6 +683,11 @@ const pollVideoRenderStatus = () => {
 }
 
 onMounted(() => {
+  authStore.restore()
+  if (authStore.isStudent && routeCourseCode.value) {
+    authStore.setActiveCourseCode(routeCourseCode.value)
+  }
+  loadCoursewareDetail()
   fetchScript()
   fetchVideoRenderTask({ silent: true })
 })

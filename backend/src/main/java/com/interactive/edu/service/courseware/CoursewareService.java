@@ -14,6 +14,7 @@ import com.interactive.edu.exception.ErrorCode;
 import com.interactive.edu.repository.CoursewarePageRepository;
 import com.interactive.edu.repository.CoursewareRepository;
 import com.interactive.edu.repository.LectureScriptRepository;
+import com.interactive.edu.service.user.AuthService;
 import com.interactive.edu.service.python.PythonParseClient;
 import com.interactive.edu.service.python.PythonParseRequest;
 import com.interactive.edu.service.python.PythonScriptClient;
@@ -81,6 +82,7 @@ public class CoursewareService {
     private final TaskExecutor taskExecutor;
     private final TtsService ttsService;
     private final ObjectMapper objectMapper;
+    private final AuthService authService;
     private final ObjectProvider<CoursewareRepository> coursewareRepositoryProvider;
     private final ObjectProvider<CoursewarePageRepository> coursewarePageRepositoryProvider;
     private final ObjectProvider<LectureScriptRepository> lectureScriptRepositoryProvider;
@@ -94,6 +96,10 @@ public class CoursewareService {
     private final ConcurrentMap<String, String> scriptStatusStore = new ConcurrentHashMap<>();
 
     public CoursewareUploadResult importLocalFile(Path localFile, String requestedName) {
+        return importLocalFile(localFile, requestedName, "demo_user", null);
+    }
+
+    public CoursewareUploadResult importLocalFile(Path localFile, String requestedName, String uploaderId, String courseCode) {
         if (localFile == null) {
             throw new IllegalArgumentException("localFile must not be null");
         }
@@ -107,6 +113,8 @@ public class CoursewareService {
         String filename = normalizeFilename(normalizedFile.getFileName().toString());
         String displayName = resolveDisplayName(requestedName, filename);
         String contentType = probeContentType(normalizedFile);
+        String normalizedCourseCode = normalizeCourseCode(courseCode);
+        assertCourseCodeAvailable(normalizedCourseCode, null);
         StoredObject storedObject = storageServiceFactory.get().save(
                 coursewareId,
                 new PathMultipartFile(normalizedFile, filename, contentType)
@@ -118,7 +126,9 @@ public class CoursewareService {
                 filename,
                 storedObject.getKey(),
                 storedObject.getStorageType(),
-                contentType
+                contentType,
+                normalizeOptionalValue(uploaderId),
+                normalizedCourseCode
         );
         state.setStatus(CoursewareStatus.PARSING.name());
         state.setCurrentTaskStatus(TaskStatus.RUNNING.name());
@@ -138,6 +148,10 @@ public class CoursewareService {
     }
 
     public CoursewareUploadResult upload(MultipartFile file, String requestedName) {
+        return upload(file, requestedName, "demo_user", null);
+    }
+
+    public CoursewareUploadResult upload(MultipartFile file, String requestedName, String uploaderId, String courseCode) {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("Uploaded file must not be empty");
         }
@@ -145,6 +159,8 @@ public class CoursewareService {
         String coursewareId = newCoursewareId();
         String filename = normalizeFilename(file.getOriginalFilename());
         String displayName = resolveDisplayName(requestedName, filename);
+        String normalizedCourseCode = normalizeCourseCode(courseCode);
+        assertCourseCodeAvailable(normalizedCourseCode, null);
         StoredObject storedObject = storageServiceFactory.get().save(coursewareId, file);
 
         CoursewareState state = new CoursewareState(
@@ -153,7 +169,9 @@ public class CoursewareService {
                 filename,
                 storedObject.getKey(),
                 storedObject.getStorageType(),
-                file.getContentType()
+                file.getContentType(),
+                normalizeOptionalValue(uploaderId),
+                normalizedCourseCode
         );
         state.setStatus(CoursewareStatus.PARSING.name());
         state.setCurrentTaskStatus(TaskStatus.RUNNING.name());
@@ -171,16 +189,25 @@ public class CoursewareService {
         return new CoursewareUploadResult(coursewareId, CoursewareStatus.UPLOADED.name());
     }
 
-    public CoursewareListView list(int page, int pageSize, String status) {
+    public CoursewareListView list(
+            int page,
+            int pageSize,
+            String status,
+            AuthService.AuthenticatedUser user,
+            String sharedCourseCode,
+            String scope
+    ) {
         if (page <= 0 || pageSize <= 0) {
             throw new IllegalArgumentException("page and pageSize must be greater than 0");
         }
 
         if (isPersistentMode()) {
-            List<Courseware> filtered = coursewareRepository().findAll().stream()
-                    .filter(item -> !StringUtils.hasText(status) || status.equalsIgnoreCase(item.getStatus()))
+            List<CoursewareProjection> filtered = coursewareRepository().findAll().stream()
+                    .map(CoursewareProjection::fromEntity)
+                    .filter(item -> canListCourseware(item, user, sharedCourseCode, scope))
+                    .filter(item -> !StringUtils.hasText(status) || status.equalsIgnoreCase(item.status()))
                     .sorted(Comparator.comparing(
-                            Courseware::getCreateTime,
+                            CoursewareProjection::createdAt,
                             Comparator.nullsLast(Comparator.reverseOrder())
                     ))
                     .toList();
@@ -188,12 +215,13 @@ public class CoursewareService {
             int fromIndex = Math.min((page - 1) * pageSize, filtered.size());
             int toIndex = Math.min(fromIndex + pageSize, filtered.size());
             List<CoursewareListItem> items = filtered.subList(fromIndex, toIndex).stream()
-                    .map(this::toListItem)
+                    .map(item -> toListItem(item, user, sharedCourseCode))
                     .toList();
             return new CoursewareListView(items, filtered.size(), page, pageSize);
         }
 
         List<CoursewareState> filtered = coursewareStore.values().stream()
+                .filter(item -> canListCourseware(CoursewareProjection.fromState(item), user, sharedCourseCode, scope))
                 .filter(item -> !StringUtils.hasText(status) || status.equalsIgnoreCase(item.getStatus()))
                 .sorted(Comparator.comparing(CoursewareState::getCreatedAt).reversed())
                 .toList();
@@ -206,15 +234,18 @@ public class CoursewareService {
                         item.getName(),
                         item.getStatus(),
                         item.getCreatedAt().toString(),
-                        item.getCurrentTaskStatus()
+                        item.getCurrentTaskStatus(),
+                        item.getCourseCode(),
+                        resolveAccessMode(item.getUploaderId(), user)
                 ))
                 .toList();
         return new CoursewareListView(items, filtered.size(), page, pageSize);
     }
 
-    public CoursewareDetailView getDetail(String coursewareId) {
+    public CoursewareDetailView getDetail(String coursewareId, AuthService.AuthenticatedUser user, String sharedCourseCode) {
+        assertReadable(coursewareId, user, sharedCourseCode);
         if (isPersistentMode()) {
-            return toDetailView(requirePersistedCourseware(coursewareId));
+            return toDetailView(requirePersistedCourseware(coursewareId), user, sharedCourseCode);
         }
 
         CoursewareState state = requireCourseware(coursewareId);
@@ -224,9 +255,40 @@ public class CoursewareService {
                 state.getStatus(),
                 state.getCurrentTaskStatus(),
                 state.getFileType(),
+                state.getCourseCode(),
+                resolveAccessMode(state.getUploaderId(), user),
                 state.getCreatedAt().toString(),
                 state.getUpdatedAt().toString()
         );
+    }
+
+    public void assertReadable(String coursewareId, AuthService.AuthenticatedUser user, String sharedCourseCode) {
+        CoursewareProjection projection = loadProjection(coursewareId);
+        if (!canReadCourseware(projection, user, sharedCourseCode)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "你无权访问该课件");
+        }
+    }
+
+    public void assertWritable(String coursewareId, AuthService.AuthenticatedUser user) {
+        CoursewareProjection projection = loadProjection(coursewareId);
+        if (!isOwner(projection.uploaderId(), user)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "你无权修改该课件");
+        }
+    }
+
+    public String updateCourseCode(String coursewareId, String courseCode, AuthService.AuthenticatedUser user) {
+        assertWritable(coursewareId, user);
+        if (!user.isTeacher()) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "只有教师可以设置课程号");
+        }
+
+        String normalizedCourseCode = normalizeCourseCode(courseCode);
+        assertCourseCodeAvailable(normalizedCourseCode, coursewareId);
+        CoursewareState state = requireCourseware(coursewareId);
+        state.setCourseCode(normalizedCourseCode);
+        state.touch();
+        persistCoursewareState(state);
+        return normalizedCourseCode;
     }
 
     public String triggerScriptGeneration(String coursewareId) {
@@ -1285,6 +1347,8 @@ public class CoursewareService {
         courseware.setFileType(state.getFileType());
         courseware.setStatus(state.getStatus());
         courseware.setCurrentTaskStatus(state.getCurrentTaskStatus());
+        courseware.setUploaderId(state.getUploaderId());
+        courseware.setCourseCode(state.getCourseCode());
     }
 
     private CoursewareState requireCourseware(String coursewareId) {
@@ -1310,26 +1374,81 @@ public class CoursewareService {
                 .orElseThrow(() -> new NoSuchElementException("Courseware not found"));
     }
 
-    private CoursewareListItem toListItem(Courseware courseware) {
+    private CoursewareListItem toListItem(CoursewareProjection courseware, AuthService.AuthenticatedUser user, String sharedCourseCode) {
         return new CoursewareListItem(
-                courseware.getId(),
-                courseware.getName(),
-                courseware.getStatus(),
-                textOf(courseware.getCreateTime()),
-                courseware.getCurrentTaskStatus()
+                courseware.id(),
+                courseware.name(),
+                courseware.status(),
+                textOf(courseware.createdAt()),
+                courseware.currentTaskStatus(),
+                courseware.courseCode(),
+                resolveAccessMode(courseware.uploaderId(), user)
         );
     }
 
-    private CoursewareDetailView toDetailView(Courseware courseware) {
+    private CoursewareDetailView toDetailView(Courseware courseware, AuthService.AuthenticatedUser user, String sharedCourseCode) {
         return new CoursewareDetailView(
                 courseware.getId(),
                 courseware.getName(),
                 courseware.getStatus(),
                 courseware.getCurrentTaskStatus(),
                 courseware.getFileType(),
+                courseware.getCourseCode(),
+                resolveAccessMode(courseware.getUploaderId(), user),
                 textOf(courseware.getCreateTime()),
                 textOf(courseware.getUpdateTime())
         );
+    }
+
+    private boolean canListCourseware(
+            CoursewareProjection projection,
+            AuthService.AuthenticatedUser user,
+            String sharedCourseCode,
+            String scope
+    ) {
+        String normalizedScope = StringUtils.hasText(scope) ? scope.trim().toLowerCase(Locale.ROOT) : "all";
+        boolean ownVisible = isOwner(projection.uploaderId(), user);
+        boolean sharedVisible = canReadAsShared(projection, user, sharedCourseCode);
+        return switch (normalizedScope) {
+            case "owned", "mine" -> ownVisible;
+            case "shared" -> sharedVisible;
+            default -> ownVisible || sharedVisible;
+        };
+    }
+
+    private boolean canReadCourseware(
+            CoursewareProjection projection,
+            AuthService.AuthenticatedUser user,
+            String sharedCourseCode
+    ) {
+        return isOwner(projection.uploaderId(), user) || canReadAsShared(projection, user, sharedCourseCode);
+    }
+
+    private boolean canReadAsShared(
+            CoursewareProjection projection,
+            AuthService.AuthenticatedUser user,
+            String sharedCourseCode
+    ) {
+        String normalizedCourseCode = normalizeCourseCode(sharedCourseCode);
+        return user.isStudent()
+                && StringUtils.hasText(normalizedCourseCode)
+                && normalizedCourseCode.equalsIgnoreCase(normalizeCourseCode(projection.courseCode()))
+                && authService.isTeacherUser(projection.uploaderId());
+    }
+
+    private boolean isOwner(String uploaderId, AuthService.AuthenticatedUser user) {
+        return StringUtils.hasText(uploaderId) && user != null && uploaderId.equals(user.id());
+    }
+
+    private String resolveAccessMode(String uploaderId, AuthService.AuthenticatedUser user) {
+        return isOwner(uploaderId, user) ? "OWNED" : "SHARED";
+    }
+
+    private CoursewareProjection loadProjection(String coursewareId) {
+        if (isPersistentMode()) {
+            return CoursewareProjection.fromEntity(requirePersistedCourseware(coursewareId));
+        }
+        return CoursewareProjection.fromState(requireCourseware(coursewareId));
     }
 
     private boolean isPersistentMode() {
@@ -1426,6 +1545,49 @@ public class CoursewareService {
 
     private String defaultText(String text, String fallback) {
         return StringUtils.hasText(text) ? text.trim() : fallback;
+    }
+
+    private String normalizeOptionalValue(String value) {
+        return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    private String normalizeCourseCode(String courseCode) {
+        String normalized = normalizeOptionalValue(courseCode);
+        return normalized == null ? null : normalized.toUpperCase(Locale.ROOT);
+    }
+
+    private void assertCourseCodeAvailable(String normalizedCourseCode, String currentCoursewareId) {
+        if (!StringUtils.hasText(normalizedCourseCode)) {
+            return;
+        }
+
+        String excludedCoursewareId = normalizeOptionalValue(currentCoursewareId);
+        String conflictingCoursewareName = findConflictingCoursewareName(normalizedCourseCode, excludedCoursewareId);
+        if (conflictingCoursewareName == null) {
+            return;
+        }
+
+        throw new BusinessException(
+                ErrorCode.STATE_CONFLICT,
+                "课程号 " + normalizedCourseCode + " 已被课件《" + conflictingCoursewareName + "》占用，请修改后重试"
+        );
+    }
+
+    private String findConflictingCoursewareName(String normalizedCourseCode, String excludedCoursewareId) {
+        if (isPersistentMode()) {
+            return (StringUtils.hasText(excludedCoursewareId)
+                    ? coursewareRepository().findFirstByCourseCodeIgnoreCaseAndIdNot(normalizedCourseCode, excludedCoursewareId)
+                    : coursewareRepository().findFirstByCourseCodeIgnoreCase(normalizedCourseCode))
+                    .map(courseware -> defaultText(courseware.getName(), courseware.getId()))
+                    .orElse(null);
+        }
+
+        return coursewareStore.values().stream()
+                .filter(state -> !Objects.equals(state.getId(), excludedCoursewareId))
+                .filter(state -> normalizedCourseCode.equalsIgnoreCase(normalizeCourseCode(state.getCourseCode())))
+                .map(state -> defaultText(state.getName(), state.getId()))
+                .findFirst()
+                .orElse(null);
     }
 
     private String resolvePageImageAccessUrl(String coursewareId, int pageIndex, String pageImagePath) {
@@ -1565,6 +1727,40 @@ public class CoursewareService {
         }
     }
 
+    private record CoursewareProjection(
+            String id,
+            String name,
+            String status,
+            String currentTaskStatus,
+            String uploaderId,
+            String courseCode,
+            LocalDateTime createdAt
+    ) {
+        private static CoursewareProjection fromEntity(Courseware courseware) {
+            return new CoursewareProjection(
+                    courseware.getId(),
+                    courseware.getName(),
+                    courseware.getStatus(),
+                    courseware.getCurrentTaskStatus(),
+                    courseware.getUploaderId(),
+                    courseware.getCourseCode(),
+                    courseware.getCreateTime()
+            );
+        }
+
+        private static CoursewareProjection fromState(CoursewareState state) {
+            return new CoursewareProjection(
+                    state.getId(),
+                    state.getName(),
+                    state.getStatus(),
+                    state.getCurrentTaskStatus(),
+                    state.getUploaderId(),
+                    state.getCourseCode(),
+                    LocalDateTime.ofInstant(state.getCreatedAt(), ZoneId.systemDefault())
+            );
+        }
+    }
+
     private record ParsedCourseware(String coursewareId, List<ParsedSegment> segments) {
     }
 
@@ -1610,10 +1806,12 @@ public class CoursewareService {
         private final String storageKey;
         private final String storageType;
         private final String fileType;
+        private final String uploaderId;
         private final Instant createdAt;
         private volatile Instant updatedAt;
         private volatile String status;
         private volatile String currentTaskStatus;
+        private volatile String courseCode;
 
         private CoursewareState(
                 String id,
@@ -1621,7 +1819,9 @@ public class CoursewareService {
                 String originalFilename,
                 String storageKey,
                 String storageType,
-                String fileType
+                String fileType,
+                String uploaderId,
+                String courseCode
         ) {
             this(
                     id,
@@ -1630,10 +1830,12 @@ public class CoursewareService {
                     storageKey,
                     storageType,
                     fileType,
+                    uploaderId,
                     Instant.now(),
                     Instant.now(),
                     CoursewareStatus.UPLOADED.name(),
-                    TaskStatus.PENDING.name()
+                    TaskStatus.PENDING.name(),
+                    courseCode
             );
         }
 
@@ -1644,10 +1846,12 @@ public class CoursewareService {
                 String storageKey,
                 String storageType,
                 String fileType,
+                String uploaderId,
                 Instant createdAt,
                 Instant updatedAt,
                 String status,
-                String currentTaskStatus
+                String currentTaskStatus,
+                String courseCode
         ) {
             this.id = id;
             this.name = name;
@@ -1657,10 +1861,12 @@ public class CoursewareService {
             this.fileType = StringUtils.hasText(fileType)
                     ? fileType.toUpperCase(Locale.ROOT)
                     : "APPLICATION/OCTET-STREAM";
+            this.uploaderId = uploaderId;
             this.createdAt = createdAt;
             this.updatedAt = updatedAt;
             this.status = status;
             this.currentTaskStatus = currentTaskStatus;
+            this.courseCode = courseCode;
         }
 
         private static CoursewareState fromEntity(Courseware courseware) {
@@ -1671,10 +1877,12 @@ public class CoursewareService {
                     courseware.getFileUrl(),
                     courseware.getStorageType(),
                     courseware.getFileType(),
+                    courseware.getUploaderId(),
                     toInstant(courseware.getCreateTime()),
                     toInstant(courseware.getUpdateTime()),
                     courseware.getStatus(),
-                    courseware.getCurrentTaskStatus()
+                    courseware.getCurrentTaskStatus(),
+                    courseware.getCourseCode()
             );
         }
 
@@ -1688,6 +1896,10 @@ public class CoursewareService {
 
         private void touch() {
             this.updatedAt = Instant.now();
+        }
+
+        private void setCourseCode(String courseCode) {
+            this.courseCode = courseCode;
         }
     }
 }

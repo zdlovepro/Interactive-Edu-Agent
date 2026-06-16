@@ -1,6 +1,7 @@
 import request from '@/utils/request'
 import { QA_API } from '@/constants/api'
 import { createSseClient } from '@/utils/sseClient'
+import { getStoredToken } from '@/utils/auth'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
@@ -33,6 +34,11 @@ export function buildQaStreamUrl({ sessionId, question, pageIndex } = {}) {
     searchParams.set('pageIndex', String(pageIndex))
   }
 
+  const token = getStoredToken()
+  if (token) {
+    searchParams.set('token', token)
+  }
+
   const baseUrl = joinApiUrl(QA_API.STREAM)
   const queryString = searchParams.toString()
   return queryString ? `${baseUrl}?${queryString}` : baseUrl
@@ -40,6 +46,15 @@ export function buildQaStreamUrl({ sessionId, question, pageIndex } = {}) {
 
 export function streamAskText({ sessionId, question, pageIndex } = {}, handlers = {}) {
   const client = createSseClient()
-  client.connect(joinApiUrl(QA_API.STREAM), { sessionId, question, pageIndex }, handlers)
+  client.connect(
+    joinApiUrl(QA_API.STREAM),
+    {
+      sessionId,
+      question,
+      pageIndex,
+      token: getStoredToken(),
+    },
+    handlers,
+  )
   return client
 }

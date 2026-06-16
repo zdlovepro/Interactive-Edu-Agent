@@ -3,18 +3,6 @@
     <section class="page-shell page-shell--wide page-section">
       <div class="lecture-layout">
         <div class="lecture-main">
-          <div class="lecture-topbar">
-            <div>
-              <span class="eyebrow">AI 互动课堂</span>
-              <h1>{{ currentSlide?.title || '正在准备课堂内容' }}</h1>
-            </div>
-
-            <div class="lecture-topbar__meta">
-              <StatusBadge :label="statusMeta.text" :tone="statusTone" />
-              <span class="lecture-page-pill">第 {{ currentPage }} 页</span>
-            </div>
-          </div>
-
           <DualTrackVideoStage
             class="lecture-video-stage"
             :video-src="lectureVideoUrl"
@@ -25,7 +13,7 @@
             @pause="handleVideoPause"
           />
 
-          <AppCard class="lecture-control-card" tone="subtle">
+          <AppCard v-if="!isTeacherView" class="lecture-control-card" tone="subtle">
             <div class="control-grid">
               <div class="control-group control-group--voice">
                 <span class="control-label">语音打断视频</span>
@@ -61,13 +49,13 @@
           </AppCard>
 
           <LectureQuickQuiz
-            v-if="slides.length"
+            v-if="slides.length && !isTeacherView"
             class="lecture-quiz-card"
             :slides="slides"
           />
         </div>
 
-        <AppCard class="lecture-chat-panel" tone="glass">
+        <AppCard v-if="!isTeacherView" class="lecture-chat-panel" tone="glass">
           <div class="chat-header">
             <div>
               <span class="eyebrow">AI 助教问答</span>
@@ -135,6 +123,55 @@
             </AppButton>
           </div>
         </AppCard>
+
+        <AppCard v-else class="lecture-chat-panel teacher-panel" tone="glass">
+          <div class="chat-header teacher-panel__header">
+            <div>
+              <span class="eyebrow">课程共享设置</span>
+              <h2>在课堂页直接设置课程号</h2>
+            </div>
+            <span class="chat-header__status teacher-course-code-status">
+              {{ currentCourseCodeStatusText }}
+            </span>
+          </div>
+
+          <p class="teacher-panel__intro">
+            为当前课件设置课程号后，学生即可在课堂资源页输入相同课程号访问这份课件。
+          </p>
+
+          <div class="teacher-course-code-form">
+            <label for="teacher-course-code-input" class="teacher-course-code-label">课程号</label>
+            <input
+              id="teacher-course-code-input"
+              v-model.trim="courseCodeInput"
+              class="app-input"
+              type="text"
+              maxlength="64"
+              :disabled="courseCodeLoading || !canManageCourseCode"
+              placeholder="例如：ML-2026-A"
+            />
+
+            <div class="teacher-course-code-actions">
+              <AppButton
+                :disabled="courseCodeLoading || !canManageCourseCode || !isCourseCodeDirty"
+                @click="saveCourseCode"
+              >
+                {{ courseCodeLoading ? '保存中...' : '保存课程号' }}
+              </AppButton>
+              <AppButton
+                variant="secondary"
+                :disabled="courseCodeLoading || !canManageCourseCode || !savedCourseCode"
+                @click="clearCourseCode"
+              >
+                清除课程号
+              </AppButton>
+            </div>
+          </div>
+
+          <p class="teacher-panel__hint">
+            {{ teacherCourseCodeHint }}
+          </p>
+        </AppCard>
       </div>
     </section>
 
@@ -153,13 +190,18 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import DualTrackVideoStage from '@/components/lecture/DualTrackVideoStage.vue'
 import LectureQuickQuiz from '@/components/lecture/LectureQuickQuiz.vue'
-import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { recognizeAudio } from '@/api/asr'
-import { getCoursewareScript, getCoursewareVideoRenderTask } from '@/api/courseware'
+import {
+  getCoursewareDetail,
+  getCoursewareScript,
+  getCoursewareVideoRenderTask,
+  updateCoursewareCourseCode,
+} from '@/api/courseware'
 import { pauseLecture, resumeLecture, startLecture } from '@/api/lecture'
 import { askText, streamAskText } from '@/api/qa'
 import { COURSEWARE_VIDEO_API } from '@/constants/api'
-import { LECTURE_STATE, LECTURE_STATUS_MAP, normalizeLectureStatus } from '@/constants/lecture'
+import { LECTURE_STATE, normalizeLectureStatus } from '@/constants/lecture'
+import { useAuthStore } from '@/stores/auth'
 import { useLectureStore } from '@/stores/lecture'
 import audioPlayer from '@/utils/audioPlayer'
 import { createLecturePlaybackEngine } from '@/utils/lecturePlaybackEngine'
@@ -170,9 +212,11 @@ import { getErrorMessage } from '@/utils'
 
 const route = useRoute()
 const lectureStore = useLectureStore()
+const authStore = useAuthStore()
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
 const coursewareId = route.params.coursewareId
+const routeCourseCode = computed(() => String(route.query.courseCode || '').trim().toUpperCase())
 
 const slides = ref([])
 const question = ref('')
@@ -195,6 +239,10 @@ const videoRenderTask = ref(null)
 const videoCurrentTime = ref(0)
 const videoDuration = ref(0)
 const videoPaused = ref(true)
+const courseCodeInput = ref('')
+const savedCourseCode = ref('')
+const coursewareAccessMode = ref('OWNED')
+const courseCodeLoading = ref(false)
 
 const VOICE_INTERRUPT_STATE = {
   OFF: 'off',
@@ -221,16 +269,6 @@ let activeStreamingQaItemId = null
 let videoRenderPollTimer = null
 
 const lectureStatus = computed(() => normalizeLectureStatus(lectureStore.status))
-const statusMeta = computed(
-  () => LECTURE_STATUS_MAP[lectureStatus.value] || LECTURE_STATUS_MAP[LECTURE_STATE.IDLE],
-)
-const statusTone = computed(() => {
-  const color = statusMeta.value.color
-  if (color === 'default') {
-    return 'neutral'
-  }
-  return color
-})
 const playbackMode = computed(() => lectureStore.audioMode)
 const currentPage = computed(() => lectureStore.currentPage)
 const currentSlide = computed(() => slides.value[currentPage.value - 1] || null)
@@ -267,6 +305,22 @@ const qaStatusText = computed(() =>
   isStreamingAnswer.value
     ? `生成中 · 全课件检索 · 当前定位第 ${qaContextPageIndex.value} 页`
     : `全课件上下文 · 当前定位第 ${qaContextPageIndex.value} 页`,
+)
+const isTeacherView = computed(() => authStore.isTeacher)
+const canManageCourseCode = computed(
+  () => isTeacherView.value && coursewareAccessMode.value !== 'SHARED',
+)
+const normalizedCourseCodeInput = computed(() => normalizeCourseCodeInput(courseCodeInput.value))
+const isCourseCodeDirty = computed(
+  () => normalizedCourseCodeInput.value !== normalizeCourseCodeInput(savedCourseCode.value),
+)
+const currentCourseCodeStatusText = computed(() =>
+  savedCourseCode.value ? `当前课程号 · ${savedCourseCode.value}` : '当前未设置课程号',
+)
+const teacherCourseCodeHint = computed(() =>
+  canManageCourseCode.value
+    ? '建议使用稳定、易记的课程缩写。保存后，学生即可通过该课程号访问当前课件。'
+    : '当前课件属于共享访问状态，不能在课堂页修改课程号。',
 )
 const lectureVideoUrl = computed(() => {
   if (String(videoRenderTask.value?.status || '').toUpperCase() !== 'READY') {
@@ -339,6 +393,16 @@ const buildApiUrl = path => {
     return normalizedPath
   }
   return `${normalizedBase}${normalizedPath}`
+}
+
+const normalizeCourseCodeInput = value => String(value || '').trim().toUpperCase()
+
+const applyCoursewareMeta = payload => {
+  coursewareAccessMode.value = String(payload?.accessMode || 'OWNED')
+    .trim()
+    .toUpperCase()
+  savedCourseCode.value = normalizeCourseCodeInput(payload?.courseCode || '')
+  courseCodeInput.value = savedCourseCode.value
 }
 
 const resolveVideoContextPageIndex = currentTimeSeconds => {
@@ -450,6 +514,20 @@ const fetchVideoRenderTask = async ({ silent = true } = {}) => {
     stopVideoRenderPolling()
     if (!silent) {
       showError(error, '无法获取讲解视频状态，请稍后重试。')
+    }
+    return null
+  }
+}
+
+const loadCoursewareMeta = async ({ silent = true } = {}) => {
+  try {
+    const response = await getCoursewareDetail(coursewareId)
+    applyCoursewareMeta(response.data)
+    return response.data || null
+  } catch (error) {
+    coursewareAccessMode.value = 'OWNED'
+    if (!silent) {
+      showError(error, '无法加载当前课件的课程号信息，请稍后重试。')
     }
     return null
   }
@@ -1378,6 +1456,35 @@ const scrollQAToBottom = () => {
   })
 }
 
+const saveCourseCode = async () => {
+  if (!canManageCourseCode.value || courseCodeLoading.value) {
+    return
+  }
+
+  courseCodeLoading.value = true
+  clearError()
+
+  try {
+    const response = await updateCoursewareCourseCode(coursewareId, normalizedCourseCodeInput.value)
+    const nextCourseCode = response.data?.courseCode ?? normalizedCourseCodeInput.value
+    savedCourseCode.value = normalizeCourseCodeInput(nextCourseCode)
+    courseCodeInput.value = savedCourseCode.value
+  } catch (error) {
+    showError(error, '更新课程号失败，请稍后重试。')
+  } finally {
+    courseCodeLoading.value = false
+  }
+}
+
+const clearCourseCode = async () => {
+  if (!savedCourseCode.value && !normalizedCourseCodeInput.value) {
+    return
+  }
+
+  courseCodeInput.value = ''
+  await saveCourseCode()
+}
+
 watch(
   () => currentSlide.value?.id,
   () => {
@@ -1389,12 +1496,18 @@ watch(
 )
 
 onMounted(async () => {
-  canUseVoiceInterrupt.value = supportsVoiceInterrupt()
+  authStore.restore()
+  if (authStore.isStudent && routeCourseCode.value) {
+    authStore.setActiveCourseCode(routeCourseCode.value)
+  }
+  canUseVoiceInterrupt.value = !isTeacherView.value && supportsVoiceInterrupt()
   updateVoiceInterruptState(
     canUseVoiceInterrupt.value ? VOICE_INTERRUPT_STATE.OFF : VOICE_INTERRUPT_STATE.UNAVAILABLE,
     canUseVoiceInterrupt.value
       ? '开启后会在检测到学生说话后自动打断课堂'
-      : '当前浏览器不支持语音打断，请改用手动输入问题。',
+      : isTeacherView.value
+        ? '教师预览模式已关闭语音打断。'
+        : '当前浏览器不支持语音打断，请改用手动输入问题。',
   )
 
   playbackEngine = createLecturePlaybackEngine({
@@ -1441,6 +1554,9 @@ onMounted(async () => {
 
   lectureStore.reset()
   lectureStore.setCoursewareId(coursewareId)
+  if (isTeacherView.value) {
+    await loadCoursewareMeta({ silent: true })
+  }
   await fetchVideoRenderTask({ silent: true })
   const loaded = await loadSlides()
   if (loaded) {
@@ -1496,48 +1612,6 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
-}
-
-.lecture-topbar {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1.65rem 1.75rem;
-  border-radius: calc(var(--radius-xl) + 0.15rem);
-  background:
-    radial-gradient(circle at top left, rgba(14, 90, 224, 0.16), transparent 34%),
-    radial-gradient(circle at bottom right, rgba(24, 126, 168, 0.12), transparent 30%),
-    rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(104, 130, 171, 0.14);
-  box-shadow: var(--shadow-md);
-}
-
-.lecture-topbar h1 {
-  margin: 0;
-  font-size: clamp(1.8rem, 3vw, 2.5rem);
-  line-height: 1.08;
-  letter-spacing: -0.03em;
-}
-
-.lecture-topbar__meta {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.lecture-page-pill {
-  display: inline-flex;
-  align-items: center;
-  min-height: 1.95rem;
-  padding: 0.35rem 0.7rem;
-  border-radius: 999px;
-  background: rgba(14, 90, 224, 0.08);
-  color: var(--primary-color);
-  font-size: var(--font-size-xs);
-  font-weight: 700;
 }
 
 .lecture-video-stage {
@@ -1663,6 +1737,53 @@ onUnmounted(() => {
     linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(247, 250, 255, 0.8)),
     radial-gradient(circle at top right, rgba(14, 90, 224, 0.08), transparent 26%);
   backdrop-filter: blur(16px);
+}
+
+.teacher-panel {
+  justify-content: flex-start;
+  min-height: auto;
+  max-height: none;
+}
+
+.teacher-panel__header {
+  align-items: center;
+}
+
+.teacher-panel__intro,
+.teacher-panel__hint {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.75;
+}
+
+.teacher-course-code-status {
+  font-weight: 700;
+  white-space: normal;
+  text-align: right;
+}
+
+.teacher-course-code-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem;
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(104, 130, 171, 0.12);
+}
+
+.teacher-course-code-label {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.teacher-course-code-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 
 .chat-header {
@@ -1902,15 +2023,6 @@ onUnmounted(() => {
 }
 
 @media (max-width: 768px) {
-  .lecture-topbar {
-    padding: 1.35rem;
-    flex-direction: column;
-  }
-
-  .lecture-topbar__meta {
-    justify-content: flex-start;
-  }
-
   .control-grid {
     grid-template-columns: 1fr;
   }
@@ -1918,6 +2030,10 @@ onUnmounted(() => {
   .chat-composer {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .teacher-course-code-actions {
+    flex-direction: column;
   }
 
   .bubble--user,

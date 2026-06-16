@@ -1,6 +1,8 @@
 package com.interactive.edu.service.urlimport;
 
 import com.interactive.edu.enums.UrlImportTaskStatus;
+import com.interactive.edu.exception.BusinessException;
+import com.interactive.edu.exception.ErrorCode;
 import com.interactive.edu.vo.courseware.UrlImportTaskView;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.task.TaskExecutor;
@@ -26,27 +28,38 @@ public class UrlImportService {
         this.taskExecutor = taskExecutor;
     }
 
-    public UrlImportTaskView createTask(String url, String requestedName) {
+    public UrlImportTaskView createTask(String url, String requestedName, String userId) {
         URI sourceUri = parseSourceUrl(url);
+        String normalizedUserId = normalizeUserId(userId);
         String taskId = "crawl_task_" + UUID.randomUUID().toString().replace("-", "");
         String coursewareId = "cware_" + UUID.randomUUID().toString().replace("-", "");
         String displayName = resolveDisplayName(requestedName, sourceUri);
 
-        UrlImportTask task = UrlImportTask.queued(taskId, coursewareId, sourceUri.toString(), displayName);
+        UrlImportTask task = UrlImportTask.queued(taskId, coursewareId, normalizedUserId, sourceUri.toString(), displayName);
         tasks.put(taskId, task);
 
-        log.info("URL import task accepted. taskId={}, coursewareId={}, host={}", taskId, coursewareId, sourceUri.getHost());
+        log.info(
+                "URL import task accepted. taskId={}, coursewareId={}, userId={}, host={}",
+                taskId,
+                coursewareId,
+                normalizedUserId,
+                sourceUri.getHost()
+        );
         taskExecutor.execute(() -> dispatchToCrawlerQueue(taskId));
         return task.toView();
     }
 
-    public UrlImportTaskView getTask(String taskId) {
+    public UrlImportTaskView getTask(String taskId, String userId) {
         if (!StringUtils.hasText(taskId)) {
             throw new IllegalArgumentException("taskId must not be blank");
         }
+
         UrlImportTask task = tasks.get(taskId);
         if (task == null) {
             throw new NoSuchElementException("URL import task not found");
+        }
+        if (!task.userId.equals(normalizeUserId(userId))) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "You are not allowed to access this URL import task");
         }
         return task.toView();
     }
@@ -96,9 +109,17 @@ public class UrlImportService {
         return "URL resource - " + sourceUri.getHost();
     }
 
+    private String normalizeUserId(String userId) {
+        if (!StringUtils.hasText(userId)) {
+            throw new IllegalArgumentException("userId must not be blank");
+        }
+        return userId.trim();
+    }
+
     private static final class UrlImportTask {
         private final String taskId;
         private final String coursewareId;
+        private final String userId;
         private final String sourceUrl;
         private final String name;
         private final Instant createdAt;
@@ -111,6 +132,7 @@ public class UrlImportService {
         private UrlImportTask(
                 String taskId,
                 String coursewareId,
+                String userId,
                 String sourceUrl,
                 String name,
                 Instant createdAt,
@@ -121,6 +143,7 @@ public class UrlImportService {
         ) {
             this.taskId = taskId;
             this.coursewareId = coursewareId;
+            this.userId = userId;
             this.sourceUrl = sourceUrl;
             this.name = name;
             this.createdAt = createdAt;
@@ -131,10 +154,17 @@ public class UrlImportService {
             this.message = message;
         }
 
-        private static UrlImportTask queued(String taskId, String coursewareId, String sourceUrl, String name) {
+        private static UrlImportTask queued(
+                String taskId,
+                String coursewareId,
+                String userId,
+                String sourceUrl,
+                String name
+        ) {
             return new UrlImportTask(
                     taskId,
                     coursewareId,
+                    userId,
                     sourceUrl,
                     name,
                     Instant.now(),

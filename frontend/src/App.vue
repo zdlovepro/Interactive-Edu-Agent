@@ -1,9 +1,9 @@
 <template>
   <div class="app-shell">
-    <header class="app-header">
+    <header v-if="!isAuthPage" class="app-header">
       <div class="page-shell header-inner">
         <RouterLink class="brand" to="/">
-          <span class="brand-mark"></span>
+          <span class="brand-mark">I</span>
           <div>
             <strong>IEA 智能教学助手</strong>
             <span>Interactive-Edu-Agent</span>
@@ -21,10 +21,24 @@
             {{ item.label }}
           </RouterLink>
         </nav>
+
+        <div class="header-user">
+          <div class="header-user__meta">
+            <span class="role-pill" :class="{ teacher: authStore.isTeacher, student: authStore.isStudent }">
+              {{ roleLabel }}
+            </span>
+            <div>
+              <strong>{{ authStore.displayName }}</strong>
+              <span>{{ authStore.user?.username }}</span>
+            </div>
+          </div>
+
+          <button type="button" class="logout-button" @click="handleLogout">退出</button>
+        </div>
       </div>
     </header>
 
-    <main class="app-main">
+    <main :class="['app-main', { 'app-main--auth': isAuthPage }]">
       <router-view v-slot="{ Component }">
         <transition name="fade-up" mode="out-in">
           <component :is="Component" :key="$route.fullPath" />
@@ -35,16 +49,39 @@
 </template>
 
 <script setup>
-import { useRoute } from 'vue-router'
+import { computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { getUserProfile, logoutUser } from '@/api/user'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
+const router = useRouter()
+const authStore = useAuthStore()
 
-const navItems = [
+onMounted(() => {
+  authStore.restore()
+  if (authStore.token && !authStore.user) {
+    getUserProfile()
+      .then(response => {
+        authStore.updateProfile(response.data)
+      })
+      .catch(() => {
+        authStore.clearSession()
+        router.replace('/login')
+      })
+  }
+})
+
+const isAuthPage = computed(() => route.name === 'Login')
+
+const navItems = computed(() => [
   { label: '首页', to: '/' },
   { label: '导入中心', to: '/imports' },
-  { label: '课堂', to: '/classroom' },
+  { label: authStore.isTeacher ? '我的课程' : '课堂资源', to: '/classroom' },
   { label: '个人中心', to: '/profile' },
-]
+])
+
+const roleLabel = computed(() => (authStore.isTeacher ? '教师' : '学生'))
 
 function isNavActive(item) {
   if (item.to === '/') {
@@ -70,6 +107,17 @@ function isNavActive(item) {
   }
 
   return route.path.startsWith(item.to)
+}
+
+async function handleLogout() {
+  try {
+    await logoutUser()
+  } catch {
+    // Local session cleanup is still sufficient here.
+  }
+
+  authStore.clearSession()
+  await router.replace('/login')
 }
 </script>
 
@@ -97,9 +145,9 @@ function isNavActive(item) {
 
 .header-inner {
   min-height: 5rem;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  justify-content: space-between;
   gap: 1rem;
 }
 
@@ -112,11 +160,18 @@ function isNavActive(item) {
 .brand-mark {
   width: 2.5rem;
   height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 0.95rem;
   background:
     linear-gradient(135deg, rgba(14, 90, 224, 1), rgba(24, 126, 168, 0.92)),
     #ffffff;
   box-shadow: 0 16px 30px rgba(14, 90, 224, 0.24);
+  color: #ffffff;
+  font-size: 1.2rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
 }
 
 .brand strong {
@@ -136,7 +191,7 @@ function isNavActive(item) {
 .header-nav {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
   flex-wrap: wrap;
   gap: 0.35rem;
 }
@@ -168,14 +223,77 @@ function isNavActive(item) {
   box-shadow: inset 0 0 0 1px rgba(14, 90, 224, 0.12);
 }
 
+.header-user {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.header-user__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.header-user__meta strong {
+  display: block;
+  font-size: var(--font-size-sm);
+}
+
+.header-user__meta span:last-child {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.role-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+}
+
+.role-pill.teacher {
+  color: #b15f1c;
+  background: rgba(255, 186, 56, 0.14);
+}
+
+.role-pill.student {
+  color: var(--primary-color);
+  background: rgba(14, 90, 224, 0.08);
+}
+
+.logout-button {
+  min-height: 2.25rem;
+  padding: 0.5rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid rgba(136, 147, 184, 0.16);
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.logout-button:hover {
+  color: var(--text-primary);
+}
+
 .app-main {
   padding: 0 0 3rem;
 }
 
-@media (max-width: 768px) {
+.app-main--auth {
+  padding: 0;
+}
+
+@media (max-width: 1080px) {
   .header-inner {
-    min-height: auto;
-    flex-direction: column;
+    grid-template-columns: 1fr;
     align-items: flex-start;
     padding-top: 0.9rem;
     padding-bottom: 0.9rem;
@@ -183,13 +301,24 @@ function isNavActive(item) {
 
   .header-nav {
     width: 100%;
-    justify-content: space-between;
-    gap: 0.5rem;
+    justify-content: flex-start;
   }
 
-  .nav-link {
-    flex: 1;
-    min-width: calc(25% - 0.4rem);
+  .header-user {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 640px) {
+  .header-user {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .header-user__meta {
+    width: 100%;
+    justify-content: space-between;
   }
 }
 </style>

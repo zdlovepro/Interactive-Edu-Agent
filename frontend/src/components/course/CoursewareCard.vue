@@ -2,7 +2,7 @@
   <AppCard class="course-card" hoverable tone="glass">
     <div class="course-card__top">
       <div>
-        <p class="course-card__eyebrow">课件资源</p>
+        <p class="course-card__eyebrow">{{ accessModeLabel }}</p>
         <h3 class="course-card__title">{{ courseware.name || '未命名课件' }}</h3>
       </div>
       <StatusBadge :label="statusMeta.text" :tone="statusMeta.tone" />
@@ -16,6 +16,14 @@
       <div class="meta-item">
         <span class="meta-label">任务状态</span>
         <span class="meta-value">{{ taskStatusLabel }}</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">课程号</span>
+        <span class="meta-value">{{ courseware.courseCode || '未设置' }}</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">访问方式</span>
+        <span class="meta-value">{{ accessModeLabel }}</span>
       </div>
     </div>
 
@@ -60,8 +68,10 @@ const createdAtLabel = computed(() => {
 })
 
 const taskStatusLabel = computed(() => getTaskStatusLabel(props.courseware.currentTaskStatus))
-
-const actions = computed(() => getCoursewareActions(props.courseware.status))
+const actions = computed(() => getCoursewareActions(props.courseware))
+const accessModeLabel = computed(() =>
+  String(props.courseware.accessMode || 'OWNED').trim().toUpperCase() === 'SHARED' ? '共享课件' : '我的课件',
+)
 
 function emitAction(action) {
   if (action.disabled) {
@@ -76,7 +86,7 @@ function emitAction(action) {
   display: flex;
   flex-direction: column;
   gap: 1.2rem;
-  min-height: 15rem;
+  min-height: 17rem;
 }
 
 .course-card__top {
@@ -127,6 +137,7 @@ function emitAction(action) {
   color: var(--text-primary);
   font-size: var(--font-size-sm);
   font-weight: 600;
+  word-break: break-word;
 }
 
 .course-card__actions {
@@ -149,4 +160,3 @@ function emitAction(action) {
   }
 }
 </style>
-

@@ -1,8 +1,8 @@
 import request from '@/utils/request'
 import { LECTURE_API } from '@/constants/api'
 
-export function startLecture({ coursewareId, userId } = {}) {
-  return request.post(LECTURE_API.START, { coursewareId, userId })
+export function startLecture({ coursewareId } = {}) {
+  return request.post(LECTURE_API.START, { coursewareId })
 }
 
 export function pauseLecture(sessionId) {

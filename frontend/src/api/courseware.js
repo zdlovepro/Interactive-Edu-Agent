@@ -1,11 +1,14 @@
 import request from '@/utils/request'
 import { COURSEWARE_API, COURSEWARE_VIDEO_API, SCRIPT_API } from '@/constants/api'
 
-export function uploadCourseware(file, name, config = {}) {
+export function uploadCourseware(file, name, courseCode = '', config = {}) {
   const formData = new FormData()
   formData.append('file', file)
   if (name) {
     formData.append('name', name)
+  }
+  if (courseCode) {
+    formData.append('courseCode', courseCode)
   }
 
   return request.post(COURSEWARE_API.UPLOAD, formData, {
@@ -25,8 +28,11 @@ export function getUrlImportTask(taskId) {
   return request.get(COURSEWARE_API.URL_IMPORT_TASK(taskId))
 }
 
-export function listCourseware(params = {}) {
-  return request.get(COURSEWARE_API.LIST, { params })
+export function listCourseware(params = {}, config = {}) {
+  return request.get(COURSEWARE_API.LIST, {
+    params,
+    ...config,
+  })
 }
 
 export function getCoursewareDetail(coursewareId) {
@@ -51,4 +57,8 @@ export function renderCoursewareVideo(coursewareId) {
 
 export function getCoursewareVideoRenderTask(coursewareId) {
   return request.get(COURSEWARE_VIDEO_API.RENDER(coursewareId))
+}
+
+export function updateCoursewareCourseCode(coursewareId, courseCode) {
+  return request.put(COURSEWARE_API.UPDATE_COURSE_CODE(coursewareId), { courseCode })
 }

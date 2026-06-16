@@ -187,7 +187,9 @@ public class CourseResourceImportTaskService {
 
                 CoursewareUploadResult uploadResult = coursewareService.importLocalFile(
                         parseReadyFile,
-                        parseReadyFile.getFileName().toString()
+                        parseReadyFile.getFileName().toString(),
+                        state.getUserId(),
+                        null
                 );
                 state.setCoursewareId(uploadResult.getCoursewareId());
                 state.setStatus(CourseResourceImportTaskStatus.READY);

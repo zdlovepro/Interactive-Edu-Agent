@@ -2,6 +2,8 @@ package com.interactive.edu.controller;
 
 import com.interactive.edu.dto.BaseResponse;
 import com.interactive.edu.service.courseware.CoursewareVideoRenderService;
+import com.interactive.edu.service.courseware.CoursewareService;
+import com.interactive.edu.service.user.AuthService;
 import com.interactive.edu.vo.courseware.CoursewareVideoRenderTaskView;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.NotBlank;
@@ -13,6 +15,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -29,18 +32,25 @@ public class CoursewareVideoController {
     private static final String HLS_REQUEST_PREFIX = "/api/v1/courseware/%s/video/hls/";
 
     private final CoursewareVideoRenderService coursewareVideoRenderService;
+    private final CoursewareService coursewareService;
+    private final AuthService authService;
 
     @PostMapping("/render")
     public BaseResponse<CoursewareVideoRenderTaskView> render(
-            @PathVariable("coursewareId") @NotBlank String coursewareId
+            @PathVariable("coursewareId") @NotBlank String coursewareId,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader
     ) {
+        coursewareService.assertWritable(coursewareId, authService.requireUser(authorizationHeader));
         return BaseResponse.ok(coursewareVideoRenderService.triggerRender(coursewareId));
     }
 
     @GetMapping("/render")
     public BaseResponse<CoursewareVideoRenderTaskView> renderTask(
-            @PathVariable("coursewareId") @NotBlank String coursewareId
+            @PathVariable("coursewareId") @NotBlank String coursewareId,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+            @RequestHeader(value = "X-Course-Code", required = false) String courseCode
     ) {
+        coursewareService.assertReadable(coursewareId, authService.requireUser(authorizationHeader), courseCode);
         return BaseResponse.ok(coursewareVideoRenderService.getTask(coursewareId));
     }
 
