@@ -1,33 +1,33 @@
 :root {
-  --primary-color: #5f68ff;
-  --secondary-color: #8d5bff;
-  --accent-color: #48a5ff;
-  --success-color: #1f9d67;
-  --warning-color: #d98b16;
-  --error-color: #e6546a;
+  --primary-color: #0e5ae0;
+  --secondary-color: #187ea8;
+  --accent-color: #ff8c3a;
+  --success-color: #0f9b6b;
+  --warning-color: #cf8d29;
+  --error-color: #dd4f65;
 
-  --bg-primary: #f5f7ff;
+  --bg-primary: #f2f7fb;
   --bg-secondary: #ffffff;
-  --bg-tertiary: #eef2ff;
-  --surface-glass: rgba(255, 255, 255, 0.76);
-  --surface-muted: rgba(248, 250, 255, 0.92);
+  --bg-tertiary: #eaf2ff;
+  --surface-glass: rgba(255, 255, 255, 0.78);
+  --surface-muted: rgba(247, 250, 255, 0.94);
 
-  --text-primary: #14213d;
-  --text-secondary: #4f5d78;
-  --text-tertiary: #8a96b2;
+  --text-primary: #10213a;
+  --text-secondary: #4e5f74;
+  --text-tertiary: #8393aa;
   --text-inverse: #ffffff;
 
-  --border-color: rgba(129, 142, 178, 0.18);
-  --border-strong: rgba(110, 120, 255, 0.18);
+  --border-color: rgba(104, 130, 171, 0.18);
+  --border-strong: rgba(14, 90, 224, 0.18);
 
   --radius-sm: 0.75rem;
   --radius-md: 1rem;
   --radius-lg: 1.5rem;
   --radius-xl: 2rem;
 
-  --shadow-sm: 0 10px 24px rgba(26, 39, 74, 0.07);
-  --shadow-md: 0 18px 40px rgba(27, 39, 77, 0.1);
-  --shadow-lg: 0 30px 60px rgba(31, 43, 79, 0.14);
+  --shadow-sm: 0 14px 28px rgba(28, 54, 94, 0.08);
+  --shadow-md: 0 24px 52px rgba(29, 55, 95, 0.11);
+  --shadow-lg: 0 34px 72px rgba(26, 47, 83, 0.15);
 
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.9rem;
@@ -41,8 +41,8 @@
   --line-height-normal: 1.6;
   --line-height-relaxed: 1.85;
 
-  --page-max-width: 1180px;
-  --page-wide-width: 1380px;
+  --page-max-width: 1220px;
+  --page-wide-width: 1480px;
 
   --transition-fast: 150ms ease;
   --transition-base: 220ms ease;
@@ -66,15 +66,26 @@ body {
   min-height: 100vh;
   color: var(--text-primary);
   font-family:
-    'Segoe UI',
+    'Avenir Next',
+    'Trebuchet MS',
     'PingFang SC',
     'Hiragino Sans GB',
     'Microsoft YaHei',
     sans-serif;
   background:
-    radial-gradient(circle at top left, rgba(123, 105, 255, 0.12), transparent 28%),
-    radial-gradient(circle at top right, rgba(72, 165, 255, 0.14), transparent 22%),
-    linear-gradient(180deg, #f9fbff 0%, #f4f6ff 100%);
+    linear-gradient(rgba(255, 255, 255, 0.42) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.42) 1px, transparent 1px),
+    radial-gradient(circle at top left, rgba(14, 90, 224, 0.1), transparent 28%),
+    radial-gradient(circle at top right, rgba(24, 126, 168, 0.12), transparent 24%),
+    radial-gradient(circle at 85% 85%, rgba(255, 140, 58, 0.08), transparent 20%),
+    linear-gradient(180deg, #f9fbfd 0%, #f2f7fb 100%);
+  background-size:
+    24px 24px,
+    24px 24px,
+    auto,
+    auto,
+    auto,
+    auto;
 }
 
 body,
@@ -172,7 +183,7 @@ img {
   align-items: center;
   padding: 0.45rem 0.7rem;
   border-radius: 999px;
-  background: rgba(95, 104, 255, 0.08);
+  background: rgba(14, 90, 224, 0.08);
   color: var(--primary-color);
   font-size: var(--font-size-xs);
   font-weight: 600;
@@ -203,8 +214,8 @@ img {
 .app-input:focus,
 .app-textarea:focus,
 .app-select:focus {
-  border-color: rgba(95, 104, 255, 0.48);
-  box-shadow: 0 0 0 4px rgba(95, 104, 255, 0.08);
+  border-color: rgba(14, 90, 224, 0.42);
+  box-shadow: 0 0 0 4px rgba(14, 90, 224, 0.08);
 }
 
 .app-input::placeholder,
@@ -244,7 +255,7 @@ img {
 
 ::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: rgba(112, 124, 164, 0.28);
+  background: rgba(97, 118, 156, 0.28);
   border: 2px solid transparent;
   background-clip: padding-box;
 }

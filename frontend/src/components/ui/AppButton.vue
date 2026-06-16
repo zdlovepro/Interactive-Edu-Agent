@@ -96,11 +96,11 @@ defineEmits(['click'])
 .variant-primary {
   color: #ffffff;
   background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-  box-shadow: 0 14px 30px rgba(98, 103, 255, 0.24);
+  box-shadow: 0 16px 32px rgba(14, 90, 224, 0.22);
 }
 
 .variant-primary:hover:not(.disabled) {
-  box-shadow: 0 18px 34px rgba(98, 103, 255, 0.32);
+  box-shadow: 0 22px 38px rgba(14, 90, 224, 0.28);
 }
 
 .variant-secondary {
@@ -111,7 +111,7 @@ defineEmits(['click'])
 }
 
 .variant-secondary:hover:not(.disabled) {
-  border-color: rgba(117, 127, 255, 0.26);
+  border-color: rgba(14, 90, 224, 0.22);
   box-shadow: var(--shadow-md);
 }
 
@@ -123,7 +123,7 @@ defineEmits(['click'])
 
 .variant-ghost:hover:not(.disabled) {
   color: var(--text-primary);
-  background: rgba(95, 104, 255, 0.08);
+  background: rgba(14, 90, 224, 0.08);
 }
 
 .variant-danger {

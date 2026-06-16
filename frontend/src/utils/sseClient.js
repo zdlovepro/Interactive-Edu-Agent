@@ -53,6 +53,11 @@ export function createSseClient() {
           return
         }
 
+        if (payload.type === 'meta') {
+          handlers.onMeta?.(payload)
+          return
+        }
+
         if (payload.type === 'done') {
           handlers.onDone?.()
           close()

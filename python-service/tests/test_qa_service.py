@@ -13,17 +13,23 @@ from app.services import rag_service
 
 def _build_request(**overrides) -> QaAskTextRequest:
     payload = {
-        "session_id": "sess_qa_1",
-        "courseware_id": "cware_qa_1",
-        "page_index": 3,
+        "sessionId": "sess_qa_1",
+        "coursewareId": "cware_qa_1",
+        "pageIndex": 3,
         "question": "这一页在讲什么",
-        "top_k": 5,
+        "topK": 5,
+        "currentPageTitle": "线性回归",
+        "currentPageContent": "这一页主要介绍线性回归的定义和损失函数。",
+        "currentPageImagePath": "D:/mock/page3.png",
+        "currentPageVisualSummary": "页面包含散点图和拟合直线。",
+        "currentPageKnowledgePoints": ["定义", "损失函数"],
+        "currentPageVisualObjects": ["散点图", "直线"],
     }
     payload.update(overrides)
     return QaAskTextRequest(**payload)
 
 
-def _sample_evidence(page_index: int = 3, text: str = "这一页重点介绍递归的终止条件。") -> list[dict]:
+def _sample_evidence(page_index: int = 3, text: str = "这一页补充了线性回归的训练目标。") -> list[dict]:
     return [
         {
             "chunk_id": f"cware_qa_1_p{page_index:03d}_c000",
@@ -37,15 +43,27 @@ def _sample_evidence(page_index: int = 3, text: str = "这一页重点介绍递�
     ]
 
 
-def _collect_sse_lines(path: str) -> list[str]:
+def _collect_sse_lines(method: str, path: str, json_body: dict | None = None) -> list[str]:
     async def _run() -> list[str]:
         transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-            async with client.stream("GET", path) as response:
+            async with client.stream(method, path, json=json_body) as response:
                 assert response.status_code == 200
                 return [line async for line in response.aiter_lines() if line]
 
     return asyncio.run(_run())
+
+
+def test_answer_question_uses_current_page_context_when_retrieval_is_empty(monkeypatch):
+    monkeypatch.setattr(rag_service, "retrieve_context", lambda **kwargs: [])
+    monkeypatch.setattr(settings, "LLM_API_KEY", "")
+
+    result = rag_service.answer_question(_build_request())
+
+    assert isinstance(result, QaAskTextResponse)
+    assert "线性回归的定义和损失函数" in result.answer
+    assert result.evidence
+    assert result.evidence[0].page_index == 3
 
 
 def test_answer_question_uses_llm_when_evidence_available(monkeypatch):
@@ -54,98 +72,163 @@ def test_answer_question_uses_llm_when_evidence_available(monkeypatch):
 
     class _FakeLLMClient:
         def invoke(self, messages):
-            assert "只能根据课件 evidence 回答问题" in messages[0].content
             assert "课堂提问：这一页在讲什么" in messages[1].content
-            return "这一页主要在讲递归应该在什么时候停下来。"
+            assert "可用证据：" in messages[1].content
+            return "这一页重点在于说明线性回归如何定义误差。"
 
     monkeypatch.setattr(rag_service, "get_llm_client", lambda: _FakeLLMClient())
 
     result = rag_service.answer_question(_build_request())
 
-    assert isinstance(result, QaAskTextResponse)
-    assert result.answer == "这一页主要在讲递归应该在什么时候停下来。"
+    assert result.answer == "这一页重点在于说明线性回归如何定义误差。"
     assert result.evidence[0].page_index == 3
-    assert result.evidence[0].chunk_id == "cware_qa_1_p003_c000"
-    assert result.latency_ms >= 1
 
 
-def test_answer_question_returns_friendly_message_when_no_evidence(monkeypatch):
+def test_answer_question_uses_general_llm_fallback_when_no_rag_evidence(monkeypatch):
     monkeypatch.setattr(rag_service, "retrieve_context", lambda **kwargs: [])
+    monkeypatch.setattr(settings, "LLM_API_KEY", "test-key")
 
-    result = rag_service.answer_question(_build_request())
+    class _FakeLLMClient:
+        def invoke(self, messages):
+            assert "当前没有检索到可直接引用的 RAG 证据" in messages[1].content
+            assert "学生问题：什么是过拟合" in messages[1].content
+            return "下面给出通用解释：过拟合是模型在训练集上表现很好，但在新数据上泛化较差。"
 
-    assert "课件中没有直接覆盖该内容" in result.answer
+    monkeypatch.setattr(rag_service, "get_llm_client", lambda: _FakeLLMClient())
+
+    result = rag_service.answer_question(
+        _build_request(
+            question="什么是过拟合",
+            currentPageTitle="",
+            currentPageContent="",
+            currentPageVisualSummary="",
+            currentPageKnowledgePoints=[],
+            currentPageVisualObjects=[],
+            currentPageImagePath="",
+        )
+    )
+
+    assert "过拟合" in result.answer
     assert result.evidence == []
-    assert result.latency_ms >= 1
 
 
-def test_answer_question_falls_back_to_template_when_api_key_missing(monkeypatch):
+def test_answer_question_filters_weak_focus_matches_and_uses_general_llm(monkeypatch):
+    monkeypatch.setattr(settings, "LLM_API_KEY", "test-key")
+    monkeypatch.setattr(
+        rag_service,
+        "retrieve_context",
+        lambda **kwargs: [
+            {
+                "chunk_id": "cware_qa_1_p013_c000",
+                "page_index": 13,
+                "text": "梯度下降会沿着损失函数的负梯度方向更新参数，向量方向决定更新路径。",
+                "source": "page_13",
+                "score": 2.8,
+                "adjusted_score": 2.95,
+            }
+        ],
+    )
+
+    class _FakeLLMClient:
+        def invoke(self, messages):
+            assert "当前没有检索到可直接引用的 RAG 证据" in messages[1].content
+            assert "学生问题：什么是支持向量机" in messages[1].content
+            return "下面给出通用解释：支持向量机是一类通过最大化分类间隔来进行分类或回归的监督学习模型。"
+
+    monkeypatch.setattr(rag_service, "get_llm_client", lambda: _FakeLLMClient())
+
+    result = rag_service.answer_question(
+        _build_request(
+            question="什么是支持向量机",
+            currentPageTitle="Topics",
+            currentPageContent="本页只列出回归、线性回归、梯度下降等主题。",
+            currentPageKnowledgePoints=["回归", "梯度下降"],
+        )
+    )
+
+    assert "支持向量机" in result.answer
+    assert result.evidence == []
+
+
+def test_answer_question_keeps_matching_focus_evidence(monkeypatch):
     monkeypatch.setattr(settings, "LLM_API_KEY", "")
     monkeypatch.setattr(
         rag_service,
         "retrieve_context",
-        lambda **kwargs: _sample_evidence(page_index=2, text="这一页主要解释链表由节点和指针组成。"),
+        lambda **kwargs: _sample_evidence(page_index=12, text="过拟合指模型过度贴合训练数据，导致泛化能力下降。"),
     )
 
-    result = rag_service.answer_question(_build_request(question="链表是什么"))
-
-    assert "根据课件第 2 页" in result.answer
-    assert "链表由节点和指针组成" in result.answer
-    assert result.evidence[0].page_index == 2
-
-
-def test_answer_question_falls_back_to_template_when_llm_fails(monkeypatch):
-    monkeypatch.setattr(settings, "LLM_API_KEY", "test-key")
-    monkeypatch.setattr(
-        rag_service,
-        "retrieve_context",
-        lambda **kwargs: _sample_evidence(page_index=1, text="这一页强调循环要先明确初始化、条件和迭代更新。"),
+    result = rag_service.answer_question(
+        _build_request(
+            question="什么是过拟合",
+            currentPageTitle="模型评估",
+            currentPageContent="我们会讨论欠拟合和过拟合。",
+        )
     )
 
-    class _BrokenLLMClient:
-        def invoke(self, _messages):
-            raise RuntimeError("llm down")
-
-    monkeypatch.setattr(rag_service, "get_llm_client", lambda: _BrokenLLMClient())
-
-    result = rag_service.answer_question(_build_request(question="循环要注意什么"))
-
-    assert "根据课件第 1 页" in result.answer
-    assert result.evidence[0].chunk_id == "cware_qa_1_p001_c000"
+    assert result.evidence
+    assert result.evidence[0].page_index == 12
+    assert "过拟合" in result.answer
 
 
-def test_stream_answer_events_uses_llm_stream_when_available(monkeypatch):
-    monkeypatch.setattr(settings, "LLM_API_KEY", "test-key")
+def test_answer_question_can_use_page_vision_for_visual_question(monkeypatch):
+    monkeypatch.setattr(rag_service, "retrieve_context", lambda **kwargs: [])
+    monkeypatch.setattr(settings, "LLM_API_KEY", "")
+
+    class _FakeVisionClient:
+        def answer_page_question(self, **kwargs):
+            assert kwargs["page_index"] == 3
+            assert "图" in kwargs["question"]
+            return "图里展示的是散点分布以及一条拟合直线。"
+
+    monkeypatch.setattr(rag_service, "get_vision_client", lambda: _FakeVisionClient())
+
+    result = rag_service.answer_question(_build_request(question="这张图在表达什么"))
+
+    assert "散点分布" in result.answer
+    assert any("拟合直线" in item.text for item in result.evidence)
+
+
+def test_stream_answer_events_emit_meta_before_delta(monkeypatch):
+    monkeypatch.setattr(settings, "LLM_API_KEY", "")
     monkeypatch.setattr(rag_service, "retrieve_context", lambda **kwargs: _sample_evidence())
-
-    class _FakeLLMClient:
-        def stream(self, messages):
-            assert "课堂提问：这一页在讲什么" in messages[1].content
-            yield "这一页"
-            yield "适合流式"
-            yield "回答。"
-
-    monkeypatch.setattr(rag_service, "get_llm_client", lambda: _FakeLLMClient())
 
     events = list(rag_service.stream_answer_events(_build_request()))
 
-    assert [event["type"] for event in events] == ["delta", "delta", "delta"]
-    assert "".join(event["content"] for event in events) == "这一页适合流式回答。"
+    assert events[0]["type"] == "meta"
+    assert events[0]["contextPageIndex"] == 3
+    assert events[0]["evidence"]
+    assert any(event["type"] == "delta" for event in events[1:])
 
 
-def test_stream_answer_events_fall_back_to_simulated_chunks_without_api_key(monkeypatch):
-    monkeypatch.setattr(settings, "LLM_API_KEY", "")
-    monkeypatch.setattr(
-        rag_service,
-        "retrieve_context",
-        lambda **kwargs: _sample_evidence(page_index=4, text="这一页说明二叉树遍历需要区分前序、中序和后序。"),
+def test_stream_answer_events_use_general_llm_fallback_when_no_evidence(monkeypatch):
+    monkeypatch.setattr(rag_service, "retrieve_context", lambda **kwargs: [])
+    monkeypatch.setattr(settings, "LLM_API_KEY", "test-key")
+
+    class _FakeLLMClient:
+        def invoke(self, messages):
+            assert "当前没有检索到可直接引用的 RAG 证据" in messages[1].content
+            return "下面给出通用解释：欠拟合通常意味着模型表达能力不足或训练不充分。"
+
+    monkeypatch.setattr(rag_service, "get_llm_client", lambda: _FakeLLMClient())
+
+    events = list(
+        rag_service.stream_answer_events(
+            _build_request(
+                question="什么是欠拟合",
+                currentPageTitle="",
+                currentPageContent="",
+                currentPageVisualSummary="",
+                currentPageKnowledgePoints=[],
+                currentPageVisualObjects=[],
+                currentPageImagePath="",
+            )
+        )
     )
 
-    events = list(rag_service.stream_answer_events(_build_request(page_index=4, question="这页重点是什么")))
-
-    assert events
-    assert all(event["type"] == "delta" for event in events)
-    assert "根据课件第 4 页" in "".join(event["content"] for event in events)
+    assert events[0]["type"] == "meta"
+    assert events[0]["evidence"] == []
+    assert "".join(event["content"] for event in events[1:] if event["type"] == "delta").startswith("下面给出通用解释")
 
 
 def test_qa_request_accepts_camel_case_fields(request_app, monkeypatch):
@@ -155,9 +238,9 @@ def test_qa_request_accepts_camel_case_fields(request_app, monkeypatch):
         captured["session_id"] = request.session_id
         captured["courseware_id"] = request.courseware_id
         captured["page_index"] = request.page_index
-        captured["top_k"] = request.top_k
+        captured["current_page_title"] = request.current_page_title
         return QaAskTextResponse(
-            answer="根据课件第 3 页，这是一个关于递归终止条件的问题。",
+            answer="这是一个关于线性回归的页面。",
             evidence=[],
             latency_ms=12,
         )
@@ -167,13 +250,7 @@ def test_qa_request_accepts_camel_case_fields(request_app, monkeypatch):
     response = request_app(
         "POST",
         "/python/v1/qa/ask-text",
-        json={
-            "sessionId": "sess_api_1",
-            "coursewareId": "cware_api_1",
-            "pageIndex": 3,
-            "question": "这一页讲什么",
-            "topK": 4,
-        },
+        json=_build_request().model_dump(by_alias=True),
     )
 
     payload = response.json()
@@ -181,36 +258,52 @@ def test_qa_request_accepts_camel_case_fields(request_app, monkeypatch):
     assert response.status_code == 200
     assert payload["code"] == 0
     assert payload["message"] == "success"
-    assert payload["data"]["answer"]
     assert payload["data"]["latencyMs"] == 12
     assert captured == {
-        "session_id": "sess_api_1",
-        "courseware_id": "cware_api_1",
+        "session_id": "sess_qa_1",
+        "courseware_id": "cware_qa_1",
         "page_index": 3,
-        "top_k": 4,
+        "current_page_title": "线性回归",
     }
 
 
-def test_qa_stream_endpoint_returns_delta_and_done(monkeypatch):
+def test_qa_stream_get_endpoint_returns_meta_and_done(monkeypatch):
     monkeypatch.setattr(
         qa_api,
         "stream_answer_events",
-        lambda request: iter([{"type": "delta", "content": f"answer:{request.courseware_id}"}]),
+        lambda request: iter(
+            [
+                {"type": "meta", "contextPageIndex": request.page_index, "evidence": []},
+                {"type": "delta", "content": f"answer:{request.courseware_id}"},
+            ]
+        ),
     )
 
-    lines = _collect_sse_lines("/python/v1/qa/stream?coursewareId=cware_stream_1&question=流式输出")
+    lines = _collect_sse_lines("GET", "/python/v1/qa/stream?coursewareId=cware_stream_1&question=流式输出&pageIndex=4")
 
-    assert lines[0] == 'data: {"type": "delta", "content": "answer:cware_stream_1"}'
+    assert lines[0] == 'data: {"type": "meta", "contextPageIndex": 4, "evidence": []}'
+    assert any('"type": "delta"' in line for line in lines)
     assert lines[-1] == 'data: {"type": "done"}'
 
 
-def test_qa_stream_endpoint_returns_error_and_done_when_rag_service_fails(monkeypatch):
-    def broken_stream(_request):
-        raise RuntimeError("boom")
+def test_qa_stream_post_endpoint_accepts_json_body(monkeypatch):
+    monkeypatch.setattr(
+        qa_api,
+        "stream_answer_events",
+        lambda request: iter(
+            [
+                {"type": "meta", "contextPageIndex": request.page_index, "evidence": []},
+                {"type": "delta", "content": "post-stream"},
+            ]
+        ),
+    )
 
-    monkeypatch.setattr(qa_api, "stream_answer_events", broken_stream)
+    lines = _collect_sse_lines(
+        "POST",
+        "/python/v1/qa/stream",
+        json_body=_build_request(pageIndex=5).model_dump(by_alias=True),
+    )
 
-    lines = _collect_sse_lines("/python/v1/qa/stream?coursewareId=cware_stream_2&question=异常场景")
-
-    assert any('"type": "error"' in line for line in lines)
+    assert lines[0] == 'data: {"type": "meta", "contextPageIndex": 5, "evidence": []}'
+    assert any("post-stream" in line for line in lines)
     assert lines[-1] == 'data: {"type": "done"}'

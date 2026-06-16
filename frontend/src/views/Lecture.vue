@@ -7,9 +7,6 @@
             <div>
               <span class="eyebrow">AI 互动课堂</span>
               <h1>{{ currentSlide?.title || '正在准备课堂内容' }}</h1>
-              <p class="lecture-subtitle">
-                当前页 {{ currentPage }} / {{ totalPages }} · {{ playbackModeLabel }}
-              </p>
             </div>
 
             <div class="lecture-topbar__meta">
@@ -19,98 +16,19 @@
           </div>
 
           <DualTrackVideoStage
-            :lecture-status="lectureStatus"
-            :current-page="currentPage"
-            :title="currentSlide?.title"
+            class="lecture-video-stage"
             :video-src="lectureVideoUrl"
             :video-status="videoRenderTask?.status"
             :video-status-text="videoRenderStatusText"
+            @timeupdate="handleVideoTimeUpdate"
+            @play="handleVideoPlay"
+            @pause="handleVideoPause"
           />
-
-          <AppCard class="lecture-script-card" tone="glass">
-            <template v-if="currentSlide">
-              <div class="script-card__header">
-                <div class="script-card__label-group">
-                  <span class="pill">课堂讲稿</span>
-                  <span class="audio-tag" :class="{ ready: useAudioPlayback }">
-                    {{ useAudioPlayback ? '优先使用后端音频资源' : '当前页使用文本朗读兜底' }}
-                  </span>
-                </div>
-                <div class="page-progress">
-                  <span>{{ progressPercent }}%</span>
-                </div>
-              </div>
-
-              <div class="script-card__content">
-                <p>{{ currentSlide.content }}</p>
-              </div>
-
-              <div v-if="currentSlide.knowledgePoints?.length" class="knowledge-list">
-                <span v-for="point in currentSlide.knowledgePoints" :key="point" class="knowledge-tag">
-                  {{ point }}
-                </span>
-              </div>
-            </template>
-
-            <EmptyState
-              v-else
-              title="讲稿暂未加载完成"
-              description="请稍候或先检查课件是否已经生成讲稿。"
-            />
-          </AppCard>
 
           <AppCard class="lecture-control-card" tone="subtle">
             <div class="control-grid">
-              <div class="control-group">
-                <span class="control-label">页码切换</span>
-                <div class="control-row">
-                  <AppButton variant="secondary" @click="previousSlide" :disabled="currentPage <= 1">
-                    上一页
-                  </AppButton>
-                  <AppButton
-                    variant="secondary"
-                    @click="nextSlide"
-                    :disabled="currentPage >= totalPages"
-                  >
-                    下一页
-                  </AppButton>
-                </div>
-              </div>
-
-              <div class="control-group">
-                <span class="control-label">讲解控制</span>
-                <div class="control-row">
-                  <AppButton @click="togglePlayback" :disabled="!currentSlide">
-                    {{ isSpeaking ? '停止朗读' : '开始朗读' }}
-                  </AppButton>
-                  <AppButton
-                    v-if="lectureStatus === LECTURE_STATE.PLAYING"
-                    variant="secondary"
-                    :disabled="lectureStore.isLoading || !lectureStore.sessionId"
-                    @click="handlePauseLecture"
-                  >
-                    暂停课堂
-                  </AppButton>
-                  <AppButton
-                    v-else-if="
-                      lectureStatus === LECTURE_STATE.INTERRUPTED ||
-                      lectureStatus === LECTURE_STATE.ANSWERING
-                    "
-                    variant="secondary"
-                    :disabled="
-                      lectureStore.isLoading || !lectureStore.sessionId || lectureStore.isStreamingAnswer
-                    "
-                    @click="handleResumeLecture"
-                  >
-                    继续课堂
-                  </AppButton>
-                  <AppButton v-else variant="secondary" :disabled="true">
-                    {{ statusMeta.text }}
-                  </AppButton>
-                </div>
-              </div>
               <div class="control-group control-group--voice">
-                <span class="control-label">语音打断</span>
+                <span class="control-label">语音打断视频</span>
                 <div class="control-row">
                   <AppButton
                     v-if="!voiceInterruptEnabled"
@@ -140,45 +58,20 @@
                 </div>
               </div>
             </div>
-
-            <div class="timeline">
-              <div class="audio-progress-header">
-                <div>
-                  <span class="control-label">播放进度</span>
-                  <strong>{{ playbackModeLabel }}</strong>
-                </div>
-                <div class="audio-time">
-                  <span>{{ formattedCurrentTime }}</span>
-                  <span>/</span>
-                  <span>{{ formattedDuration }}</span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                class="audio-progress-track"
-                :class="{ disabled: !canSeek }"
-                :disabled="!canSeek"
-                @click="handleSeek"
-              >
-                <span class="audio-progress-fill" :style="{ width: `${audioProgressPercent}%` }"></span>
-              </button>
-
-              <div class="timeline-meta">
-                <span>当前页进度 {{ currentPage }} / {{ totalPages || 0 }}</span>
-                <span>{{ isContinuousPlayback ? '连续播放中' : '单页预览' }}</span>
-                <span v-if="breakpointHint">{{ breakpointHint }}</span>
-                <span v-if="lectureStatus === LECTURE_STATE.ENDED">课程已结束</span>
-              </div>
-            </div>
           </AppCard>
+
+          <LectureQuickQuiz
+            v-if="slides.length"
+            class="lecture-quiz-card"
+            :slides="slides"
+          />
         </div>
 
         <AppCard class="lecture-chat-panel" tone="glass">
           <div class="chat-header">
             <div>
               <span class="eyebrow">AI 助教问答</span>
-              <h2>你可以针对当前课件内容提问</h2>
+              <h2>你可以针对整份课件内容提问</h2>
             </div>
             <span class="chat-header__status">{{ qaStatusText }}</span>
           </div>
@@ -186,7 +79,7 @@
           <div class="chat-history" ref="qaHistoryRef">
             <div v-if="qaList.length === 0" class="chat-empty">
               <h3>暂无问答记录，试着问一个问题吧。</h3>
-              <p>系统会优先结合当前页与相邻页内容进行回答，并展示参考 evidence。</p>
+              <p>系统会检索整份课件，并适度参考当前播放页位置，回答时同时展示参考 evidence。</p>
             </div>
 
             <div v-for="qa in qaList" :key="qa.id" class="chat-turn">
@@ -231,7 +124,7 @@
               class="app-input"
               type="text"
               :disabled="isAsking"
-              placeholder="输入你的问题，按 Enter 发送"
+              placeholder="输入你关于整份课件的问题，按 Enter 发送"
               @keyup.enter="submitQuestion"
             />
             <AppButton v-if="isStreamingAnswer" variant="secondary" @click="stopStreamingAnswer">
@@ -259,7 +152,7 @@ import { marked } from 'marked'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import DualTrackVideoStage from '@/components/lecture/DualTrackVideoStage.vue'
-import EmptyState from '@/components/ui/EmptyState.vue'
+import LectureQuickQuiz from '@/components/lecture/LectureQuickQuiz.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { recognizeAudio } from '@/api/asr'
 import { getCoursewareScript, getCoursewareVideoRenderTask } from '@/api/courseware'
@@ -294,11 +187,14 @@ const isSpeechPaused = ref(false)
 const isContinuousPlayback = ref(false)
 const canUseVoiceInterrupt = ref(false)
 const voiceInterruptState = ref('off')
-const voiceInterruptHint = ref('开启后会在检测到学生说话后自动打断课堂')
+const voiceInterruptHint = ref('开启后会在检测到学生说话后自动打断当前视频播放')
 const voiceVolume = ref(0)
 const recordedAudioBlob = ref(null)
 const isVadListening = ref(false)
 const videoRenderTask = ref(null)
+const videoCurrentTime = ref(0)
+const videoDuration = ref(0)
+const videoPaused = ref(true)
 
 const VOICE_INTERRUPT_STATE = {
   OFF: 'off',
@@ -337,49 +233,41 @@ const statusTone = computed(() => {
 })
 const playbackMode = computed(() => lectureStore.audioMode)
 const currentPage = computed(() => lectureStore.currentPage)
-const totalPages = computed(() => slides.value.length)
 const currentSlide = computed(() => slides.value[currentPage.value - 1] || null)
 const voiceInterruptEnabled = computed(() => lectureStore.vadEnabled)
 const isVoiceRecording = computed(() => lectureStore.isRecording)
 const isStreamingAnswer = computed(() => lectureStore.isStreamingAnswer)
 const wsConnected = computed(() => lectureStore.wsConnected)
-const progressPercent = computed(() => {
-  if (!totalPages.value) {
-    return 0
-  }
-  return Math.round((currentPage.value / totalPages.value) * 100)
-})
 const errorMsg = computed(() => lectureStore.errorMessage)
 const useAudioPlayback = computed(
   () => Boolean(currentSlide.value?.audioUrl) && !failedAudioUrls.has(currentSlide.value.audioUrl),
 )
-const playbackModeLabel = computed(() => (playbackMode.value === 'audio' ? '音频播放' : '文本朗读'))
-const audioProgressPercent = computed(() => {
-  if (!audioDuration.value || playbackMode.value !== 'audio') {
-    return 0
+const videoTimeline = computed(() => {
+  if (!Array.isArray(videoRenderTask.value?.timeline)) {
+    return []
   }
 
-  return Math.min(100, Math.max(0, (audioCurrentTime.value / audioDuration.value) * 100))
+  return videoRenderTask.value.timeline
+    .map(item => ({
+      pageIndex: Number(item?.pageIndex) || 0,
+      startMs: Number(item?.startMs) || 0,
+      endMs: Number(item?.endMs) || 0,
+      title: item?.title || '',
+    }))
+    .filter(item => item.pageIndex > 0 && item.endMs >= item.startMs)
+    .sort((left, right) => left.startMs - right.startMs)
 })
-const canSeek = computed(() => playbackMode.value === 'audio' && audioDuration.value > 0)
-const formattedCurrentTime = computed(() => formatDuration(audioCurrentTime.value))
-const formattedDuration = computed(() => {
-  if (playbackMode.value !== 'audio' || !audioDuration.value) {
-    return '--:--'
-  }
-  return formatDuration(audioDuration.value)
+const videoContextPageIndex = computed(() => resolveVideoContextPageIndex(videoCurrentTime.value))
+const qaContextPageIndex = computed(() => {
+  const shouldUseVideoContext =
+    videoTimeline.value.length > 0 && (videoCurrentTime.value > 0 || videoDuration.value > 0 && !videoPaused.value)
+  return shouldUseVideoContext ? videoContextPageIndex.value || currentPage.value : currentPage.value
 })
-const breakpointHint = computed(() => {
-  if (!lectureStore.breakpointPage) {
-    return ''
-  }
-
-  const breakpointLabel = formatDuration(lectureStore.breakpointTime)
-  return lectureStatus.value === LECTURE_STATE.RESUMING
-    ? `从 ${breakpointLabel} 继续讲解`
-    : `已保存断点 ${breakpointLabel}`
-})
-const qaStatusText = computed(() => (isStreamingAnswer.value ? '生成中' : '等待提问'))
+const qaStatusText = computed(() =>
+  isStreamingAnswer.value
+    ? `生成中 · 全课件检索 · 当前定位第 ${qaContextPageIndex.value} 页`
+    : `全课件上下文 · 当前定位第 ${qaContextPageIndex.value} 页`,
+)
 const lectureVideoUrl = computed(() => {
   if (String(videoRenderTask.value?.status || '').toUpperCase() !== 'READY') {
     return ''
@@ -436,18 +324,6 @@ const voiceVolumeScale = computed(() => {
   return Math.min(1, Math.max(0.06, voiceVolume.value * 14))
 })
 
-const formatDuration = seconds => {
-  const value = Number(seconds)
-  if (!Number.isFinite(value) || value < 0) {
-    return '00:00'
-  }
-
-  const totalSeconds = Math.floor(value)
-  const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0')
-  const remainSeconds = String(totalSeconds % 60).padStart(2, '0')
-  return `${minutes}:${remainSeconds}`
-}
-
 const buildApiUrl = path => {
   if (!path) {
     return API_BASE_URL
@@ -463,6 +339,50 @@ const buildApiUrl = path => {
     return normalizedPath
   }
   return `${normalizedBase}${normalizedPath}`
+}
+
+const resolveVideoContextPageIndex = currentTimeSeconds => {
+  if (!videoTimeline.value.length) {
+    return null
+  }
+
+  const currentMs = Math.max(0, Math.floor((Number(currentTimeSeconds) || 0) * 1000))
+  const matched = videoTimeline.value.find(item => currentMs >= item.startMs && currentMs < item.endMs)
+  if (matched) {
+    return matched.pageIndex
+  }
+
+  if (currentMs <= videoTimeline.value[0].startMs) {
+    return videoTimeline.value[0].pageIndex
+  }
+
+  return videoTimeline.value[videoTimeline.value.length - 1].pageIndex
+}
+
+const getQuestionContextPageIndex = () => qaContextPageIndex.value
+
+const updateVideoPlaybackState = payload => {
+  if (!payload || typeof payload !== 'object') {
+    return
+  }
+
+  videoCurrentTime.value = Number(payload.currentTime) || 0
+  videoDuration.value = Number(payload.duration) || 0
+  videoPaused.value = payload.paused !== false
+}
+
+const handleVideoTimeUpdate = payload => {
+  updateVideoPlaybackState(payload)
+}
+
+const handleVideoPlay = payload => {
+  updateVideoPlaybackState(payload)
+  videoPaused.value = false
+}
+
+const handleVideoPause = payload => {
+  updateVideoPlaybackState(payload)
+  videoPaused.value = true
 }
 
 const clampBreakpointTime = (seconds, duration = 0) => {
@@ -856,14 +776,15 @@ const handleSpeechStart = async () => {
   stopVadMonitoring()
   const breakpointTime =
     playbackMode.value === 'audio' ? audioPlayer.getCurrentTime() : audioCurrentTime.value
+  const contextPageIndex = getQuestionContextPageIndex()
   pauseCurrentPlayback()
-  lectureStore.pauseForInterrupt(breakpointTime, currentPage.value)
+  lectureStore.pauseForInterrupt(breakpointTime, contextPageIndex)
 
   try {
     await recorder.startRecording()
     lectureStore.setRecording(true)
     sendLectureSignal('interrupt', {
-      pageIndex: currentPage.value,
+      pageIndex: contextPageIndex,
       currentTime: breakpointTime,
     })
     updateVoiceInterruptState(
@@ -910,7 +831,7 @@ const resumeCurrentPlayback = async () => {
       lectureStore.setStatus(LECTURE_STATE.PLAYING)
       return true
     } catch (error) {
-      showError(error, '浏览器阻止了自动播放，请点击“开始朗读”继续。')
+      showError(error, '浏览器阻止了自动播放，请手动恢复视频播放。')
       return false
     }
   }
@@ -980,13 +901,13 @@ const restorePlaybackFromBreakpoint = async ({ pageIndex, breakpointTime } = {})
     return true
   } catch (error) {
     if (error?.name === 'NotAllowedError') {
-      showError(error, '浏览器阻止了自动播放，请点击“开始朗读”继续。')
+      showError(error, '浏览器阻止了自动播放，请手动恢复视频播放。')
       haltPlayback()
       return false
     }
 
     failedAudioUrls.add(slide.audioUrl)
-    showError('音频加载失败，已切换文本朗读', '音频加载失败，已切换文本朗读')
+    showError('音频资源加载失败，已切换备用讲解链路。', '音频资源加载失败，已切换备用讲解链路。')
     lectureStore.setAudioMode('speech')
     lectureStore.setStatus(LECTURE_STATE.PLAYING)
     return true
@@ -1080,13 +1001,13 @@ const playCurrentSlideByPageIndex = async pageIndex => {
     return true
   } catch (error) {
     if (error?.name === 'NotAllowedError') {
-      showError(error, '浏览器阻止了自动播放，请点击“开始朗读”继续。')
+      showError(error, '浏览器阻止了自动播放，请手动恢复视频播放。')
       haltPlayback()
       return false
     }
 
     failedAudioUrls.add(slide.audioUrl)
-    showError('音频加载失败，已切换文本朗读', '音频加载失败，已切换文本朗读')
+    showError('音频资源加载失败，已切换备用讲解链路。', '音频资源加载失败，已切换备用讲解链路。')
     fallbackToSpeech(slide.content)
     return true
   }
@@ -1256,59 +1177,6 @@ const handleResumeLecture = async () => {
   }
 }
 
-const previousSlide = async () => {
-  if (currentPage.value <= 1) {
-    return
-  }
-
-  const autoPlay = Boolean(playbackEngine?.isContinuousPlayback())
-  await playbackEngine?.previousPage(autoPlay)
-  if (!autoPlay) {
-    stopVadMonitoring()
-    if (voiceInterruptEnabled.value) {
-      updateVoiceInterruptState(VOICE_INTERRUPT_STATE.OFF, '已切换页面，开始播放后会继续倾听')
-    }
-    lectureStore.setStatus(LECTURE_STATE.IDLE)
-  } else if (voiceInterruptEnabled.value) {
-    await beginVoiceInterruptMonitoring()
-  }
-}
-
-const nextSlide = async () => {
-  if (currentPage.value >= totalPages.value) {
-    stopVadMonitoring()
-    if (voiceInterruptEnabled.value) {
-      updateVoiceInterruptState(VOICE_INTERRUPT_STATE.OFF, '课程已结束')
-    }
-    playbackEngine?.finishLecture()
-    return
-  }
-
-  const autoPlay = Boolean(playbackEngine?.isContinuousPlayback())
-  await playbackEngine?.nextPage(autoPlay)
-  if (!autoPlay) {
-    stopVadMonitoring()
-    if (voiceInterruptEnabled.value) {
-      updateVoiceInterruptState(VOICE_INTERRUPT_STATE.OFF, '已切换页面，开始播放后会继续倾听')
-    }
-    lectureStore.setStatus(LECTURE_STATE.IDLE)
-  } else if (voiceInterruptEnabled.value) {
-    await beginVoiceInterruptMonitoring()
-  }
-}
-
-const handleSeek = event => {
-  if (!canSeek.value) {
-    return
-  }
-
-  const rect = event.currentTarget.getBoundingClientRect()
-  const ratio = Math.min(Math.max((event.clientX - rect.left) / rect.width, 0), 1)
-  const targetTime = audioDuration.value * ratio
-  audioPlayer.seek(targetTime)
-  audioCurrentTime.value = audioPlayer.getCurrentTime()
-}
-
 const restoreLectureStatusAfterAnswer = () => {
   if (lectureStore.breakpointPage) {
     lectureStore.setStatus(LECTURE_STATE.INTERRUPTED)
@@ -1341,10 +1209,11 @@ const processRecordedQuestion = async blob => {
 
   try {
     updateVoiceInterruptState(VOICE_INTERRUPT_STATE.COMPLETED, '录音完成，正在识别')
+    const contextPageIndex = getQuestionContextPageIndex()
     const response = await recognizeAudio({
       file: createRecordedAudioFile(blob),
       sessionId: lectureStore.sessionId,
-      pageIndex: currentPage.value,
+      pageIndex: contextPageIndex,
     })
     const recognizedText = String(response.data?.text || '').trim()
     lectureStore.setLastRecognizedText(recognizedText)
@@ -1387,9 +1256,11 @@ const finalizeQuestionFlow = async ({ qaItem, autoResume = false } = {}) => {
 }
 
 const fallbackAskQuestion = async ({ normalizedQuestion, qaItem, autoResume = false } = {}) => {
+  const contextPageIndex = getQuestionContextPageIndex()
   const response = await askText({
     sessionId: lectureStore.sessionId,
     question: normalizedQuestion,
+    pageIndex: contextPageIndex,
   })
   qaItem.answer = response.data?.answer || '当前没有获取到有效回答。'
   qaItem.evidence = Array.isArray(response.data?.evidence) ? response.data.evidence : []
@@ -1408,6 +1279,8 @@ const submitQuestion = async ({ inputQuestion = question.value.trim(), autoResum
   if (!normalizedQuestion || isAsking.value || !lectureStore.sessionId) {
     return
   }
+
+  const contextPageIndex = getQuestionContextPageIndex()
 
   isAsking.value = true
   lectureStore.enterAnswering(normalizedQuestion)
@@ -1453,9 +1326,17 @@ const submitQuestion = async ({ inputQuestion = question.value.trim(), autoResum
       {
         sessionId: lectureStore.sessionId,
         question: normalizedQuestion,
-        pageIndex: currentPage.value,
+        pageIndex: contextPageIndex,
       },
       {
+        onMeta: payload => {
+          if (hasSettled) {
+            return
+          }
+
+          qaItem.evidence = Array.isArray(payload?.evidence) ? payload.evidence : []
+          scrollQAToBottom()
+        },
         onDelta: content => {
           if (hasSettled || !content) {
             return
@@ -1549,7 +1430,7 @@ onMounted(async () => {
         if (currentSlide.value.audioUrl) {
           failedAudioUrls.add(currentSlide.value.audioUrl)
         }
-        showError('音频加载失败，已切换文本朗读', '音频加载失败，已切换文本朗读')
+        showError('音频资源加载失败，已切换备用讲解链路。', '音频资源加载失败，已切换备用讲解链路。')
         fallbackToSpeech(currentSlide.value.content)
         return
       }
@@ -1583,10 +1464,26 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.lecture-page {
+  position: relative;
+  padding-bottom: 2rem;
+}
+
+.lecture-page::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 24rem;
+  background:
+    radial-gradient(circle at 10% 10%, rgba(14, 90, 224, 0.12), transparent 32%),
+    radial-gradient(circle at 88% 0%, rgba(24, 126, 168, 0.14), transparent 28%);
+  pointer-events: none;
+}
+
 .lecture-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.95fr);
-  gap: 1.25rem;
+  grid-template-columns: minmax(0, 1.72fr) minmax(340px, 0.78fr);
+  gap: 1.5rem;
   align-items: start;
 }
 
@@ -1598,7 +1495,7 @@ onUnmounted(() => {
 .lecture-main {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.1rem;
 }
 
 .lecture-topbar {
@@ -1606,12 +1503,13 @@ onUnmounted(() => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1.5rem 1.6rem;
+  padding: 1.65rem 1.75rem;
   border-radius: calc(var(--radius-xl) + 0.15rem);
   background:
-    radial-gradient(circle at top left, rgba(123, 110, 255, 0.18), transparent 34%),
+    radial-gradient(circle at top left, rgba(14, 90, 224, 0.16), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(24, 126, 168, 0.12), transparent 30%),
     rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(126, 136, 184, 0.14);
+  border: 1px solid rgba(104, 130, 171, 0.14);
   box-shadow: var(--shadow-md);
 }
 
@@ -1620,12 +1518,6 @@ onUnmounted(() => {
   font-size: clamp(1.8rem, 3vw, 2.5rem);
   line-height: 1.08;
   letter-spacing: -0.03em;
-}
-
-.lecture-subtitle {
-  margin: 0.9rem 0 0;
-  color: var(--text-secondary);
-  line-height: 1.7;
 }
 
 .lecture-topbar__meta {
@@ -1642,90 +1534,33 @@ onUnmounted(() => {
   min-height: 1.95rem;
   padding: 0.35rem 0.7rem;
   border-radius: 999px;
-  background: rgba(95, 104, 255, 0.08);
+  background: rgba(14, 90, 224, 0.08);
   color: var(--primary-color);
   font-size: var(--font-size-xs);
   font-weight: 700;
 }
 
-.lecture-script-card {
-  min-height: 26rem;
-}
-
-.script-card__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.script-card__label-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
-
-.audio-tag {
-  display: inline-flex;
-  align-items: center;
-  min-height: 2rem;
-  padding: 0.35rem 0.75rem;
-  border-radius: 999px;
-  background: rgba(103, 118, 139, 0.12);
-  color: var(--text-secondary);
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-}
-
-.audio-tag.ready {
-  background: rgba(31, 157, 103, 0.12);
-  color: var(--success-color);
-}
-
-.page-progress {
-  min-width: 4.75rem;
-  text-align: right;
-  color: var(--text-tertiary);
-  font-size: var(--font-size-sm);
-  font-weight: 700;
-}
-
-.script-card__content p {
-  margin: 1rem 0 0;
-  color: var(--text-secondary);
-  line-height: 2;
-  white-space: pre-wrap;
-  font-size: 1.02rem;
-}
-
-.knowledge-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-  margin-top: 1.25rem;
-}
-
-.knowledge-tag {
-  display: inline-flex;
-  align-items: center;
-  min-height: 2rem;
-  padding: 0.35rem 0.8rem;
-  border-radius: 999px;
-  background: rgba(95, 104, 255, 0.08);
-  color: var(--primary-color);
-  font-size: var(--font-size-xs);
-  font-weight: 600;
+.lecture-video-stage {
+  min-width: 0;
 }
 
 .lecture-control-card {
   display: flex;
   flex-direction: column;
   gap: 1.2rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(244, 249, 255, 0.92)),
+    radial-gradient(circle at top right, rgba(255, 140, 58, 0.08), transparent 28%);
+}
+
+.lecture-quiz-card {
+  position: relative;
+  overflow: hidden;
 }
 
 .control-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
 }
 
@@ -1816,69 +1651,18 @@ onUnmounted(() => {
   background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
 }
 
-.timeline {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.audio-progress-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.audio-progress-header strong {
-  display: block;
-  margin-top: 0.35rem;
-  color: var(--text-primary);
-  font-size: 1rem;
-}
-
-.audio-time {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-}
-
-.audio-progress-track {
-  position: relative;
-  width: 100%;
-  height: 0.7rem;
-  border-radius: 999px;
-  overflow: hidden;
-  background: rgba(126, 136, 166, 0.14);
-  cursor: pointer;
-}
-
-.audio-progress-track.disabled {
-  cursor: default;
-}
-
-.audio-progress-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
-}
-
-.timeline-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-}
-
 .lecture-chat-panel {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  position: sticky;
+  top: 6.25rem;
+  min-height: calc(100vh - 7.5rem);
+  max-height: calc(100vh - 7.5rem);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(247, 250, 255, 0.8)),
+    radial-gradient(circle at top right, rgba(14, 90, 224, 0.08), transparent 26%);
+  backdrop-filter: blur(16px);
 }
 
 .chat-header {
@@ -1902,9 +1686,10 @@ onUnmounted(() => {
 .chat-history {
   flex: 1;
   min-height: 18rem;
-  max-height: 38rem;
+  max-height: none;
   overflow-y: auto;
   padding-right: 0.35rem;
+  padding-bottom: 0.35rem;
 }
 
 .chat-empty {
@@ -1934,7 +1719,7 @@ onUnmounted(() => {
 
 .bubble {
   max-width: 100%;
-  padding: 1rem 1.05rem;
+  padding: 1rem 1.1rem;
   border-radius: 1.2rem;
   box-shadow: var(--shadow-sm);
 }
@@ -1943,7 +1728,7 @@ onUnmounted(() => {
   align-self: flex-end;
   max-width: 84%;
   border-top-right-radius: 0.5rem;
-  background: linear-gradient(135deg, rgba(95, 104, 255, 0.96), rgba(141, 91, 255, 0.92));
+  background: linear-gradient(135deg, rgba(14, 90, 224, 0.96), rgba(24, 126, 168, 0.92));
   color: #ffffff;
 }
 
@@ -1951,8 +1736,10 @@ onUnmounted(() => {
   align-self: flex-start;
   max-width: 92%;
   border-top-left-radius: 0.5rem;
-  background: rgba(248, 250, 255, 0.94);
-  border: 1px solid rgba(129, 140, 183, 0.12);
+  background:
+    linear-gradient(180deg, rgba(250, 252, 255, 0.96), rgba(244, 249, 255, 0.94)),
+    radial-gradient(circle at top right, rgba(24, 126, 168, 0.06), transparent 30%);
+  border: 1px solid rgba(104, 130, 171, 0.12);
 }
 
 .bubble-role {
@@ -2052,6 +1839,11 @@ onUnmounted(() => {
   display: flex;
   gap: 0.75rem;
   align-items: center;
+  padding: 0.85rem;
+  border-radius: calc(var(--radius-lg) - 0.1rem);
+  background: rgba(246, 249, 255, 0.94);
+  border: 1px solid rgba(104, 130, 171, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
 }
 
 .chat-composer > .app-input {
@@ -2104,6 +1896,8 @@ onUnmounted(() => {
 
   .lecture-chat-panel {
     min-height: auto;
+    max-height: none;
+    position: static;
   }
 }
 
@@ -2121,8 +1915,6 @@ onUnmounted(() => {
     grid-template-columns: 1fr;
   }
 
-  .audio-progress-header,
-  .timeline-meta,
   .chat-composer {
     flex-direction: column;
     align-items: stretch;

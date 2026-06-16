@@ -92,7 +92,7 @@ function isNavActive(item) {
   position: absolute;
   inset: auto 0 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(93, 104, 255, 0.2), transparent);
+  background: linear-gradient(90deg, transparent, rgba(14, 90, 224, 0.2), transparent);
 }
 
 .header-inner {
@@ -114,9 +114,9 @@ function isNavActive(item) {
   height: 2.5rem;
   border-radius: 0.95rem;
   background:
-    linear-gradient(135deg, rgba(95, 104, 255, 1), rgba(141, 91, 255, 0.92)),
+    linear-gradient(135deg, rgba(14, 90, 224, 1), rgba(24, 126, 168, 0.92)),
     #ffffff;
-  box-shadow: 0 14px 28px rgba(93, 104, 255, 0.26);
+  box-shadow: 0 16px 30px rgba(14, 90, 224, 0.24);
 }
 
 .brand strong {
@@ -159,13 +159,13 @@ function isNavActive(item) {
 
 .nav-link:hover {
   color: var(--text-primary);
-  background: rgba(95, 104, 255, 0.07);
+  background: rgba(14, 90, 224, 0.07);
 }
 
 .nav-link.active {
   color: var(--primary-color);
-  background: rgba(95, 104, 255, 0.11);
-  box-shadow: inset 0 0 0 1px rgba(95, 104, 255, 0.12);
+  background: rgba(14, 90, 224, 0.11);
+  box-shadow: inset 0 0 0 1px rgba(14, 90, 224, 0.12);
 }
 
 .app-main {

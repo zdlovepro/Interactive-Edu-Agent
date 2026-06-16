@@ -1,13 +1,24 @@
 package com.interactive.edu.config;
 
+import jakarta.annotation.PostConstruct;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 
 import java.time.Duration;
+import java.util.Arrays;
+import java.util.Set;
 
 @Data
 @ConfigurationProperties(prefix = "python.client")
 public class PythonClientProperties {
+    private static final Set<String> LOCAL_DOCKER_HOST_ALIASES = Set.of(
+            "http://python-service:8001",
+            "http://python-service",
+            "http://backend-python:8001"
+    );
+
     /** Python service base URL, e.g. http://localhost:8001 */
     private String baseUrl = "http://localhost:8001";
 
@@ -22,6 +33,9 @@ public class PythonClientProperties {
 
     /** QA SSE API path, e.g. /python/v1/qa/stream */
     private String qaStreamPath = "/python/v1/qa/stream";
+
+    /** QA ingest API path, e.g. /python/v1/ingest/pages */
+    private String qaIngestPagesPath = "/python/v1/ingest/pages";
 
     /** Course resource importer API path, e.g. /python/v1/course-resource-import/import */
     private String courseResourceImportPath = "/python/v1/course-resource-import/import";
@@ -40,4 +54,22 @@ public class PythonClientProperties {
 
     /** HTTP read timeout for long-running video render requests. */
     private Duration videoRenderReadTimeout = Duration.ofMinutes(60);
+
+    @Autowired
+    private Environment environment;
+
+    @PostConstruct
+    void normalizeBaseUrlForLocalProfile() {
+        String[] activeProfiles = environment.getActiveProfiles();
+        boolean localProfileActive = activeProfiles.length == 0
+                || Arrays.stream(activeProfiles).anyMatch("local"::equalsIgnoreCase);
+        if (!localProfileActive) {
+            return;
+        }
+
+        String normalized = baseUrl == null ? "" : baseUrl.trim();
+        if (LOCAL_DOCKER_HOST_ALIASES.contains(normalized)) {
+            baseUrl = "http://localhost:8001";
+        }
+    }
 }

@@ -18,6 +18,7 @@ import org.springframework.beans.factory.ObjectProvider;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -44,7 +45,7 @@ class TtsServiceTest {
     @BeforeEach
     void setUp() {
         ttsProperties = buildProperties(true, true);
-        service = new TtsService(ttsProperties, ttsClientProvider, storageServiceProvider);
+        service = new TtsService(ttsProperties, ttsClientProvider, storageServiceProvider, Runnable::run);
     }
 
     @Test
@@ -69,7 +70,7 @@ class TtsServiceTest {
     @DisplayName("阿里云凭证缺失时降级为 null")
     void synthesizeToAudioUrl_missingCredentials_returnsNull() {
         ttsProperties = buildProperties(true, false);
-        service = new TtsService(ttsProperties, ttsClientProvider, storageServiceProvider);
+        service = new TtsService(ttsProperties, ttsClientProvider, storageServiceProvider, Runnable::run);
 
         assertThat(service.synthesizeToAudioUrl("讲稿内容")).isNull();
 
@@ -86,7 +87,7 @@ class TtsServiceTest {
 
         assertThat(service.synthesizeToAudioUrl("讲稿内容")).isNull();
 
-        verify(ttsClient).synthesize(any(TtsRequest.class));
+        verify(ttsClient, times(retryAttempts())).synthesize(any(TtsRequest.class));
         verifyNoInteractions(storageService);
     }
 
@@ -131,7 +132,7 @@ class TtsServiceTest {
 
         assertThat(service.synthesizeToAudioUrl("讲稿内容")).isNull();
 
-        verify(ttsClient).synthesize(any(TtsRequest.class));
+        verify(ttsClient, times(retryAttempts())).synthesize(any(TtsRequest.class));
         verifyNoMoreInteractions(ttsClient);
         verifyNoInteractions(storageService);
     }
@@ -153,9 +154,13 @@ class TtsServiceTest {
 
         assertThat(service.synthesizeToAudioUrl("讲稿内容")).isNull();
 
-        verify(ttsClient).synthesize(any(TtsRequest.class));
-        verify(storageService).generateObjectKey("wav");
-        verify(storageService).uploadAndSign("tts-audio/test.wav", audioData, "wav", null);
+        verify(ttsClient, times(retryAttempts())).synthesize(any(TtsRequest.class));
+        verify(storageService, times(retryAttempts())).generateObjectKey("wav");
+        verify(storageService, times(retryAttempts())).uploadAndSign("tts-audio/test.wav", audioData, "wav", null);
+    }
+
+    private int retryAttempts() {
+        return ttsProperties.getRetryCount() + 1;
     }
 
     private static TtsProperties buildProperties(boolean enabled, boolean withCredentials) {

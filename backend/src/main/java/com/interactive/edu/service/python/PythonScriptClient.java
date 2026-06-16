@@ -1,6 +1,8 @@
 package com.interactive.edu.service.python;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interactive.edu.config.PythonClientProperties;
 import com.interactive.edu.exception.ErrorCode;
 import com.interactive.edu.exception.ServiceException;
@@ -11,6 +13,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import java.io.IOException;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.Collections;
@@ -23,10 +26,12 @@ public class PythonScriptClient {
     private static final Duration MIN_SCRIPT_READ_TIMEOUT = Duration.ofMinutes(10);
 
     private final PythonClientProperties props;
+    private final ObjectMapper objectMapper;
     private final RestClient restClient;
 
-    public PythonScriptClient(PythonClientProperties props) {
+    public PythonScriptClient(PythonClientProperties props, ObjectMapper objectMapper) {
         this.props = props;
+        this.objectMapper = objectMapper;
 
         HttpClient httpClient = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
@@ -44,19 +49,21 @@ public class PythonScriptClient {
     public ScriptPayload generate(PythonScriptRequest request) {
         String url = props.getBaseUrl() + props.getScriptGeneratePath();
         try {
-            ScriptEnvelope envelope = restClient.post()
+            byte[] responseBytes = restClient.post()
                     .uri(url)
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
                     .body(request)
                     .retrieve()
-                    .body(ScriptEnvelope.class);
+                    .body(byte[].class);
 
-            if (envelope == null) {
-                throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "讲稿生成服务返回空响应");
+            if (responseBytes == null || responseBytes.length == 0) {
+                throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "Python script generation returned empty response");
             }
+
+            ScriptEnvelope envelope = objectMapper.readValue(responseBytes, ScriptEnvelope.class);
             if (envelope.code() != 0 || envelope.data() == null) {
-                throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "讲稿生成服务暂时不可用");
+                throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "Python script generation is unavailable");
             }
 
             log.info(
@@ -67,8 +74,12 @@ public class PythonScriptClient {
             return envelope.data();
         } catch (ServiceException ex) {
             throw ex;
+        } catch (JsonProcessingException ex) {
+            throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "Python script generation response parsing failed", ex);
+        } catch (IOException ex) {
+            throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "Python script generation response reading failed", ex);
         } catch (RestClientException ex) {
-            throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "讲稿生成服务调用失败", ex);
+            throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "Python script generation request failed", ex);
         }
     }
 

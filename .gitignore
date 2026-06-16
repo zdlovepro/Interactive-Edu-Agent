@@ -147,6 +147,9 @@ logs/
 *.swp
 *~
 *.orig
+.tmp*/
+tmp_*.png
+tmp_env_test/
 
 # ================================
 # Docker 相关（不忽略 Dockerfile，忽略构建产物）
@@ -158,6 +161,9 @@ logs/
 # ================================
 # 本地 MinIO 数据目录
 minio-data/
+backend/data/
+data/
+python-service/data/
 
 # PostgreSQL 数据目录（如果本地运行）
 pg-data/

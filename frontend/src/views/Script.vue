@@ -725,8 +725,8 @@ onUnmounted(() => {
 .outline-item:hover,
 .outline-item.active {
   transform: translateY(-1px);
-  border-color: rgba(95, 104, 255, 0.22);
-  background: rgba(95, 104, 255, 0.08);
+  border-color: rgba(14, 90, 224, 0.22);
+  background: rgba(14, 90, 224, 0.08);
 }
 
 .outline-item span {
@@ -735,7 +735,7 @@ onUnmounted(() => {
   display: grid;
   place-items: center;
   border-radius: 0.75rem;
-  background: rgba(95, 104, 255, 0.12);
+  background: rgba(14, 90, 224, 0.12);
   color: var(--primary-color);
   font-size: var(--font-size-xs);
   font-weight: 700;
@@ -797,8 +797,8 @@ onUnmounted(() => {
 }
 
 .segment-card.active {
-  border-color: rgba(95, 104, 255, 0.24);
-  box-shadow: 0 20px 44px rgba(95, 104, 255, 0.12);
+  border-color: rgba(14, 90, 224, 0.24);
+  box-shadow: 0 20px 44px rgba(14, 90, 224, 0.12);
 }
 
 .segment-preview {
@@ -874,8 +874,8 @@ onUnmounted(() => {
 .segment-title-input:focus,
 .segment-textarea:focus {
   outline: none;
-  border-color: rgba(95, 104, 255, 0.36);
-  box-shadow: 0 0 0 4px rgba(95, 104, 255, 0.1);
+  border-color: rgba(14, 90, 224, 0.36);
+  box-shadow: 0 0 0 4px rgba(14, 90, 224, 0.1);
 }
 
 .segment-card__content p {
@@ -897,8 +897,8 @@ onUnmounted(() => {
   gap: 0.55rem;
   padding: 0.45rem 0.7rem;
   border-radius: 999px;
-  border: 1px solid rgba(95, 104, 255, 0.16);
-  background: rgba(95, 104, 255, 0.08);
+  border: 1px solid rgba(14, 90, 224, 0.16);
+  background: rgba(14, 90, 224, 0.08);
   color: var(--text-primary);
   font-size: var(--font-size-xs);
   font-weight: 600;
@@ -940,7 +940,7 @@ onUnmounted(() => {
   min-height: 2rem;
   padding: 0.4rem 0.8rem;
   border-radius: 999px;
-  background: rgba(95, 104, 255, 0.08);
+  background: rgba(14, 90, 224, 0.08);
   color: var(--primary-color);
   font-size: var(--font-size-xs);
   font-weight: 600;
@@ -985,8 +985,8 @@ onUnmounted(() => {
 
 .inline-alert--info {
   color: #3e507c;
-  background: rgba(95, 104, 255, 0.08);
-  border: 1px solid rgba(95, 104, 255, 0.14);
+  background: rgba(14, 90, 224, 0.08);
+  border: 1px solid rgba(14, 90, 224, 0.14);
 }
 
 .inline-alert--danger {
@@ -1005,7 +1005,7 @@ onUnmounted(() => {
   width: 1.2rem;
   height: 1.2rem;
   border-radius: 999px;
-  border: 2px solid rgba(95, 104, 255, 0.16);
+  border: 2px solid rgba(14, 90, 224, 0.16);
   border-top-color: var(--primary-color);
   animation: spin 0.9s linear infinite;
 }

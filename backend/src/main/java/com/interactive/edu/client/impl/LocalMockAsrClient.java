@@ -21,7 +21,7 @@ public class LocalMockAsrClient implements AsrClient {
                 request.getPageIndex()
         );
         return AsrResult.builder()
-                .text("这是一个模拟语音问题")
+                .text("这节课主要讲了什么")
                 .confidence(0.8d)
                 .durationMs(1L)
                 .provider("local-mock")

@@ -45,7 +45,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['error', 'ready', 'loading'])
+const emit = defineEmits(['error', 'ready', 'loading', 'timeupdate', 'play', 'pause'])
 
 const videoRef = ref(null)
 const hlsRef = ref(null)
@@ -196,6 +196,7 @@ const handleLoadedMetadata = () => {
 
   statusHint.value = ''
   emit('ready')
+  emitPlaybackState('timeupdate')
 }
 
 const handleVideoError = () => {
@@ -212,6 +213,19 @@ const handleVideoError = () => {
   )
 }
 
+const emitPlaybackState = eventName => {
+  const video = videoRef.value
+  if (!video || suppressVideoEvents.value) {
+    return
+  }
+
+  emit(eventName, {
+    currentTime: Number.isFinite(video.currentTime) ? video.currentTime : 0,
+    duration: Number.isFinite(video.duration) ? video.duration : 0,
+    paused: Boolean(video.paused),
+  })
+}
+
 onMounted(() => {
   const video = videoRef.value
   if (!video) {
@@ -220,6 +234,10 @@ onMounted(() => {
 
   video.addEventListener('loadedmetadata', handleLoadedMetadata)
   video.addEventListener('error', handleVideoError)
+  video.addEventListener('timeupdate', () => emitPlaybackState('timeupdate'))
+  video.addEventListener('seeking', () => emitPlaybackState('timeupdate'))
+  video.addEventListener('play', () => emitPlaybackState('play'))
+  video.addEventListener('pause', () => emitPlaybackState('pause'))
   void attachSource()
 })
 
@@ -252,9 +270,10 @@ onBeforeUnmount(() => {
   overflow: hidden;
   border-radius: calc(var(--radius-lg) + 0.1rem);
   background:
-    radial-gradient(circle at top left, rgba(82, 112, 255, 0.2), transparent 28%),
-    linear-gradient(160deg, rgba(12, 21, 49, 0.96), rgba(22, 34, 64, 0.94));
-  box-shadow: 0 26px 60px rgba(19, 28, 63, 0.22);
+    radial-gradient(circle at top left, rgba(14, 90, 224, 0.18), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(24, 126, 168, 0.16), transparent 30%),
+    linear-gradient(160deg, rgba(10, 24, 52, 0.96), rgba(20, 42, 70, 0.94));
+  box-shadow: 0 28px 62px rgba(15, 35, 68, 0.22);
 }
 
 .player-stage.empty {
@@ -296,7 +315,7 @@ onBeforeUnmount(() => {
   padding: 0.65rem 0.95rem;
   border: 1px solid rgba(173, 186, 255, 0.12);
   border-radius: 999px;
-  background: rgba(19, 29, 65, 0.8);
+  background: rgba(13, 31, 60, 0.82);
   backdrop-filter: blur(14px);
 }
 

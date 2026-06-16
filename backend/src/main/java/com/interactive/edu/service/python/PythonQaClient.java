@@ -1,5 +1,7 @@
 package com.interactive.edu.service.python;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interactive.edu.config.PythonClientProperties;
 import com.interactive.edu.exception.ErrorCode;
 import com.interactive.edu.exception.ServiceException;
@@ -9,14 +11,13 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
-import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
 import java.io.OutputStream;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 @Slf4j
@@ -26,11 +27,13 @@ public class PythonQaClient {
     private static final Duration STREAM_READ_TIMEOUT = Duration.ofSeconds(60);
 
     private final PythonClientProperties props;
+    private final ObjectMapper objectMapper;
     private final RestClient restClient;
     private final HttpClient streamHttpClient;
 
-    public PythonQaClient(PythonClientProperties props) {
+    public PythonQaClient(PythonClientProperties props, ObjectMapper objectMapper) {
         this.props = props;
+        this.objectMapper = objectMapper;
 
         HttpClient httpClient = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
@@ -58,10 +61,10 @@ public class PythonQaClient {
                     .body(QaEnvelope.class);
 
             if (envelope == null) {
-                throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "问答服务返回空响应");
+                throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "Python QA returned empty response");
             }
             if (envelope.code() != 0 || envelope.data() == null) {
-                throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "问答服务暂时不可用");
+                throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "Python QA is unavailable");
             }
 
             log.info(
@@ -75,22 +78,14 @@ public class PythonQaClient {
         } catch (ServiceException ex) {
             throw ex;
         } catch (RestClientException ex) {
-            throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "问答服务调用失败", ex);
+            throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "Python QA request failed", ex);
         }
     }
 
     public void streamText(PythonQaRequest request, OutputStream outputStream) {
-        URI uri = UriComponentsBuilder.fromHttpUrl(props.getBaseUrl() + props.getQaStreamPath())
-                .queryParam("coursewareId", request.getCoursewareId())
-                .queryParam("sessionId", request.getSessionId())
-                .queryParam("question", request.getQuestion())
-                .queryParam("topK", request.getTopK())
-                .queryParamIfPresent("pageIndex", java.util.Optional.ofNullable(request.getPageIndex()))
-                .build(true)
-                .toUri();
-
-        HttpRequest httpRequest = HttpRequest.newBuilder(uri)
-                .GET()
+        HttpRequest httpRequest = HttpRequest.newBuilder(java.net.URI.create(props.getBaseUrl() + props.getQaStreamPath()))
+                .POST(HttpRequest.BodyPublishers.ofString(serializeRequest(request), StandardCharsets.UTF_8))
+                .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
                 .header("Accept", MediaType.TEXT_EVENT_STREAM_VALUE)
                 .timeout(STREAM_READ_TIMEOUT)
                 .build();
@@ -102,12 +97,12 @@ public class PythonQaClient {
             );
 
             if (response.statusCode() >= 400) {
-                throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "问答流式服务暂时不可用");
+                throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "Python QA stream is unavailable");
             }
 
             String contentType = response.headers().firstValue("Content-Type").orElse("");
             if (!contentType.contains(MediaType.TEXT_EVENT_STREAM_VALUE)) {
-                throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "问答流式服务返回格式异常");
+                throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "Python QA stream returned invalid content type");
             }
 
             try (java.io.InputStream bodyStream = response.body()) {
@@ -127,7 +122,15 @@ public class PythonQaClient {
             if (ex instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "问答流式服务调用失败", ex);
+            throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "Python QA stream request failed", ex);
+        }
+    }
+
+    private String serializeRequest(PythonQaRequest request) {
+        try {
+            return objectMapper.writeValueAsString(request);
+        } catch (JsonProcessingException ex) {
+            throw new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "Python QA stream request serialization failed", ex);
         }
     }
 
