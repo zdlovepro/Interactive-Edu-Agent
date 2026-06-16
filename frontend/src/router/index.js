@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Home from '../views/Home.vue'
+import { hasStoredSession } from '@/utils/auth'
 
 const routes = [
   {
@@ -8,6 +9,15 @@ const routes = [
     component: Home,
     meta: {
       title: 'Home',
+    },
+  },
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('../views/Login.vue'),
+    meta: {
+      title: 'Login',
+      public: true,
     },
   },
   {
@@ -137,6 +147,7 @@ const routes = [
     component: () => import('../views/NotFound.vue'),
     meta: {
       title: 'Not Found',
+      public: true,
     },
   },
 ]
@@ -146,10 +157,25 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(to => {
   const appTitle = import.meta.env.VITE_APP_TITLE || 'Interactive-Edu-Agent'
   document.title = `${to.meta.title || 'Interactive-Edu-Agent'} - ${appTitle}`
-  next()
+
+  const isAuthenticated = hasStoredSession()
+  const isPublicRoute = to.meta.public === true
+
+  if (to.name === 'Login' && isAuthenticated) {
+    return { name: 'ClassroomHub' }
+  }
+
+  if (!isPublicRoute && !isAuthenticated) {
+    return {
+      name: 'Login',
+      query: { redirect: to.fullPath },
+    }
+  }
+
+  return true
 })
 
 export default router

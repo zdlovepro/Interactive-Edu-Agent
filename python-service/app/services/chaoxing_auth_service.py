@@ -198,9 +198,10 @@ class ChaoxingAuthService:
             session.poll_task = asyncio.create_task(self._poll_until_authorized(session, course_url=course_url))
             return self._public_payload(session)
         except Exception as exc:  # noqa: BLE001
-            await self._set_status(session, STATUS_FAILED, f"Failed to open Chaoxing QR login: {exc}")
+            logger.exception("Failed to create Chaoxing auth session. sessionId=%s", session_id)
+            await self._set_status(session, STATUS_FAILED, _friendly_create_session_error(exc))
             await self._close_runtime(session)
-            raise AppException(DOWNSTREAM_SERVICE_ERROR, "Failed to create Chaoxing auth session.") from exc
+            raise AppException(DOWNSTREAM_SERVICE_ERROR, _friendly_create_session_error(exc)) from exc
 
     async def get_session(self, session_id: str) -> dict[str, Any]:
         session = self._sessions.get(session_id)
@@ -353,6 +354,16 @@ def _iso(value: datetime | None) -> str | None:
     if value is None:
         return None
     return value.isoformat().replace("+00:00", "Z")
+
+
+def _friendly_create_session_error(exc: Exception) -> str:
+    message = str(exc).strip()
+    lowered = message.lower()
+    if "executable doesn't exist" in lowered or "playwright install" in lowered:
+        return "Playwright Chromium browser is missing. Run `playwright install chromium` in the python environment."
+    if "timeout" in lowered:
+        return "Timed out while opening the Chaoxing login page."
+    return f"Failed to open Chaoxing QR login: {message or exc.__class__.__name__}"
 
 
 chaoxing_auth_service = ChaoxingAuthService()

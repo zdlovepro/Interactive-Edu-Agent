@@ -58,6 +58,9 @@ public class Courseware {
     @Column(name = "uploader_id", length = 64)
     private String uploaderId;
 
+    @Column(name = "course_code", length = 64)
+    private String courseCode;
+
     @CreatedDate
     @Column(name = "create_time", updatable = false)
     private LocalDateTime createTime;

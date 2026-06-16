@@ -23,10 +23,24 @@ const STATUS_ACTIONS = {
   ],
 }
 
-export function getCoursewareActions(status) {
-  const normalized = String(status || '').trim().toUpperCase()
-  return STATUS_ACTIONS[normalized] || [
+const SHARED_STATUS_ACTIONS = {
+  READY: [
+    { key: 'script', label: '查看讲稿', variant: 'secondary', event: 'view-script' },
+    { key: 'lecture', label: '进入课堂', variant: 'primary', event: 'enter-lecture' },
+  ],
+}
+
+export function getCoursewareActions(courseware = {}) {
+  const normalizedStatus = String(courseware?.status || '').trim().toUpperCase()
+  const accessMode = String(courseware?.accessMode || 'OWNED').trim().toUpperCase()
+
+  if (accessMode === 'SHARED') {
+    return SHARED_STATUS_ACTIONS[normalizedStatus] || [
+      { key: 'detail', label: '查看详情', variant: 'secondary', event: 'view-detail' },
+    ]
+  }
+
+  return STATUS_ACTIONS[normalizedStatus] || [
     { key: 'detail', label: '查看详情', variant: 'secondary', event: 'view-detail' },
   ]
 }
-

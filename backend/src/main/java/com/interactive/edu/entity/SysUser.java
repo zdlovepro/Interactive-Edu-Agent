@@ -3,6 +3,8 @@ package com.interactive.edu.entity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
@@ -44,4 +46,20 @@ public class SysUser {
     @LastModifiedDate
     @Column(name = "update_time")
     private LocalDateTime updateTime;
+
+    @PrePersist
+    void prePersist() {
+        LocalDateTime now = LocalDateTime.now();
+        if (createTime == null) {
+            createTime = now;
+        }
+        if (updateTime == null) {
+            updateTime = now;
+        }
+    }
+
+    @PreUpdate
+    void preUpdate() {
+        updateTime = LocalDateTime.now();
+    }
 }

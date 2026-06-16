@@ -3,9 +3,9 @@
     <section class="page-shell page-section upload-hero">
       <div>
         <span class="eyebrow">本地上传</span>
-        <h1 class="page-title">上传本地课件</h1>
+        <h1 class="page-title">{{ authStore.isTeacher ? '教师上传课件' : '上传本地课件' }}</h1>
         <p class="page-description">
-          这里只处理本地 PDF/PPT/PPTX 上传。普通 URL 导入和超星导入请从导入中心进入，避免流程混在一起。
+          这里只处理本地 PDF、PPT、PPTX 上传。普通 URL 导入和超星导入请从导入中心进入，避免流程混在一起。
         </p>
       </div>
       <AppButton variant="secondary" @click="router.push('/imports')">返回导入中心</AppButton>
@@ -13,6 +13,28 @@
 
     <section class="page-shell upload-layout">
       <AppCard class="upload-main-card" tone="accent">
+        <div v-if="authStore.isTeacher" class="course-code-panel">
+          <div>
+            <p class="course-code-panel__label">教师课程号</p>
+            <h3>上传时可直接设置课程号</h3>
+            <p class="course-code-panel__hint">
+              该课程号会写入当前课件，学生随后可通过相同课程号访问这份共享课件。
+            </p>
+          </div>
+          <input
+            v-model.trim="teacherCourseCode"
+            class="app-input"
+            type="text"
+            maxlength="64"
+            placeholder="例如：ML-2026-A"
+          />
+        </div>
+
+        <div v-else class="student-note">
+          <span class="eyebrow">学生提示</span>
+          <p>学生上传的课件默认只属于当前账号，如需查看教师课件，请到课堂资源页输入课程号。</p>
+        </div>
+
         <FileUpload
           :disabled="uploadStatus?.status === 'uploading'"
           @file-selected="handleFileSelected"
@@ -55,13 +77,17 @@
             <li>上传本地课件文件</li>
             <li>后端解析页面与文本结构</li>
             <li>进入资源详情页查看下一步</li>
-            <li>生成讲稿后进入互动课堂</li>
+            <li>生成讲稿后进入课堂或渲染讲解视频</li>
           </ol>
         </AppCard>
 
         <AppCard tone="subtle" class="side-card">
-          <h3>其他导入方式</h3>
-          <p>如果你要从超星课程页或普通 URL 导入，请使用导入中心的独立入口。</p>
+          <h3>{{ authStore.isTeacher ? '教师共享说明' : '其他导入方式' }}</h3>
+          <p>
+            {{ authStore.isTeacher
+              ? '教师可先上传和生成资源，再在详情页补充或调整课程号。'
+              : '如果你要从超星课程页或普通 URL 导入，请使用导入中心的独立入口。' }}
+          </p>
           <AppButton variant="secondary" size="sm" @click="router.push('/imports')">
             打开导入中心
           </AppButton>
@@ -118,15 +144,18 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { getCoursewareDetail, listCourseware, uploadCourseware } from '@/api/courseware'
 import { getCoursewareStatusMeta } from '@/constants/courseware'
+import { useAuthStore } from '@/stores/auth'
 import { getErrorMessage } from '@/utils'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 const uploadStatus = ref(null)
 const uploadError = ref(null)
 const uploadedCourseware = ref([])
 const latestCoursewareId = ref('')
 const lastSelectedFile = ref(null)
+const teacherCourseCode = ref('')
 
 let pollTimer = null
 
@@ -177,6 +206,8 @@ function normalizeCoursewareItem(item) {
     createdAt: item?.createdAt || item?.updatedAt || new Date().toISOString(),
     updatedAt: item?.updatedAt || item?.createdAt || '',
     currentTaskStatus: item?.currentTaskStatus || '',
+    courseCode: item?.courseCode || '',
+    accessMode: String(item?.accessMode || 'OWNED').trim().toUpperCase(),
   }
 }
 
@@ -224,6 +255,8 @@ function pollParseStatus(coursewareId) {
         createdAt: response.data?.createdAt || latestCourseware.value?.createdAt,
         updatedAt: response.data?.updatedAt,
         currentTaskStatus: response.data?.currentTaskStatus,
+        courseCode: response.data?.courseCode,
+        accessMode: response.data?.accessMode,
       })
 
       if (['PARSED', 'READY', 'FAILED'].includes(courseware.status)) {
@@ -240,7 +273,7 @@ function pollParseStatus(coursewareId) {
         progress: 100,
       }
     } catch {
-      // 轮询期间的瞬时错误不打断主流程。
+      // Ignore transient polling errors.
     }
   }, 3000)
 }
@@ -260,7 +293,8 @@ async function handleFileSelected(file) {
   }
 
   try {
-    const response = await uploadCourseware(file, file.name, {
+    const courseCode = authStore.isTeacher ? teacherCourseCode.value.trim().toUpperCase() : ''
+    const response = await uploadCourseware(file, file.name, courseCode, {
       timeout: 120000,
       onUploadProgress: progressEvent => {
         const total = progressEvent.total
@@ -282,6 +316,8 @@ async function handleFileSelected(file) {
       name: file.name,
       status: 'PARSING',
       createdAt: new Date().toISOString(),
+      courseCode,
+      accessMode: 'OWNED',
     })
 
     uploadStatus.value = {
@@ -322,16 +358,17 @@ function enterLecture(courseware) {
 
 async function loadCoursewareList() {
   try {
-    const response = await listCourseware()
+    const response = await listCourseware({ scope: 'owned', pageSize: 20 })
     if (Array.isArray(response.data?.items)) {
       uploadedCourseware.value = response.data.items.map(normalizeCoursewareItem)
     }
   } catch {
-    // 列表加载失败不影响上传主流程。
+    // List loading failure should not block the upload flow.
   }
 }
 
 onMounted(() => {
+  authStore.restore()
   loadCoursewareList()
 })
 
@@ -362,6 +399,40 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+}
+
+.course-code-panel,
+.student-note {
+  padding: 1.25rem;
+  border: 1px solid rgba(131, 141, 184, 0.12);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.course-code-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 1rem;
+  align-items: center;
+}
+
+.course-code-panel__label {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.course-code-panel h3,
+.student-note p {
+  margin: 0.45rem 0 0;
+}
+
+.course-code-panel__hint {
+  margin: 0.6rem 0 0;
+  color: var(--text-secondary);
+  line-height: 1.7;
 }
 
 .upload-status-panel {
@@ -477,7 +548,8 @@ onUnmounted(() => {
 }
 
 @media (max-width: 1024px) {
-  .upload-layout {
+  .upload-layout,
+  .course-code-panel {
     grid-template-columns: 1fr;
   }
 }
@@ -491,9 +563,9 @@ onUnmounted(() => {
 }
 
 @media (max-width: 640px) {
-  .next-actions {
+  .next-actions,
+  .inline-error__actions {
     flex-direction: column;
   }
 }
 </style>
-

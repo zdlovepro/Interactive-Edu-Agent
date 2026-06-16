@@ -6,6 +6,8 @@ public record CoursewareDetailView(
         String status,
         String currentTaskStatus,
         String fileType,
+        String courseCode,
+        String accessMode,
         String createdAt,
         String updatedAt
 ) {
