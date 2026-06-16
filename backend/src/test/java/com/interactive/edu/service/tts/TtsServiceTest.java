@@ -44,7 +44,7 @@ class TtsServiceTest {
     @BeforeEach
     void setUp() {
         ttsProperties = buildProperties(true, true);
-        service = new TtsService(ttsProperties, ttsClientProvider, storageServiceProvider);
+        service = new TtsService(ttsProperties, ttsClientProvider, storageServiceProvider, Runnable::run);
     }
 
     @Test
@@ -69,7 +69,7 @@ class TtsServiceTest {
     @DisplayName("阿里云凭证缺失时降级为 null")
     void synthesizeToAudioUrl_missingCredentials_returnsNull() {
         ttsProperties = buildProperties(true, false);
-        service = new TtsService(ttsProperties, ttsClientProvider, storageServiceProvider);
+        service = new TtsService(ttsProperties, ttsClientProvider, storageServiceProvider, Runnable::run);
 
         assertThat(service.synthesizeToAudioUrl("讲稿内容")).isNull();
 

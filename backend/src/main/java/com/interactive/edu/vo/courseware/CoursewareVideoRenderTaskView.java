@@ -1,5 +1,7 @@
 package com.interactive.edu.vo.courseware;
 
+import java.util.List;
+
 public record CoursewareVideoRenderTaskView(
         String coursewareId,
         String status,
@@ -10,6 +12,7 @@ public record CoursewareVideoRenderTaskView(
         String hlsUrl,
         Long durationMs,
         Integer segmentCount,
-        String errorMessage
+        String errorMessage,
+        List<CoursewareVideoTimelineItemView> timeline
 ) {
 }

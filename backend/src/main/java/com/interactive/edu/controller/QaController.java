@@ -28,23 +28,25 @@ public class QaController {
 
     @PostMapping("/ask-text")
     public BaseResponse<QaAnswerView> askText(@Valid @RequestBody AskTextRequest request) {
-        return BaseResponse.ok(qaService.askText(request.sessionId(), request.question()));
+        return BaseResponse.ok(qaService.askText(request.sessionId(), request.question(), request.pageIndex()));
     }
 
     @GetMapping(path = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public ResponseEntity<StreamingResponseBody> streamText(
             @RequestParam @NotBlank(message = "sessionId 不能为空") String sessionId,
             @RequestParam @NotBlank(message = "question 不能为空") String question,
+            @RequestParam(required = false) @Min(value = 1, message = "pageIndex 必须大于 0") Integer pageIndex,
             @RequestParam(required = false) @Min(value = 1, message = "topK 必须大于 0") Integer topK
     ) {
         return ResponseEntity.ok()
                 .contentType(MediaType.TEXT_EVENT_STREAM)
-                .body(qaService.streamText(sessionId, question, topK));
+                .body(qaService.streamText(sessionId, question, pageIndex, topK));
     }
 
     public record AskTextRequest(
             @NotBlank(message = "sessionId 不能为空") String sessionId,
-            @NotBlank(message = "question 不能为空") String question
+            @NotBlank(message = "question 不能为空") String question,
+            @Min(value = 1, message = "pageIndex 必须大于 0") Integer pageIndex
     ) {
     }
 }

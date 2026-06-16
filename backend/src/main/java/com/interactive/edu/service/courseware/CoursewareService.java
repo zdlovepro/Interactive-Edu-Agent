@@ -18,8 +18,8 @@ import com.interactive.edu.service.python.PythonParseClient;
 import com.interactive.edu.service.python.PythonParseRequest;
 import com.interactive.edu.service.python.PythonScriptClient;
 import com.interactive.edu.service.python.PythonScriptRequest;
-import com.interactive.edu.service.storage.StorageServiceFactory;
-import com.interactive.edu.service.storage.StoredObject;
+import com.interactive.edu.storage.StorageServiceFactory;
+import com.interactive.edu.storage.StoredObject;
 import com.interactive.edu.service.tts.TtsService;
 import com.interactive.edu.vo.courseware.CoursewareDetailView;
 import com.interactive.edu.vo.courseware.CoursewareListItem;
@@ -423,6 +423,74 @@ public class CoursewareService {
                 .filter(segment -> segment.pageIndex() == pageIndex)
                 .findFirst()
                 .orElse(segments.get(0));
+    }
+
+    public QaIngestPage getQaPageForPage(String coursewareId, int pageIndex) {
+        ensureCoursewareId(coursewareId);
+
+        ScriptView scriptView = findExistingScript(coursewareId);
+        if (scriptView != null && scriptView.segments() != null && !scriptView.segments().isEmpty()) {
+            return scriptView.segments().stream()
+                    .filter(segment -> segment.pageIndex() == pageIndex)
+                    .findFirst()
+                    .map(this::toQaIngestPage)
+                    .orElseGet(() -> toQaIngestPage(scriptView.segments().get(0)));
+        }
+
+        ParsedCourseware parsedCourseware = loadParsedCourseware(coursewareId);
+        if (parsedCourseware != null && !parsedCourseware.segments().isEmpty()) {
+            return parsedCourseware.segments().stream()
+                    .filter(segment -> segment.pageIndex() == pageIndex)
+                    .findFirst()
+                    .map(this::toQaIngestPage)
+                    .orElseGet(() -> toQaIngestPage(parsedCourseware.segments().get(0)));
+        }
+
+        return null;
+    }
+
+    public List<QaIngestPage> getQaIngestPages(String coursewareId) {
+        ensureCoursewareId(coursewareId);
+
+        ScriptView scriptView = findExistingScript(coursewareId);
+        if (scriptView != null && scriptView.segments() != null && !scriptView.segments().isEmpty()) {
+            return scriptView.segments().stream()
+                    .map(this::toQaIngestPage)
+                    .toList();
+        }
+
+        ParsedCourseware parsedCourseware = loadParsedCourseware(coursewareId);
+        if (parsedCourseware != null && !parsedCourseware.segments().isEmpty()) {
+            return parsedCourseware.segments().stream()
+                    .map(this::toQaIngestPage)
+                    .toList();
+        }
+
+        return List.of();
+    }
+
+    private QaIngestPage toQaIngestPage(ParsedSegment segment) {
+        return new QaIngestPage(
+                segment.pageIndex(),
+                segment.title(),
+                segment.content(),
+                List.copyOf(segment.knowledgePoints()),
+                segment.pageImagePath(),
+                segment.visualSummary(),
+                List.copyOf(segment.visualObjects())
+        );
+    }
+
+    private QaIngestPage toQaIngestPage(ScriptSegmentView segment) {
+        return new QaIngestPage(
+                segment.pageIndex(),
+                segment.title(),
+                segment.content(),
+                segment.knowledgePoints() == null ? List.of() : List.copyOf(segment.knowledgePoints()),
+                segment.pageImagePath(),
+                segment.visualSummary(),
+                segment.visualObjects() == null ? List.of() : List.copyOf(segment.visualObjects())
+        );
     }
 
     public CurrentNodeView getCurrentNode(String coursewareId, int pageIndex) {
@@ -1403,6 +1471,17 @@ public class CoursewareService {
     }
 
     private record GeneratedPage(int pageIndex, String script, String transition) {
+    }
+
+    public record QaIngestPage(
+            int pageIndex,
+            String title,
+            String content,
+            List<String> knowledgePoints,
+            String pageImagePath,
+            String visualSummary,
+            List<String> visualObjects
+    ) {
     }
 
     private record TtsBatchResult(List<ScriptSegmentView> segments, int successCount, int failureCount) {

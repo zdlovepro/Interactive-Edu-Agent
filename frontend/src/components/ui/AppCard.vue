@@ -46,7 +46,7 @@ const toneClass = computed(() => `tone-${props.tone}`)
 .app-card.hoverable:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-lg);
-  border-color: rgba(115, 123, 255, 0.18);
+  border-color: rgba(14, 90, 224, 0.18);
 }
 
 .tone-glass {
@@ -57,7 +57,7 @@ const toneClass = computed(() => `tone-${props.tone}`)
 .tone-accent {
   background:
     linear-gradient(180deg, rgba(244, 246, 255, 0.95), rgba(255, 255, 255, 0.92)),
-    linear-gradient(135deg, rgba(117, 127, 255, 0.18), transparent 48%);
+    linear-gradient(135deg, rgba(14, 90, 224, 0.16), transparent 48%);
 }
 
 .tone-subtle {

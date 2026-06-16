@@ -14,8 +14,8 @@ const joinApiUrl = path => {
   return `${normalizedBase}${normalizedPath}`
 }
 
-export function askText({ sessionId, question } = {}) {
-  return request.post(QA_API.ASK_TEXT, { sessionId, question })
+export function askText({ sessionId, question, pageIndex } = {}) {
+  return request.post(QA_API.ASK_TEXT, { sessionId, question, pageIndex })
 }
 
 export function buildQaStreamUrl({ sessionId, question, pageIndex } = {}) {

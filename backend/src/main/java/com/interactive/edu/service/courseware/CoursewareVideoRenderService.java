@@ -1,5 +1,7 @@
 package com.interactive.edu.service.courseware;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interactive.edu.entity.CoursewareVideoRenderTask;
 import com.interactive.edu.exception.BusinessException;
 import com.interactive.edu.exception.ErrorCode;
@@ -8,6 +10,7 @@ import com.interactive.edu.repository.CoursewareVideoRenderTaskRepository;
 import com.interactive.edu.service.python.PythonVideoRenderClient;
 import com.interactive.edu.service.python.PythonVideoRenderRequest;
 import com.interactive.edu.vo.courseware.CoursewareVideoRenderTaskView;
+import com.interactive.edu.vo.courseware.CoursewareVideoTimelineItemView;
 import com.interactive.edu.vo.courseware.ScriptSegmentView;
 import com.interactive.edu.vo.courseware.ScriptView;
 import lombok.Getter;
@@ -38,10 +41,13 @@ import java.util.concurrent.ConcurrentMap;
 public class CoursewareVideoRenderService {
 
     private static final String HLS_URL_TEMPLATE = "/api/v1/courseware/%s/video/hls/index.m3u8";
+    private static final String TIMELINE_FILE_NAME = "timeline.json";
+    private static final int MAX_ERROR_MESSAGE_LENGTH = 1000;
 
     private final CoursewareService coursewareService;
     private final PythonVideoRenderClient pythonVideoRenderClient;
     private final ObjectProvider<CoursewareVideoRenderTaskRepository> taskRepositoryProvider;
+    private final ObjectMapper objectMapper;
     @Qualifier("taskExecutor")
     private final TaskExecutor taskExecutor;
 
@@ -125,7 +131,7 @@ public class CoursewareVideoRenderService {
 
             PythonVideoRenderRequest request = PythonVideoRenderRequest.builder()
                     .coursewareId(state.getCoursewareId())
-                    .outputDir(state.getOutputDir().toString())
+                    .outputDir(pythonOutputDirFor(state.getCoursewareId()))
                     .backendBaseUrl(backendBaseUrl)
                     .hlsSegmentSeconds(Math.max(1, hlsSegmentSeconds))
                     .segments(toPythonSegments(script.segments()))
@@ -239,8 +245,74 @@ public class CoursewareVideoRenderService {
                 state.getHlsPlaylistPath() == null ? null : HLS_URL_TEMPLATE.formatted(state.getCoursewareId()),
                 state.getDurationMs(),
                 state.getSegmentCount(),
-                state.getErrorMessage()
+                state.getErrorMessage(),
+                loadTimeline(state)
         );
+    }
+
+    private List<CoursewareVideoTimelineItemView> loadTimeline(VideoRenderTaskState state) {
+        if (state == null) {
+            return List.of();
+        }
+
+        Path timelinePath = resolveTimelinePath(state);
+        if (!Files.exists(timelinePath) || !Files.isRegularFile(timelinePath)) {
+            return List.of();
+        }
+
+        try {
+            return objectMapper.readValue(
+                    timelinePath.toFile(),
+                    new TypeReference<List<CoursewareVideoTimelineItemView>>() {
+                    }
+            );
+        } catch (Exception ex) {
+            log.warn(
+                    "Failed to load courseware video timeline. coursewareId={}, path={}, reason={}",
+                    state.getCoursewareId(),
+                    timelinePath,
+                    ex.getMessage()
+            );
+            return List.of();
+        }
+    }
+
+    private Path resolveTimelinePath(VideoRenderTaskState state) {
+        if (StringUtils.hasText(state.getHlsPlaylistPath())) {
+            try {
+                Path hlsPath = Path.of(state.getHlsPlaylistPath()).toAbsolutePath().normalize();
+                Path hlsDir = hlsPath.getParent();
+                if (hlsDir != null && hlsDir.getParent() != null) {
+                    return hlsDir.getParent().resolve(TIMELINE_FILE_NAME).toAbsolutePath().normalize();
+                }
+            } catch (Exception ex) {
+                log.debug(
+                        "Failed to resolve timeline path from HLS playlist. coursewareId={}, hlsPlaylistPath={}, reason={}",
+                        state.getCoursewareId(),
+                        state.getHlsPlaylistPath(),
+                        ex.getMessage()
+                );
+            }
+        }
+
+        if (StringUtils.hasText(state.getMp4Path())) {
+            try {
+                Path mp4Path = Path.of(state.getMp4Path()).toAbsolutePath().normalize();
+                Path parent = mp4Path.getParent();
+                if (parent != null) {
+                    return parent.resolve(TIMELINE_FILE_NAME).toAbsolutePath().normalize();
+                }
+            } catch (Exception ex) {
+                log.debug(
+                        "Failed to resolve timeline path from MP4. coursewareId={}, mp4Path={}, reason={}",
+                        state.getCoursewareId(),
+                        state.getMp4Path(),
+                        ex.getMessage()
+                );
+            }
+        }
+
+        return state.getOutputDir().resolve(TIMELINE_FILE_NAME).toAbsolutePath().normalize();
     }
 
     private Path outputDirFor(String coursewareId) {
@@ -250,6 +322,10 @@ public class CoursewareVideoRenderService {
                 .resolve(coursewareId)
                 .resolve("video")
                 .normalize();
+    }
+
+    private String pythonOutputDirFor(String coursewareId) {
+        return Path.of(coursewareId, "video").toString();
     }
 
     private void ensureCoursewareId(String coursewareId) {
@@ -363,12 +439,23 @@ public class CoursewareVideoRenderService {
             this.status = "FAILED";
             this.progress = 100;
             this.message = "Courseware lecture video render failed";
-            this.errorMessage = errorMessage;
+            this.errorMessage = sanitizeErrorMessage(errorMessage);
             touch();
         }
 
         private void touch() {
             this.updatedAt = Instant.now();
+        }
+
+        private String sanitizeErrorMessage(String errorMessage) {
+            if (!StringUtils.hasText(errorMessage)) {
+                return errorMessage;
+            }
+            String normalized = errorMessage.trim();
+            if (normalized.length() <= MAX_ERROR_MESSAGE_LENGTH) {
+                return normalized;
+            }
+            return normalized.substring(0, MAX_ERROR_MESSAGE_LENGTH - 3) + "...";
         }
     }
 }

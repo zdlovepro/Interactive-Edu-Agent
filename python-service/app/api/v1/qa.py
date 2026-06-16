@@ -33,14 +33,23 @@ async def stream_qa_endpoint(
     page_index: int | None = Query(default=None, alias="pageIndex", ge=1),
     top_k: int = Query(default=5, alias="topK", ge=1, le=10),
 ) -> StreamingResponse:
-    request = QaAskTextRequest(
-        sessionId=session_id or "stream_session",
-        coursewareId=courseware_id,
-        pageIndex=page_index,
-        question=question,
-        topK=top_k,
+    return _build_stream_response(
+        QaAskTextRequest(
+            sessionId=session_id or "stream_session",
+            coursewareId=courseware_id,
+            pageIndex=page_index,
+            question=question,
+            topK=top_k,
+        )
     )
 
+
+@router.post("/stream", summary="Stream QA answer with SSE by JSON body")
+async def stream_qa_post_endpoint(request: QaAskTextRequest) -> StreamingResponse:
+    return _build_stream_response(request)
+
+
+def _build_stream_response(request: QaAskTextRequest) -> StreamingResponse:
     logger.info(
         "QA stream request received. sessionId=%s coursewareId=%s pageIndex=%s topK=%s",
         request.session_id,
@@ -74,5 +83,5 @@ async def stream_qa_endpoint(
     )
 
 
-def _format_sse(payload: dict[str, str]) -> str:
+def _format_sse(payload: dict[str, object]) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"

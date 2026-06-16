@@ -1,5 +1,6 @@
 package com.interactive.edu.service.courseware;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interactive.edu.dto.CoursewareUploadResult;
 import com.interactive.edu.enums.CoursewareStatus;
 import com.interactive.edu.enums.TaskStatus;
@@ -9,9 +10,9 @@ import com.interactive.edu.service.python.PythonParseClient;
 import com.interactive.edu.service.python.PythonParseRequest;
 import com.interactive.edu.service.python.PythonScriptClient;
 import com.interactive.edu.service.python.PythonScriptRequest;
-import com.interactive.edu.service.storage.StorageService;
-import com.interactive.edu.service.storage.StorageServiceFactory;
-import com.interactive.edu.service.storage.StoredObject;
+import com.interactive.edu.storage.StorageService;
+import com.interactive.edu.storage.StorageServiceFactory;
+import com.interactive.edu.storage.StoredObject;
 import com.interactive.edu.service.tts.TtsService;
 import com.interactive.edu.vo.courseware.CoursewareDetailView;
 import com.interactive.edu.vo.courseware.ScriptView;
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.mock.web.MockMultipartFile;
 
@@ -62,7 +64,17 @@ class CoursewareServiceTest {
     @BeforeEach
     void setUp() {
         taskExecutor = new RecordingTaskExecutor();
-        service = new CoursewareService(storageServiceFactory, pythonParseClient, pythonScriptClient, taskExecutor, ttsService);
+        service = new CoursewareService(
+                storageServiceFactory,
+                pythonParseClient,
+                pythonScriptClient,
+                taskExecutor,
+                ttsService,
+                new ObjectMapper(),
+                emptyProvider(),
+                emptyProvider(),
+                emptyProvider()
+        );
 
         when(storageServiceFactory.get()).thenReturn(storageService);
         when(storageService.save(anyString(), any())).thenAnswer(invocation ->
@@ -71,8 +83,8 @@ class CoursewareServiceTest {
                 2,
                 List.of("Page 1 Title", "Page 2 Title"),
                 List.of(
-                        new PythonParseClient.ParseSegment(1, "Page 1 Title", "Page 1 body", List.of("Concept 1")),
-                        new PythonParseClient.ParseSegment(2, "Page 2 Title", "Page 2 body", List.of("Concept 2"))
+                        new PythonParseClient.ParseSegment(1, "Page 1 Title", "Page 1 body", List.of("Concept 1"), null, null, List.of()),
+                        new PythonParseClient.ParseSegment(2, "Page 2 Title", "Page 2 body", List.of("Concept 2"), null, null, List.of())
                 )
         ));
     }
@@ -253,6 +265,30 @@ class CoursewareServiceTest {
         assertThat(detail.status()).isEqualTo(CoursewareStatus.PARSED.name());
         assertThat(detail.currentTaskStatus()).isEqualTo(TaskStatus.SUCCESS.name());
         return uploadResult.getCoursewareId();
+    }
+
+    private static <T> ObjectProvider<T> emptyProvider() {
+        return new ObjectProvider<>() {
+            @Override
+            public T getObject(Object... args) {
+                return null;
+            }
+
+            @Override
+            public T getIfAvailable() {
+                return null;
+            }
+
+            @Override
+            public T getIfUnique() {
+                return null;
+            }
+
+            @Override
+            public T getObject() {
+                return null;
+            }
+        };
     }
 
     private static final class RecordingTaskExecutor implements TaskExecutor {

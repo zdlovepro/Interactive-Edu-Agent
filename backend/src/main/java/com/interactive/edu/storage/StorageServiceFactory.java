@@ -1,4 +1,4 @@
-package com.interactive.edu.service.storage;
+package com.interactive.edu.storage;
 
 import com.interactive.edu.config.StorageProperties;
 import lombok.RequiredArgsConstructor;

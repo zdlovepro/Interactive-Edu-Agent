@@ -4,8 +4,15 @@
 保存位置：python-service/app/core/config.py
 """
 
+from pathlib import Path
+
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
+
+
+_SERVICE_ROOT = Path(__file__).resolve().parents[2]
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_ENV_FILES = tuple(str(path) for path in (_SERVICE_ROOT / ".env", _REPO_ROOT / ".env"))
 
 
 class Settings(BaseSettings):
@@ -126,7 +133,7 @@ class Settings(BaseSettings):
     MINIO_SECURE: bool = False
 
     class Config:
-        env_file = ".env"
+        env_file = _ENV_FILES
         extra = "ignore"
 
 

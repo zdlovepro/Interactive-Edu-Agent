@@ -60,11 +60,18 @@
           v-for="feature in featureCards"
           :key="feature.title"
           hoverable
+          :padded="false"
           class="feature-card"
         >
-          <span class="feature-kicker">{{ feature.kicker }}</span>
-          <h3>{{ feature.title }}</h3>
-          <p>{{ feature.description }}</p>
+          <div class="feature-card__collapsed">
+            <span class="feature-kicker">{{ feature.kicker }}</span>
+          </div>
+
+          <div class="feature-card__expanded">
+            <span class="feature-kicker">{{ feature.kicker }}</span>
+            <h3>{{ feature.title }}</h3>
+            <p>{{ feature.description }}</p>
+          </div>
         </AppCard>
       </div>
     </section>
@@ -83,9 +90,16 @@
 
         <div class="workflow-grid">
           <div class="workflow-node" v-for="item in workflow" :key="item.title">
-            <span class="workflow-node__index">{{ item.index }}</span>
-            <h3>{{ item.title }}</h3>
-            <p>{{ item.description }}</p>
+            <div class="workflow-node__collapsed">
+              <span class="workflow-node__index">{{ item.index }}</span>
+              <h3>{{ item.title }}</h3>
+            </div>
+
+            <div class="workflow-node__expanded">
+              <span class="workflow-node__index">{{ item.index }}</span>
+              <h3>{{ item.title }}</h3>
+              <p>{{ item.description }}</p>
+            </div>
           </div>
         </div>
       </AppCard>
@@ -183,8 +197,8 @@ const workflow = [
   border: 1px solid rgba(126, 136, 255, 0.16);
   border-radius: calc(var(--radius-xl) + 0.25rem);
   background:
-    radial-gradient(circle at top left, rgba(138, 123, 255, 0.28), transparent 34%),
-    radial-gradient(circle at bottom right, rgba(72, 165, 255, 0.22), transparent 30%),
+    radial-gradient(circle at top left, rgba(14, 90, 224, 0.18), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(24, 126, 168, 0.18), transparent 30%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(245, 248, 255, 0.94));
   box-shadow: var(--shadow-lg);
 }
@@ -257,7 +271,7 @@ const workflow = [
   min-height: 2rem;
   padding: 0.4rem 0.75rem;
   border-radius: 999px;
-  background: rgba(95, 104, 255, 0.1);
+  background: rgba(14, 90, 224, 0.1);
   color: var(--primary-color);
   font-size: var(--font-size-xs);
   font-weight: 700;
@@ -323,16 +337,70 @@ const workflow = [
 
 .feature-card {
   min-height: 14rem;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+}
+
+.feature-card__collapsed,
+.feature-card__expanded {
+  position: absolute;
+  inset: 0;
+  padding: 1.5rem;
+  transition:
+    opacity var(--transition-base),
+    transform var(--transition-base);
+}
+
+.feature-card__collapsed {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 0.7rem;
+  background:
+    radial-gradient(circle at top left, rgba(14, 90, 224, 0.1), transparent 36%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 250, 255, 0.94));
+}
+
+.feature-card__expanded {
+  opacity: 0;
+  transform: translateY(0.8rem);
+  background:
+    radial-gradient(circle at top right, rgba(24, 126, 168, 0.14), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 249, 255, 0.95));
+}
+
+.feature-card:hover .feature-card__collapsed {
+  opacity: 0;
+  transform: translateY(-0.6rem);
+}
+
+.feature-card:hover .feature-card__expanded {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .feature-kicker {
   display: inline-flex;
-  margin-bottom: 1rem;
   color: var(--secondary-color);
   font-size: var(--font-size-xs);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.feature-card__collapsed .feature-kicker {
+  margin: 0;
+  font-size: 1.5rem;
+  letter-spacing: -0.02em;
+  text-transform: none;
+  color: var(--primary-color);
+}
+
+.feature-card__expanded .feature-kicker {
+  margin-bottom: 1rem;
 }
 
 .workflow-card {
@@ -346,10 +414,61 @@ const workflow = [
 }
 
 .workflow-node {
+  position: relative;
   padding: 1.2rem;
+  min-height: 14rem;
   border-radius: var(--radius-lg);
   background: rgba(248, 250, 255, 0.78);
   border: 1px solid rgba(128, 139, 182, 0.12);
+  overflow: hidden;
+  transition:
+    transform var(--transition-base),
+    box-shadow var(--transition-base),
+    border-color var(--transition-base);
+}
+
+.workflow-node:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
+  border-color: rgba(14, 90, 224, 0.16);
+}
+
+.workflow-node__collapsed,
+.workflow-node__expanded {
+  position: absolute;
+  inset: 0;
+  padding: 1.2rem;
+  transition:
+    opacity var(--transition-base),
+    transform var(--transition-base);
+}
+
+.workflow-node__collapsed {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.8rem;
+  background:
+    radial-gradient(circle at top left, rgba(14, 90, 224, 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(251, 253, 255, 0.98), rgba(245, 249, 255, 0.94));
+}
+
+.workflow-node__expanded {
+  opacity: 0;
+  transform: translateY(0.8rem);
+  background:
+    radial-gradient(circle at top right, rgba(24, 126, 168, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(245, 249, 255, 0.96));
+}
+
+.workflow-node:hover .workflow-node__collapsed {
+  opacity: 0;
+  transform: translateY(-0.6rem);
+}
+
+.workflow-node:hover .workflow-node__expanded {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .workflow-node__index {
@@ -360,9 +479,17 @@ const workflow = [
   height: 2.4rem;
   margin-bottom: 0.9rem;
   border-radius: 0.85rem;
-  background: rgba(95, 104, 255, 0.1);
+  background: rgba(14, 90, 224, 0.08);
   color: var(--primary-color);
   font-weight: 700;
+}
+
+.workflow-node__collapsed h3 {
+  font-size: 1.45rem;
+}
+
+.workflow-node__expanded .workflow-node__index {
+  margin-bottom: 0.9rem;
 }
 
 @media (max-width: 1080px) {
@@ -374,6 +501,35 @@ const workflow = [
 
   .hero-metrics {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (hover: none), (max-width: 768px) {
+  .feature-card,
+  .workflow-node {
+    min-height: auto;
+  }
+
+  .feature-card {
+    padding: 1.5rem;
+  }
+
+  .feature-card__collapsed,
+  .workflow-node__collapsed {
+    display: none;
+  }
+
+  .feature-card__expanded,
+  .workflow-node__expanded {
+    position: static;
+    opacity: 1;
+    transform: none;
+    padding: 0;
+    background: transparent;
+  }
+
+  .workflow-node {
+    padding: 1.2rem;
   }
 }
 

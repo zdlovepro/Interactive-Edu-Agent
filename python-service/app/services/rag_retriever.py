@@ -6,10 +6,11 @@ from typing import Any
 from app.services.vector_store import get_vector_store
 from app.utils.logger import logger
 
-_CURRENT_PAGE_BONUS = 0.30
-_ADJACENT_PAGE_BONUS = 0.15
+_CURRENT_PAGE_BONUS = 0.12
+_ADJACENT_PAGE_BONUS = 0.05
 _VISUAL_SUMMARY_BONUS = 0.45
-_CANDIDATE_MULTIPLIER = 3
+_NON_VISUAL_SUMMARY_PENALTY = 0.12
+_CANDIDATE_MULTIPLIER = 5
 
 _VISUAL_QUESTION_PATTERN = re.compile(r"(图表|表格|流程图|示意图|曲线图|柱状图|饼图|折线图|这张图|这幅图|本图)")
 
@@ -60,6 +61,8 @@ def retrieve_context(
             current_page_index=page_index,
         )
         adjusted_score = base_score + _page_bonus(resolved_page_index, page_index) + visual_bonus
+        if not visual_question and str(metadata.get("source") or "") == "visual_summary":
+            adjusted_score -= _NON_VISUAL_SUMMARY_PENALTY
 
         if not text and isinstance(metadata.get("visual_summary"), str):
             text = str(metadata.get("visual_summary") or "").strip()

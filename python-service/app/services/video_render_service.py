@@ -871,6 +871,12 @@ def _rewrite_internal_download_url(raw_url: str) -> str:
     if parsed.hostname not in {"localhost", "127.0.0.1"}:
         return raw_url
 
+    # Backend-served API resources such as `/api/v1/tts/audio/**` must stay on
+    # the backend host in local runs. Only non-API localhost URLs are candidates
+    # for MinIO endpoint rewriting.
+    if parsed.path.startswith("/api/"):
+        return raw_url
+
     minio_endpoint = (settings.MINIO_ENDPOINT or "").strip()
     if not minio_endpoint:
         return raw_url
@@ -1036,7 +1042,7 @@ def _build_filter_graph(
 
     if subtitle_srt_path is not None:
         steps.append(
-            f"[{current_label}]subtitles='{_escape_filter_path(subtitle_srt_path)}':"
+            f"[{current_label}]subtitles=filename='{_escape_filter_path(subtitle_srt_path)}':"
             "force_style='Alignment=2,MarginV=6,FontSize=16,Outline=1,Shadow=0,WrapStyle=2'[vout]"
         )
     elif subtitle_text_path is not None:
@@ -1455,7 +1461,12 @@ def _format_srt_time(ms: int) -> str:
 
 
 def _escape_filter_path(path: Path) -> str:
-    return path.as_posix().replace("\\", "\\\\").replace("'", "\\'")
+    # ffmpeg filter graphs treat ":" as an option separator, so Windows drive
+    # letters like "D:/..." must escape the colon even when the path is quoted.
+    escaped = path.as_posix().replace("\\", "\\\\")
+    escaped = escaped.replace(":", "\\:")
+    escaped = escaped.replace("'", "\\'")
+    return escaped
 
 
 def _fontfile_filter_options() -> list[str]:

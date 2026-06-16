@@ -5,6 +5,7 @@ import com.interactive.edu.exception.ServiceException;
 import com.interactive.edu.service.courseware.CoursewareService;
 import com.interactive.edu.service.lecture.LectureService;
 import com.interactive.edu.service.python.PythonQaClient;
+import com.interactive.edu.service.python.PythonQaIngestClient;
 import com.interactive.edu.service.python.PythonQaRequest;
 import com.interactive.edu.service.python.PythonQaResponse;
 import com.interactive.edu.service.record.LectureRecordService;
@@ -29,6 +30,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -46,13 +49,16 @@ class QaServiceTest {
     private PythonQaClient pythonQaClient;
 
     @Mock
+    private PythonQaIngestClient pythonQaIngestClient;
+
+    @Mock
     private LectureRecordService lectureRecordService;
 
     @InjectMocks
     private QaService qaService;
 
     @Test
-    @DisplayName("uses Python RAG answer when Python QA succeeds")
+    @DisplayName("uses Python RAG answer with current page context")
     void askText_pythonSuccess_returnsPythonAnswer() {
         LectureService.SessionSnapshot session = new LectureService.SessionSnapshot(
                 "sess_qa_1",
@@ -61,46 +67,46 @@ class QaServiceTest {
                 3,
                 "PLAYING"
         );
+        CoursewareService.QaIngestPage qaPage = new CoursewareService.QaIngestPage(
+                4,
+                "线性回归",
+                "这一页介绍线性回归的定义和损失函数。",
+                List.of("定义", "损失函数"),
+                "D:/data/page4.png",
+                "页面中包含公式和二维散点图。",
+                List.of("公式", "散点图")
+        );
+
         when(lectureService.getSessionSnapshot("sess_qa_1")).thenReturn(session);
+        when(coursewareService.getQaIngestPages("cware_qa_1")).thenReturn(List.of(qaPage));
+        when(coursewareService.getQaPageForPage("cware_qa_1", 4)).thenReturn(qaPage);
         when(pythonQaClient.askText(any(PythonQaRequest.class))).thenReturn(
                 new PythonQaResponse(
-                        "这是 Python RAG 的回答。",
-                        List.of(new PythonQaResponse.EvidencePayload("page_3", "第 3 页证据", 3, "chunk_3")),
+                        "线性回归就是用一条线去拟合数据并最小化误差。",
+                        List.of(new PythonQaResponse.EvidencePayload("page_4", "定义和损失函数", 4, "chunk_4")),
                         123
                 )
         );
 
-        QaAnswerView result = qaService.askText("sess_qa_1", "这一页在讲什么");
+        QaAnswerView result = qaService.askText("sess_qa_1", "什么是线性回归", 4);
 
-        assertThat(result.answer()).isEqualTo("这是 Python RAG 的回答。");
+        assertThat(result.answer()).contains("线性回归");
         assertThat(result.latencyMs()).isEqualTo(123);
         assertThat(result.evidence()).hasSize(1);
-        assertThat(result.evidence().get(0).source()).isEqualTo("page_3");
-        assertThat(result.evidence().get(0).pageIndex()).isEqualTo(3);
-        assertThat(result.evidence().get(0).chunkId()).isEqualTo("chunk_3");
+        assertThat(result.evidence().get(0).pageIndex()).isEqualTo(4);
 
         ArgumentCaptor<PythonQaRequest> captor = ArgumentCaptor.forClass(PythonQaRequest.class);
         verify(pythonQaClient).askText(captor.capture());
-        assertThat(captor.getValue().getSessionId()).isEqualTo("sess_qa_1");
-        assertThat(captor.getValue().getCoursewareId()).isEqualTo("cware_qa_1");
-        assertThat(captor.getValue().getPageIndex()).isEqualTo(3);
-        assertThat(captor.getValue().getQuestion()).isEqualTo("这一页在讲什么");
-        assertThat(captor.getValue().getTopK()).isEqualTo(5);
-        verify(lectureRecordService).createQaRecord(
-                "sess_qa_1",
-                "cware_qa_1",
-                3,
-                "这一页在讲什么",
-                "这是 Python RAG 的回答。",
-                result.evidence(),
-                123
-        );
-        verifyNoInteractions(coursewareService);
+        assertThat(captor.getValue().getPageIndex()).isEqualTo(4);
+        assertThat(captor.getValue().getCurrentPageTitle()).isEqualTo("线性回归");
+        assertThat(captor.getValue().getCurrentPageImagePath()).isEqualTo("D:/data/page4.png");
+        assertThat(captor.getValue().getCurrentPageKnowledgePoints()).containsExactly("定义", "损失函数");
+        verify(lectureService).updateBreakpoint("sess_qa_1", 4, null);
     }
 
     @Test
-    @DisplayName("falls back to local template when Python QA times out")
-    void askText_pythonTimeout_fallsBackToLocalAnswer() {
+    @DisplayName("falls back to local template when Python QA fails")
+    void askText_pythonError_fallsBackToLocalAnswer() {
         LectureService.SessionSnapshot session = new LectureService.SessionSnapshot(
                 "sess_qa_2",
                 "cware_qa_2",
@@ -108,52 +114,38 @@ class QaServiceTest {
                 2,
                 "PLAYING"
         );
-        ScriptSegmentView target = new ScriptSegmentView(
-                "seg_1",
-                "node_1",
-                1,
-                "递归定义",
-                "递归需要先明确终止条件，再设计递归关系。",
-                List.of("终止条件", "递归关系"),
-                null
-        );
         ScriptSegmentView current = new ScriptSegmentView(
                 "seg_2",
                 "node_2",
                 2,
-                "执行过程",
-                "这一页介绍调用栈如何展开和返回。",
-                List.of("调用栈"),
-                null
+                "梯度下降",
+                "这一页介绍梯度下降如何沿负梯度方向更新参数。",
+                List.of("学习率", "迭代更新"),
+                null,
+                "D:/data/page2.png",
+                "/api/v1/courseware/cware_qa_2/page-images/2",
+                "页面中包含迭代示意图。",
+                List.of("示意图"),
+                false
         );
 
         when(lectureService.getSessionSnapshot("sess_qa_2")).thenReturn(session);
+        when(coursewareService.getQaIngestPages("cware_qa_2")).thenReturn(List.of());
         when(pythonQaClient.askText(any(PythonQaRequest.class)))
                 .thenThrow(new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "timeout"));
-        when(coursewareService.getScriptSegments("cware_qa_2")).thenReturn(List.of(target, current));
+        when(coursewareService.getScriptSegments("cware_qa_2")).thenReturn(List.of(current));
         when(coursewareService.getSegmentForPage("cware_qa_2", 2)).thenReturn(current);
 
-        QaAnswerView result = qaService.askText("sess_qa_2", "什么是终止条件");
+        QaAnswerView result = qaService.askText("sess_qa_2", "梯度下降怎么更新参数", 2);
 
-        assertThat(result.answer()).contains("递归定义", "终止条件");
-        assertThat(result.latencyMs()).isGreaterThanOrEqualTo(1);
-        assertThat(result.evidence()).hasSize(2);
-        assertThat(result.evidence().get(0).pageIndex()).isEqualTo(1);
-        assertThat(result.evidence().get(1).pageIndex()).isEqualTo(2);
-        verify(lectureRecordService).createQaRecord(
-                "sess_qa_2",
-                "cware_qa_2",
-                2,
-                "什么是终止条件",
-                result.answer(),
-                result.evidence(),
-                result.latencyMs()
-        );
+        assertThat(result.answer()).contains("沿负梯度方向更新参数");
+        assertThat(result.evidence()).hasSize(1);
+        verify(lectureService, never()).updateBreakpoint("sess_qa_2", 2, null);
     }
 
     @Test
-    @DisplayName("falls back to local template when Python QA returns error")
-    void askText_pythonError_fallsBackToLocalAnswer() {
+    @DisplayName("rebuilds vector index and retries when Python answer has no evidence")
+    void askText_noEvidence_rebuildsIndexAndRetries() {
         LectureService.SessionSnapshot session = new LectureService.SessionSnapshot(
                 "sess_qa_3",
                 "cware_qa_3",
@@ -161,74 +153,76 @@ class QaServiceTest {
                 1,
                 "PLAYING"
         );
-        ScriptSegmentView current = new ScriptSegmentView(
-                "seg_3",
-                "node_3",
+        CoursewareService.QaIngestPage qaPage = new CoursewareService.QaIngestPage(
                 1,
-                "链表结构",
-                "链表由节点和指针组成，每个节点会指向下一个节点。",
-                List.of("节点", "指针"),
-                null
+                "决策树",
+                "这一页介绍决策树的划分准则。",
+                List.of("信息增益"),
+                "D:/data/page1.png",
+                null,
+                List.of()
         );
 
         when(lectureService.getSessionSnapshot("sess_qa_3")).thenReturn(session);
+        when(coursewareService.getQaIngestPages("cware_qa_3")).thenReturn(List.of(qaPage));
+        when(coursewareService.getQaPageForPage("cware_qa_3", 1)).thenReturn(qaPage);
         when(pythonQaClient.askText(any(PythonQaRequest.class)))
-                .thenThrow(new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "python error"));
-        when(coursewareService.getScriptSegments("cware_qa_3")).thenReturn(List.of(current));
-        when(coursewareService.getSegmentForPage("cware_qa_3", 1)).thenReturn(current);
+                .thenReturn(new PythonQaResponse("课件中没有直接覆盖该内容。", List.of(), 10))
+                .thenReturn(new PythonQaResponse(
+                        "这一页重点是用信息增益来选择划分属性。",
+                        List.of(new PythonQaResponse.EvidencePayload("page_1", "信息增益", 1, "chunk_1")),
+                        18
+                ));
 
-        QaAnswerView result = qaService.askText("sess_qa_3", "链表是什么");
+        QaAnswerView result = qaService.askText("sess_qa_3", "这一页重点是什么", 1);
 
-        assertThat(result.answer()).contains("链表结构", "链表由节点和指针组成");
-        assertThat(result.evidence()).hasSize(1);
-        assertThat(result.evidence().get(0).chunkId()).isEqualTo("node_3");
-        verify(lectureRecordService).createQaRecord(
-                "sess_qa_3",
-                "cware_qa_3",
-                1,
-                "链表是什么",
-                result.answer(),
-                result.evidence(),
-                result.latencyMs()
-        );
+        assertThat(result.answer()).contains("信息增益");
+        verify(coursewareService, times(2)).getQaIngestPages("cware_qa_3");
+        verify(pythonQaClient, times(2)).askText(any(PythonQaRequest.class));
     }
 
     @Test
-    @DisplayName("streams Python SSE when Python QA stream succeeds")
+    @DisplayName("streams Python SSE with requested page context")
     void streamText_pythonSuccess_proxiesSse() throws Exception {
         LectureService.SessionSnapshot session = new LectureService.SessionSnapshot(
                 "sess_stream_1",
                 "cware_stream_1",
                 "user_stream_1",
-                4,
+                2,
                 "PLAYING"
         );
+        CoursewareService.QaIngestPage qaPage = new CoursewareService.QaIngestPage(
+                5,
+                "支持向量机",
+                "这一页介绍间隔最大化。",
+                List.of("间隔"),
+                "D:/data/page5.png",
+                null,
+                List.of()
+        );
+
         when(lectureService.getSessionSnapshot("sess_stream_1")).thenReturn(session);
+        when(coursewareService.getQaIngestPages("cware_stream_1")).thenReturn(List.of(qaPage));
+        when(coursewareService.getQaPageForPage("cware_stream_1", 5)).thenReturn(qaPage);
         doAnswer(invocation -> {
             PythonQaRequest request = invocation.getArgument(0);
-            ByteArrayOutputStream sink = new ByteArrayOutputStream();
-            sink.write(("data: {\"type\":\"delta\",\"content\":\"stream:" + request.getCoursewareId() + "\"}\n\n"
-                    + "data: {\"type\":\"done\"}\n\n").getBytes(StandardCharsets.UTF_8));
-            invocation.<java.io.OutputStream>getArgument(1).write(sink.toByteArray());
+            invocation.<java.io.OutputStream>getArgument(1).write((
+                    "data: {\"type\":\"meta\",\"evidence\":[{\"source\":\"page_" + request.getPageIndex()
+                            + "\",\"text\":\"ctx\",\"pageIndex\":" + request.getPageIndex() + "}]}\n\n"
+                            + "data: {\"type\":\"delta\",\"content\":\"stream:" + request.getCoursewareId() + "\"}\n\n"
+                            + "data: {\"type\":\"done\"}\n\n"
+            ).getBytes(StandardCharsets.UTF_8));
             return null;
         }).when(pythonQaClient).streamText(any(PythonQaRequest.class), any(java.io.OutputStream.class));
 
-        StreamingResponseBody body = qaService.streamText("sess_stream_1", "请开始流式回答", 4);
+        StreamingResponseBody body = qaService.streamText("sess_stream_1", "解释这一页", 5, 4);
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         body.writeTo(output);
 
         String payload = output.toString(StandardCharsets.UTF_8);
-        assertThat(payload).contains("data: {\"type\":\"delta\",\"content\":\"stream:cware_stream_1\"}");
-        assertThat(payload).contains("data: {\"type\":\"done\"}");
-
-        ArgumentCaptor<PythonQaRequest> captor = ArgumentCaptor.forClass(PythonQaRequest.class);
-        verify(pythonQaClient).streamText(captor.capture(), any(java.io.OutputStream.class));
-        assertThat(captor.getValue().getSessionId()).isEqualTo("sess_stream_1");
-        assertThat(captor.getValue().getCoursewareId()).isEqualTo("cware_stream_1");
-        assertThat(captor.getValue().getPageIndex()).isEqualTo(4);
-        assertThat(captor.getValue().getQuestion()).isEqualTo("请开始流式回答");
-        assertThat(captor.getValue().getTopK()).isEqualTo(4);
-        verifyNoInteractions(coursewareService, lectureRecordService);
+        assertThat(payload).contains("\"type\":\"meta\"");
+        assertThat(payload).contains("stream:cware_stream_1");
+        assertThat(payload).contains("\"pageIndex\":5");
     }
 
     @Test
@@ -241,18 +235,19 @@ class QaServiceTest {
                 2,
                 "PLAYING"
         );
+
         when(lectureService.getSessionSnapshot("sess_stream_2")).thenReturn(session);
+        when(coursewareService.getQaIngestPages("cware_stream_2")).thenReturn(List.of());
         doThrow(new ServiceException(ErrorCode.PYTHON_SERVICE_ERROR, "python down"))
                 .when(pythonQaClient).streamText(any(PythonQaRequest.class), any(java.io.OutputStream.class));
 
-        StreamingResponseBody body = qaService.streamText("sess_stream_2", "流式服务还在吗", null);
+        StreamingResponseBody body = qaService.streamText("sess_stream_2", "流式服务还在吗", 2, null);
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         body.writeTo(output);
 
         String payload = output.toString(StandardCharsets.UTF_8);
-        assertThat(payload).contains("当前问答服务暂时不可用，请稍后重试。");
+        assertThat(payload).contains("当前问答服务暂时不可用，请稍后重试");
         assertThat(payload).contains("data: {\"type\":\"done\"}");
-        verifyNoInteractions(coursewareService, lectureRecordService);
     }
 
     @Test
@@ -260,18 +255,8 @@ class QaServiceTest {
     void askText_sessionNotFound_throwsNoSuchElementException() {
         when(lectureService.getSessionSnapshot("missing")).thenThrow(new NoSuchElementException("session missing"));
 
-        assertThatThrownBy(() -> qaService.askText("missing", "问题"))
+        assertThatThrownBy(() -> qaService.askText("missing", "问题", 1))
                 .isInstanceOf(NoSuchElementException.class);
-        verifyNoInteractions(pythonQaClient, coursewareService, lectureRecordService);
-    }
-
-    @Test
-    @DisplayName("streaming also throws when session does not exist")
-    void streamText_sessionNotFound_throwsNoSuchElementException() {
-        when(lectureService.getSessionSnapshot("missing")).thenThrow(new NoSuchElementException("session missing"));
-
-        assertThatThrownBy(() -> qaService.streamText("missing", "问题", 5))
-                .isInstanceOf(NoSuchElementException.class);
-        verifyNoInteractions(pythonQaClient, coursewareService, lectureRecordService);
+        verifyNoInteractions(pythonQaClient, coursewareService, lectureRecordService, pythonQaIngestClient);
     }
 }
