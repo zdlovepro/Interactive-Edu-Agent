@@ -23,6 +23,34 @@ from app.schemas.video_render import (
 )
 from app.utils.logger import logger
 
+_DIGITAL_HUMAN_VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
+_DIGITAL_HUMAN_REFERENCE_DIR_CANDIDATES = (
+    "assets/digital-human/reference",
+    "digital-human/reference",
+)
+_DIGITAL_HUMAN_PREFERRED_TOKENS = (
+    "avatar",
+    "speaker",
+    "presenter",
+    "teacher",
+    "human",
+    "digital_human",
+    "digital-human",
+    "talking",
+    "portrait",
+    "raw",
+    "source",
+)
+_DIGITAL_HUMAN_REJECT_TOKENS = (
+    "sample",
+    "result",
+    "lecture",
+    "playlist",
+    "segment",
+    "render",
+    "preview",
+)
+
 
 @dataclass(frozen=True)
 class SubtitleCue:
@@ -404,21 +432,118 @@ def _resolve_digital_human_reference_video() -> Path | None:
     if not workspace_root.exists():
         return None
 
-    video_candidates = sorted(
-        (
-            path
-            for path in workspace_root.iterdir()
-            if path.is_file() and path.suffix.lower() in {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
-        ),
-        key=lambda item: item.stat().st_size,
-        reverse=True,
-    )
-    if not video_candidates:
+    dedicated_reference_video = _find_reference_video_in_dedicated_dirs(workspace_root)
+    if dedicated_reference_video is not None:
+        logger.info(
+            "Digital human reference video loaded from dedicated directory. path=%s",
+            dedicated_reference_video,
+        )
+        return dedicated_reference_video
+
+    auto_selected = _auto_select_workspace_digital_human_video(workspace_root)
+    if auto_selected is not None:
+        logger.info("Digital human reference video auto-selected. path=%s", auto_selected)
+        return auto_selected
+
+    return None
+
+
+def _find_reference_video_in_dedicated_dirs(workspace_root: Path) -> Path | None:
+    for relative_dir in _DIGITAL_HUMAN_REFERENCE_DIR_CANDIDATES:
+        candidate_dir = workspace_root / relative_dir
+        if not candidate_dir.exists() or not candidate_dir.is_dir():
+            continue
+
+        videos = _collect_video_candidates(candidate_dir)
+        if not videos:
+            continue
+
+        preferred = sorted(
+            videos,
+            key=lambda item: (_score_digital_human_reference_video(item, workspace_root), item.stat().st_size),
+            reverse=True,
+        )
+        return preferred[0].resolve()
+
+    return None
+
+
+def _auto_select_workspace_digital_human_video(workspace_root: Path) -> Path | None:
+    ranked_candidates: list[tuple[int, int, Path]] = []
+    for path in _collect_video_candidates(workspace_root):
+        score = _score_digital_human_reference_video(path, workspace_root)
+        if score <= 0:
+            continue
+        try:
+            size_bytes = path.stat().st_size
+        except OSError:
+            continue
+        ranked_candidates.append((score, size_bytes, path))
+
+    if not ranked_candidates:
         return None
 
-    selected = video_candidates[0].resolve()
-    logger.info("Digital human reference video auto-selected. path=%s", selected)
-    return selected
+    ranked_candidates.sort(reverse=True)
+    return ranked_candidates[0][2].resolve()
+
+
+def _collect_video_candidates(root: Path) -> list[Path]:
+    candidates: list[Path] = []
+    try:
+        iterator = root.rglob("*")
+    except OSError:
+        return candidates
+
+    for path in iterator:
+        try:
+            if path.is_file() and path.suffix.lower() in _DIGITAL_HUMAN_VIDEO_EXTENSIONS:
+                candidates.append(path)
+        except OSError:
+            continue
+    return candidates
+
+
+def _score_digital_human_reference_video(path: Path, workspace_root: Path) -> int:
+    try:
+        relative_path = path.resolve().relative_to(workspace_root.resolve()).as_posix().lower()
+    except ValueError:
+        relative_path = path.as_posix().lower()
+
+    file_name = path.name.lower()
+    score = 0
+
+    if any(token in relative_path for token in ("frontend/public/sample", "frontend/dist/sample")):
+        return -1000
+
+    if any(token in file_name for token in _DIGITAL_HUMAN_PREFERRED_TOKENS):
+        score += 30
+    if any(token in relative_path for token in _DIGITAL_HUMAN_PREFERRED_TOKENS):
+        score += 25
+
+    if "exports/digital-human" in relative_path or "exports/digital_human" in relative_path:
+        score += 35
+    if "raw" in file_name or "source" in file_name:
+        score += 40
+
+    if any(token in file_name for token in _DIGITAL_HUMAN_REJECT_TOKENS):
+        score -= 45
+    if any(token in relative_path for token in _DIGITAL_HUMAN_REJECT_TOKENS):
+        score -= 25
+
+    try:
+        size_bytes = path.stat().st_size
+    except OSError:
+        size_bytes = 0
+
+    if size_bytes >= 2_000_000:
+        score += 12
+    elif size_bytes <= 150_000:
+        score -= 30
+
+    if path.parent == workspace_root:
+        score += 8
+
+    return score
 
 
 def _group_selected_digital_human_segments(

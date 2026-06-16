@@ -205,3 +205,7 @@ bootstrap-local.yml
 # Docker Compose 数据挂载
 # ================================
 volumes/
+
+# Dedicated local avatar reference videos for digital human rendering
+assets/digital-human/reference/*
+!assets/digital-human/reference/README.md

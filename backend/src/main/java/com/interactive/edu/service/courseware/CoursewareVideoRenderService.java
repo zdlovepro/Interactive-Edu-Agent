@@ -29,8 +29,10 @@ import org.springframework.util.StringUtils;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -42,6 +44,7 @@ public class CoursewareVideoRenderService {
 
     private static final String HLS_URL_TEMPLATE = "/api/v1/courseware/%s/video/hls/index.m3u8";
     private static final String TIMELINE_FILE_NAME = "timeline.json";
+    private static final String DIGITAL_HUMAN_MANIFEST_FILE_NAME = "digital_human_manifest.json";
     private static final int MAX_ERROR_MESSAGE_LENGTH = 1000;
 
     private final CoursewareService coursewareService;
@@ -138,7 +141,7 @@ public class CoursewareVideoRenderService {
                     .build();
 
             PythonVideoRenderClient.VideoRenderResult result = pythonVideoRenderClient.render(request);
-            state.markReady(result);
+            state.markReady(result, buildReadyMessage(script, result));
             persistTaskState(state);
         } catch (Exception ex) {
             log.error("Courseware video render failed. coursewareId={}", state.getCoursewareId(), ex);
@@ -348,6 +351,109 @@ public class CoursewareVideoRenderService {
         return MediaType.APPLICATION_OCTET_STREAM;
     }
 
+    private String buildReadyMessage(ScriptView script, PythonVideoRenderClient.VideoRenderResult result) {
+        long selectedSegments = script.segments().stream()
+                .filter(ScriptSegmentView::digitalHumanEnabled)
+                .count();
+        if (selectedSegments <= 0) {
+            return "Courseware lecture video rendered";
+        }
+
+        List<Map<String, Object>> manifestItems = loadDigitalHumanManifest(result);
+        if (manifestItems.isEmpty()) {
+            return "Courseware lecture video rendered, but selected digital human segments were skipped because no usable reference video was found.";
+        }
+
+        long successCount = manifestItems.stream()
+                .filter(item -> "success".equalsIgnoreCase(String.valueOf(item.get("status"))))
+                .count();
+        long failedCount = manifestItems.stream()
+                .filter(item -> "failed".equalsIgnoreCase(String.valueOf(item.get("status"))))
+                .count();
+
+        if (successCount > 0) {
+            String summary = "Courseware lecture video rendered with digital human on %d selected segment(s)."
+                    .formatted(successCount);
+            if (failedCount > 0) {
+                String failureReason = firstManifestReason(manifestItems, "failed");
+                return appendReason(summary, failureReason);
+            }
+            return summary;
+        }
+
+        String failureReason = firstManifestReason(manifestItems, "failed");
+        if (StringUtils.hasText(failureReason)) {
+            return appendReason(
+                    "Courseware lecture video rendered, but selected digital human segments were skipped.",
+                    failureReason
+            );
+        }
+
+        return "Courseware lecture video rendered, but selected digital human segments were skipped.";
+    }
+
+    private List<Map<String, Object>> loadDigitalHumanManifest(PythonVideoRenderClient.VideoRenderResult result) {
+        if (result == null || !StringUtils.hasText(result.getOutputDir())) {
+            return List.of();
+        }
+
+        Path manifestPath = Path.of(result.getOutputDir())
+                .toAbsolutePath()
+                .normalize()
+                .resolve(DIGITAL_HUMAN_MANIFEST_FILE_NAME);
+        if (!Files.exists(manifestPath) || !Files.isRegularFile(manifestPath)) {
+            return List.of();
+        }
+
+        try {
+            return objectMapper.readValue(
+                    manifestPath.toFile(),
+                    new TypeReference<List<Map<String, Object>>>() {
+                    }
+            );
+        } catch (Exception ex) {
+            log.warn(
+                    "Failed to load digital human manifest. coursewareId={}, path={}, reason={}",
+                    result.getOutputDir(),
+                    manifestPath,
+                    ex.getMessage()
+            );
+            return List.of();
+        }
+    }
+
+    private String firstManifestReason(List<Map<String, Object>> manifestItems, String expectedStatus) {
+        List<String> reasons = new ArrayList<>();
+        for (Map<String, Object> item : manifestItems) {
+            if (!expectedStatus.equalsIgnoreCase(String.valueOf(item.get("status")))) {
+                continue;
+            }
+            Object reason = item.get("reason");
+            if (reason == null) {
+                continue;
+            }
+            String text = reason.toString().trim();
+            if (StringUtils.hasText(text)) {
+                reasons.add(text);
+            }
+        }
+        if (reasons.isEmpty()) {
+            return null;
+        }
+        return reasons.get(0);
+    }
+
+    private String appendReason(String prefix, String reason) {
+        if (!StringUtils.hasText(reason)) {
+            return prefix;
+        }
+        String normalizedReason = reason.trim();
+        if (normalizedReason.length() > 220) {
+            normalizedReason = normalizedReason.substring(0, 217) + "...";
+        }
+        return prefix + " Reason: " + normalizedReason;
+    }
+
     public record MediaResource(Resource resource, MediaType mediaType) {
     }
 
@@ -423,10 +529,10 @@ public class CoursewareVideoRenderService {
             touch();
         }
 
-        private void markReady(PythonVideoRenderClient.VideoRenderResult result) {
+        private void markReady(PythonVideoRenderClient.VideoRenderResult result, String message) {
             this.status = "READY";
             this.progress = 100;
-            this.message = "Courseware lecture video rendered";
+            this.message = sanitizeErrorMessage(StringUtils.hasText(message) ? message : "Courseware lecture video rendered");
             this.mp4Path = result.getMp4Path();
             this.hlsPlaylistPath = result.getHlsPlaylistPath();
             this.durationMs = result.getDurationMs();

@@ -1198,6 +1198,13 @@ public class CoursewareService {
 
         LectureScriptRepository scriptRepository = lectureScriptRepository();
         List<LectureScript> existingScripts = scriptRepository.findByCoursewareIdOrderByPageIndexAsc(state.getId());
+        Map<String, LectureScript> existingScriptsByNodeId = existingScripts.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        LectureScript::getNodeId,
+                        script -> script,
+                        (left, right) -> right,
+                        LinkedHashMap::new
+                ));
         Map<String, String> existingEditStatus = existingScripts.stream()
                 .collect(java.util.stream.Collectors.toMap(
                         LectureScript::getNodeId,
@@ -1205,38 +1212,58 @@ public class CoursewareService {
                         (left, right) -> right
                 ));
 
-        scriptRepository.deleteByCoursewareId(state.getId());
+        boolean canUpdateInPlace = !existingScriptsByNodeId.isEmpty()
+                && existingScriptsByNodeId.size() == scriptView.segments().size()
+                && scriptView.segments().stream().allMatch(segment -> existingScriptsByNodeId.containsKey(segment.nodeId()));
 
         List<LectureScript> scripts = new ArrayList<>();
-        for (ScriptSegmentView segment : scriptView.segments()) {
-            LectureScript script = new LectureScript();
-            script.setId(StringUtils.hasText(segment.id())
-                    ? segment.id()
-                    : "script_" + UUID.randomUUID().toString().replace("-", ""));
-            script.setCoursewareId(state.getId());
-            script.setPageIndex(segment.pageIndex());
-            script.setNodeId(segment.nodeId());
-            script.setTitle(segment.title());
-            script.setContent(segment.content());
-            script.setKnowledgePointsJson(serializeList(segment.knowledgePoints()));
-            script.setAudioUrl(segment.audioUrl());
-            script.setPageImageUrl(segment.pageImagePath());
-            script.setVisualSummary(segment.visualSummary());
-            script.setVisualObjectsJson(serializeList(segment.visualObjects()));
-            script.setDigitalHumanEnabled(segment.digitalHumanEnabled());
-            script.setEditStatus(editedSegmentIds.contains(segment.id())
-                    ? "EDITED"
-                    : existingEditStatus.getOrDefault(segment.nodeId(), "AUTO"));
-            scripts.add(script);
-        }
+        if (canUpdateInPlace) {
+            for (ScriptSegmentView segment : scriptView.segments()) {
+                LectureScript script = existingScriptsByNodeId.get(segment.nodeId());
+                applySegmentToLectureScript(script, state.getId(), segment);
+                script.setEditStatus(editedSegmentIds.contains(segment.id())
+                        ? "EDITED"
+                        : existingEditStatus.getOrDefault(segment.nodeId(), "AUTO"));
+                scripts.add(script);
+            }
+            scriptRepository.saveAll(scripts);
+        } else {
+            scriptRepository.deleteByCoursewareId(state.getId());
 
-        scriptRepository.saveAll(scripts);
+            for (ScriptSegmentView segment : scriptView.segments()) {
+                LectureScript script = new LectureScript();
+                script.setId(StringUtils.hasText(segment.id())
+                        ? segment.id()
+                        : "script_" + UUID.randomUUID().toString().replace("-", ""));
+                applySegmentToLectureScript(script, state.getId(), segment);
+                script.setEditStatus(editedSegmentIds.contains(segment.id())
+                        ? "EDITED"
+                        : existingEditStatus.getOrDefault(segment.nodeId(), "AUTO"));
+                scripts.add(script);
+            }
+
+            scriptRepository.saveAll(scripts);
+        }
 
         Courseware courseware = coursewareRepository().findById(state.getId()).orElseGet(Courseware::new);
         applyStateToCourseware(courseware, state);
         courseware.setScriptOpening(scriptView.opening());
         courseware.setScriptClosing(scriptView.closing());
         coursewareRepository().save(courseware);
+    }
+
+    private void applySegmentToLectureScript(LectureScript script, String coursewareId, ScriptSegmentView segment) {
+        script.setCoursewareId(coursewareId);
+        script.setPageIndex(segment.pageIndex());
+        script.setNodeId(segment.nodeId());
+        script.setTitle(segment.title());
+        script.setContent(segment.content());
+        script.setKnowledgePointsJson(serializeList(segment.knowledgePoints()));
+        script.setAudioUrl(segment.audioUrl());
+        script.setPageImageUrl(segment.pageImagePath());
+        script.setVisualSummary(segment.visualSummary());
+        script.setVisualObjectsJson(serializeList(segment.visualObjects()));
+        script.setDigitalHumanEnabled(segment.digitalHumanEnabled());
     }
 
     private void persistCoursewareState(CoursewareState state) {

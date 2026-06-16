@@ -220,7 +220,7 @@
                 <div>
                   <span class="pill">Lecture Video</span>
                   <h3>课件讲解视频</h3>
-                  <p>{{ videoRenderStatusText }}</p>
+                  <p>{{ resolvedVideoRenderStatusText }}</p>
                 </div>
                 <StatusBadge
                   :label="videoRenderTask.status || 'PENDING'"
@@ -364,6 +364,28 @@ const videoRenderStatusText = computed(() => {
 })
 
 const segmentAnchorId = segmentId => `segment-${segmentId}`
+
+const resolvedVideoRenderStatusText = computed(() => {
+  const task = videoRenderTask.value
+  if (!task) {
+    return ''
+  }
+
+  if (String(task.status || '').toUpperCase() === 'READY') {
+    const seconds = task.durationMs ? Math.round(task.durationMs / 1000) : 0
+    const base = `已生成 ${task.segmentCount || 0} 个片段，总时长约 ${seconds} 秒，可直接预览。`
+    if (task.message && task.message !== 'Courseware lecture video rendered') {
+      return `${base} ${task.message}`
+    }
+    return base
+  }
+
+  if (String(task.status || '').toUpperCase() === 'FAILED') {
+    return task.errorMessage || '视频生成失败，请根据错误信息排查。'
+  }
+
+  return task.message || '正在整理页面图、字幕和音频。'
+})
 
 const normalizeScript = raw => {
   const segments = Array.isArray(raw?.segments)
