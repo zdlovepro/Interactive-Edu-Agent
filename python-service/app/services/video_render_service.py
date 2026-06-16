@@ -572,7 +572,8 @@ def _create_overlay_audio_clip(source_audio_path: Path, output_path: Path, *, cl
 
 
 def _effective_digital_human_max_audio_seconds() -> int:
-    return max(settings.DIGITAL_HUMAN_MIN_AUDIO_SECONDS, min(settings.DIGITAL_HUMAN_MAX_AUDIO_SECONDS, 15))
+    configured_max = max(0, int(settings.DIGITAL_HUMAN_MAX_AUDIO_SECONDS))
+    return max(int(settings.DIGITAL_HUMAN_MIN_AUDIO_SECONDS), configured_max)
 
 
 def _digital_human_lead_trim_ms(total_ms: int) -> int:
@@ -583,7 +584,7 @@ def _digital_human_lead_trim_ms(total_ms: int) -> int:
 
 
 def _overlay_duration_seconds(visible_ms: int) -> int:
-    return max(2, min(15, round(max(1, visible_ms) / 1000)))
+    return max(2, min(_effective_digital_human_max_audio_seconds(), round(max(1, visible_ms) / 1000)))
 
 
 def _build_digital_human_prompt(segment: VideoRenderSegment, visible_ms: int) -> str:
