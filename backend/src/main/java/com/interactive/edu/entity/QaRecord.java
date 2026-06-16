@@ -34,6 +34,9 @@ public class QaRecord {
     @Column(name = "courseware_id", length = 64, nullable = false)
     private String coursewareId;
 
+    @Column(name = "page_index")
+    private Integer pageIndex;
+
     @Column(name = "node_id", length = 64)
     private String nodeId;
 
@@ -50,7 +53,17 @@ public class QaRecord {
     @Column(name = "reference_fragments", columnDefinition = "JSON")
     private JsonNode referenceFragments;
 
+    @Column(name = "latency_ms")
+    private Long latencyMs;
+
     @CreatedDate
     @Column(name = "create_time", updatable = false)
     private LocalDateTime createTime;
+
+    @jakarta.persistence.PrePersist
+    void prePersist() {
+        if (createTime == null) {
+            createTime = LocalDateTime.now();
+        }
+    }
 }

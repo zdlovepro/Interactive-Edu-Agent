@@ -4,6 +4,8 @@ import com.interactive.edu.enums.LectureSessionStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
@@ -43,6 +45,12 @@ public class LectureSession {
     @Column(name = "status", length = 32)
     private String status = LectureSessionStatus.IDLE.name();
 
+    @Column(name = "breakpoint_time")
+    private Double breakpointTime = 0D;
+
+    @Column(name = "last_seen_at")
+    private LocalDateTime lastSeenAt;
+
     // POOR, NORMAL, GOOD
     @Column(name = "understanding_level", length = 32)
     private String understandingLevel = "NORMAL";
@@ -54,4 +62,26 @@ public class LectureSession {
     @LastModifiedDate
     @Column(name = "update_time")
     private LocalDateTime updateTime;
+
+    @PrePersist
+    void prePersist() {
+        LocalDateTime now = LocalDateTime.now();
+        if (createTime == null) {
+            createTime = now;
+        }
+        if (updateTime == null) {
+            updateTime = now;
+        }
+        if (lastSeenAt == null) {
+            lastSeenAt = now;
+        }
+    }
+
+    @PreUpdate
+    void preUpdate() {
+        updateTime = LocalDateTime.now();
+        if (lastSeenAt == null) {
+            lastSeenAt = updateTime;
+        }
+    }
 }

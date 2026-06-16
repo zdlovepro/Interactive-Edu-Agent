@@ -1,15 +1,20 @@
 package com.interactive.edu.service.courseresourceimport;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interactive.edu.config.StorageProperties;
 import com.interactive.edu.dto.CoursewareUploadResult;
 import com.interactive.edu.dto.courseresourceimport.CreateCourseResourceImportTaskRequest;
+import com.interactive.edu.entity.CourseResourceImportTask;
 import com.interactive.edu.enums.CourseResourceImportTaskStatus;
 import com.interactive.edu.exception.BusinessException;
 import com.interactive.edu.exception.ErrorCode;
 import com.interactive.edu.exception.ServiceException;
+import com.interactive.edu.repository.CourseResourceImportTaskRepository;
 import com.interactive.edu.service.courseware.CoursewareService;
 import com.interactive.edu.service.python.PythonCourseResourceImportClient;
 import com.interactive.edu.service.python.PythonCourseResourceImportRequest;
+import com.interactive.edu.support.RedisJsonStore;
 import com.interactive.edu.vo.courseresourceimport.CourseResourceImportTaskCreateView;
 import com.interactive.edu.vo.courseresourceimport.CourseResourceImportTaskFileItemView;
 import com.interactive.edu.vo.courseresourceimport.CourseResourceImportTaskFilesView;
@@ -17,6 +22,7 @@ import com.interactive.edu.vo.courseresourceimport.CourseResourceImportTaskView;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
@@ -24,8 +30,12 @@ import org.springframework.util.StringUtils;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -41,10 +51,15 @@ import java.util.concurrent.ConcurrentMap;
 public class CourseResourceImportTaskService {
 
     private static final String SOURCE_TYPE_CHAOXING_COURSE = "CHAOXING_COURSE";
+    private static final String REDIS_SECRET_KEY_PREFIX = "course-resource-import:secrets:";
+    private static final Duration SECRET_TTL = Duration.ofHours(6);
 
     private final PythonCourseResourceImportClient pythonCourseResourceImportClient;
     private final CoursewareService coursewareService;
     private final StorageProperties storageProperties;
+    private final ObjectMapper objectMapper;
+    private final RedisJsonStore redisJsonStore;
+    private final ObjectProvider<CourseResourceImportTaskRepository> taskRepositoryProvider;
     @Qualifier("taskExecutor")
     private final TaskExecutor taskExecutor;
 
@@ -59,7 +74,8 @@ public class CourseResourceImportTaskService {
 
         TaskState state = new TaskState(taskId, ownerUserId, command.toRedactedSummary(), outputDir);
         taskStore.put(taskId, state);
-        taskSecretsStore.put(taskId, new TaskSecrets(command.authSessionId(), command.cookie(), command.authorization(), command.referer()));
+        persistTaskState(state);
+        cacheTaskSecrets(taskId, new TaskSecrets(command.authSessionId(), command.cookie(), command.authorization(), command.referer()));
         log.info("Course-resource import task created. taskId={}, userId={}, sourceType={}", taskId, ownerUserId, command.sourceType());
 
         taskExecutor.execute(() -> runTask(state, command));
@@ -83,13 +99,14 @@ public class CourseResourceImportTaskService {
             throw new IllegalStateException("Only failed or cancelled tasks can be retried");
         }
 
-        TaskSecrets secrets = taskSecretsStore.get(taskId);
+        TaskSecrets secrets = resolveTaskSecrets(taskId);
         if (secrets == null) {
             throw new IllegalStateException("Retry is unavailable because the original credentials are no longer present");
         }
 
         ImportCommand command = state.getCommandSummary().restore(secrets);
         state.resetForRetry();
+        persistTaskState(state);
         taskExecutor.execute(() -> runTask(state, command));
         return toTaskView(state);
     }
@@ -104,6 +121,7 @@ public class CourseResourceImportTaskService {
         state.setProgress(progressOf(CourseResourceImportTaskStatus.CANCELLED));
         state.setMessage("Import task cancelled");
         state.touch();
+        persistTaskState(state);
         return toTaskView(state);
     }
 
@@ -146,6 +164,7 @@ public class CourseResourceImportTaskService {
             state.setGeneratedPdf(importResult.getGeneratedPdf());
             state.setFiles(toFileViews(importResult.getFiles()));
             state.touch();
+            persistTaskState(state);
 
             if (StringUtils.hasText(importResult.getGeneratedPdf())) {
                 updateStage(state, CourseResourceImportTaskStatus.BUILDING_PDF, "Building PDF from slide images");
@@ -160,8 +179,9 @@ public class CourseResourceImportTaskService {
                 if (parseReadyFile == null) {
                     state.setStatus(CourseResourceImportTaskStatus.READY);
                     state.setProgress(progressOf(CourseResourceImportTaskStatus.READY));
-                    state.setMessage("Import completed. TODO: no parse-ready .pdf or .pptx file is available for auto-parse.");
+                    state.setMessage("Import completed. No parse-ready PDF/PPTX file is available for auto-parse.");
                     state.touch();
+                    persistTaskState(state);
                     return;
                 }
 
@@ -174,6 +194,7 @@ public class CourseResourceImportTaskService {
                 state.setProgress(progressOf(CourseResourceImportTaskStatus.READY));
                 state.setMessage("Import completed and existing courseware parse was triggered");
                 state.touch();
+                persistTaskState(state);
                 return;
             }
 
@@ -181,16 +202,19 @@ public class CourseResourceImportTaskService {
             state.setProgress(progressOf(CourseResourceImportTaskStatus.READY));
             state.setMessage("Import completed");
             state.touch();
+            persistTaskState(state);
         } catch (TaskCancelledException ex) {
             state.setStatus(CourseResourceImportTaskStatus.CANCELLED);
             state.setProgress(progressOf(CourseResourceImportTaskStatus.CANCELLED));
             state.setMessage("Import task cancelled");
             state.touch();
+            persistTaskState(state);
         } catch (ServiceException ex) {
             state.setStatus(CourseResourceImportTaskStatus.FAILED);
             state.setProgress(progressOf(CourseResourceImportTaskStatus.FAILED));
             state.setMessage(ex.getFriendlyMessage());
             state.touch();
+            persistTaskState(state);
             throw ex;
         } catch (Exception ex) {
             if (state.isCancelRequested()) {
@@ -198,6 +222,7 @@ public class CourseResourceImportTaskService {
                 state.setProgress(progressOf(CourseResourceImportTaskStatus.CANCELLED));
                 state.setMessage("Import task cancelled");
                 state.touch();
+                persistTaskState(state);
                 return;
             }
             log.error("Course-resource import task failed. taskId={}", state.getTaskId(), ex);
@@ -205,11 +230,12 @@ public class CourseResourceImportTaskService {
             state.setProgress(progressOf(CourseResourceImportTaskStatus.FAILED));
             state.setMessage(ex.getMessage());
             state.touch();
+            persistTaskState(state);
         }
     }
 
     private TaskState requireOwnedTask(String taskId, String userId) {
-        TaskState state = taskStore.get(taskId);
+        TaskState state = loadTaskState(taskId);
         if (state == null) {
             throw new NoSuchElementException("Course-resource import task not found");
         }
@@ -225,6 +251,7 @@ public class CourseResourceImportTaskService {
         state.setProgress(progressOf(status));
         state.setMessage(message);
         state.touch();
+        persistTaskState(state);
     }
 
     private void checkCancelled(TaskState state) {
@@ -233,6 +260,7 @@ public class CourseResourceImportTaskService {
             state.setProgress(progressOf(CourseResourceImportTaskStatus.CANCELLED));
             state.setMessage("Import task cancelled");
             state.touch();
+            persistTaskState(state);
             throw new TaskCancelledException();
         }
     }
@@ -270,21 +298,21 @@ public class CourseResourceImportTaskService {
     private Path pickPreferredParseReadyFile(PythonCourseResourceImportClient.ImportExecutionResult importResult) {
         Path parseReadyManifest = Path.of(importResult.getParseReadyManifest()).toAbsolutePath().normalize();
         try {
-            String json = java.nio.file.Files.readString(parseReadyManifest);
-            com.fasterxml.jackson.databind.JsonNode root = new ObjectMapperHolder().readTree(json);
-            com.fasterxml.jackson.databind.JsonNode parseReadyFiles = root.path("parse_ready_files");
+            String json = Files.readString(parseReadyManifest);
+            JsonNode root = objectMapper.readTree(json);
+            JsonNode parseReadyFiles = root.path("parse_ready_files");
             if (!parseReadyFiles.isArray()) {
                 return null;
             }
             List<Path> candidates = new ArrayList<>();
-            for (com.fasterxml.jackson.databind.JsonNode node : parseReadyFiles) {
+            for (JsonNode node : parseReadyFiles) {
                 String rawPath = node.path("path").asText("");
                 if (!StringUtils.hasText(rawPath)) {
                     continue;
                 }
                 Path file = Path.of(rawPath).toAbsolutePath().normalize();
                 String suffix = file.getFileName().toString().toLowerCase(Locale.ROOT);
-                if (suffix.endsWith(".pdf") || suffix.endsWith(".pptx")) {
+                if (suffix.endsWith(".pdf") || suffix.endsWith(".pptx") || suffix.endsWith(".ppt")) {
                     candidates.add(file);
                 }
             }
@@ -305,8 +333,11 @@ public class CourseResourceImportTaskService {
         if (name.endsWith(".pptx")) {
             return 1;
         }
-        if (name.endsWith(".pdf")) {
+        if (name.endsWith(".ppt")) {
             return 2;
+        }
+        if (name.endsWith(".pdf")) {
+            return 3;
         }
         return 10;
     }
@@ -423,6 +454,141 @@ public class CourseResourceImportTaskService {
         return StringUtils.hasText(userId) ? userId.trim() : "demo_user";
     }
 
+    private void cacheTaskSecrets(String taskId, TaskSecrets secrets) {
+        taskSecretsStore.put(taskId, secrets);
+        try {
+            redisJsonStore.put(
+                    redisSecretKey(taskId),
+                    objectMapper.writeValueAsString(secrets),
+                    SECRET_TTL
+            );
+        } catch (Exception ex) {
+            log.warn("Failed to cache import task secrets in Redis. taskId={}, reason={}", taskId, ex.getMessage());
+        }
+    }
+
+    private TaskSecrets resolveTaskSecrets(String taskId) {
+        TaskSecrets secrets = taskSecretsStore.get(taskId);
+        if (secrets != null) {
+            return secrets;
+        }
+
+        String cachedJson = redisJsonStore.get(redisSecretKey(taskId));
+        if (!StringUtils.hasText(cachedJson)) {
+            return null;
+        }
+        try {
+            TaskSecrets restored = objectMapper.readValue(cachedJson, TaskSecrets.class);
+            taskSecretsStore.put(taskId, restored);
+            return restored;
+        } catch (Exception ex) {
+            log.warn("Failed to restore import task secrets from Redis. taskId={}, reason={}", taskId, ex.getMessage());
+            return null;
+        }
+    }
+
+    private TaskState loadTaskState(String taskId) {
+        TaskState cached = taskStore.get(taskId);
+        if (cached != null) {
+            return cached;
+        }
+        if (!isPersistentMode()) {
+            return null;
+        }
+
+        TaskState restored = taskRepository().findById(taskId)
+                .map(this::toTaskState)
+                .orElse(null);
+        if (restored != null) {
+            taskStore.put(taskId, restored);
+        }
+        return restored;
+    }
+
+    private void persistTaskState(TaskState state) {
+        if (!isPersistentMode()) {
+            return;
+        }
+
+        CourseResourceImportTask entity = taskRepository().findById(state.getTaskId())
+                .orElseGet(CourseResourceImportTask::new);
+        entity.setId(state.getTaskId());
+        entity.setUserId(state.getUserId());
+        entity.setSourceType(state.getCommandSummary().sourceType());
+        entity.setSourceUrl(state.getCommandSummary().url());
+        entity.setCourseid(state.getCommandSummary().courseid());
+        entity.setClazzid(state.getCommandSummary().clazzid());
+        entity.setCpi(state.getCommandSummary().cpi());
+        entity.setEnc(state.getCommandSummary().enc());
+        entity.setReferer(state.getCommandSummary().referer());
+        entity.setBuildPdf(state.getCommandSummary().buildPdf());
+        entity.setAutoParse(state.getCommandSummary().autoParse());
+        entity.setOutputDir(state.getOutputDir().toString());
+        entity.setStatus(state.getStatus().name());
+        entity.setProgress(state.getProgress());
+        entity.setDiscoveredCount(state.getDiscoveredCount());
+        entity.setSelectedCount(state.getSelectedCount());
+        entity.setDownloadedCount(state.getDownloadedCount());
+        entity.setIgnoredCount(state.getIgnoredCount());
+        entity.setGeneratedPdf(state.getGeneratedPdf());
+        entity.setMessage(state.getMessage());
+        entity.setCoursewareId(state.getCoursewareId());
+        entity.setFilesJson(serializeFiles(state.getFiles()));
+        taskRepository().save(entity);
+    }
+
+    private TaskState toTaskState(CourseResourceImportTask entity) {
+        return TaskState.fromEntity(entity, deserializeFiles(entity.getFilesJson()));
+    }
+
+    private String serializeFiles(List<CourseResourceImportTaskFileItemView> files) {
+        try {
+            return objectMapper.writeValueAsString(files == null ? List.of() : files);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to serialize course-resource import files", ex);
+        }
+    }
+
+    private List<CourseResourceImportTaskFileItemView> deserializeFiles(String filesJson) {
+        if (!StringUtils.hasText(filesJson)) {
+            return List.of();
+        }
+        try {
+            JsonNode root = objectMapper.readTree(filesJson);
+            if (!root.isArray()) {
+                return List.of();
+            }
+            List<CourseResourceImportTaskFileItemView> files = new ArrayList<>();
+            for (JsonNode item : root) {
+                files.add(objectMapper.convertValue(item, CourseResourceImportTaskFileItemView.class));
+            }
+            return List.copyOf(files);
+        } catch (Exception ex) {
+            log.warn("Failed to deserialize course-resource import files. reason={}", ex.getMessage());
+            return List.of();
+        }
+    }
+
+    private boolean isPersistentMode() {
+        return taskRepositoryProvider.getIfAvailable() != null;
+    }
+
+    private CourseResourceImportTaskRepository taskRepository() {
+        CourseResourceImportTaskRepository repository = taskRepositoryProvider.getIfAvailable();
+        if (repository == null) {
+            throw new IllegalStateException("CourseResourceImportTaskRepository is unavailable in the current profile");
+        }
+        return repository;
+    }
+
+    private String redisSecretKey(String taskId) {
+        return REDIS_SECRET_KEY_PREFIX + taskId;
+    }
+
+    private static Instant toInstant(LocalDateTime dateTime) {
+        return dateTime == null ? Instant.now() : dateTime.atZone(ZoneId.systemDefault()).toInstant();
+    }
+
     private record ImportCommand(
             String sourceType,
             String url,
@@ -481,8 +647,8 @@ public class CourseResourceImportTaskService {
         private final String userId;
         private final CommandSummary commandSummary;
         private final Path outputDir;
-        private final Instant createdAt = Instant.now();
-        private volatile Instant updatedAt = createdAt;
+        private final Instant createdAt;
+        private volatile Instant updatedAt;
         private volatile CourseResourceImportTaskStatus status = CourseResourceImportTaskStatus.PENDING;
         private volatile int progress = 0;
         private volatile int discoveredCount = 0;
@@ -496,10 +662,61 @@ public class CourseResourceImportTaskService {
         private volatile List<CourseResourceImportTaskFileItemView> files = List.of();
 
         private TaskState(String taskId, String userId, CommandSummary commandSummary, Path outputDir) {
+            this(taskId, userId, commandSummary, outputDir, Instant.now(), Instant.now());
+        }
+
+        private TaskState(
+                String taskId,
+                String userId,
+                CommandSummary commandSummary,
+                Path outputDir,
+                Instant createdAt,
+                Instant updatedAt
+        ) {
             this.taskId = taskId;
             this.userId = userId;
             this.commandSummary = commandSummary;
             this.outputDir = outputDir;
+            this.createdAt = createdAt;
+            this.updatedAt = updatedAt;
+        }
+
+        private static TaskState fromEntity(
+                CourseResourceImportTask entity,
+                List<CourseResourceImportTaskFileItemView> files
+        ) {
+            TaskState state = new TaskState(
+                    entity.getId(),
+                    entity.getUserId(),
+                    new CommandSummary(
+                            entity.getSourceType(),
+                            entity.getSourceUrl(),
+                            entity.getCourseid(),
+                            entity.getClazzid(),
+                            entity.getCpi(),
+                            entity.getEnc(),
+                            null,
+                            entity.getReferer(),
+                            Boolean.TRUE.equals(entity.getBuildPdf()),
+                            Boolean.TRUE.equals(entity.getAutoParse())
+                    ),
+                    Path.of(entity.getOutputDir()).toAbsolutePath().normalize(),
+                    toInstant(entity.getCreateTime()),
+                    toInstant(entity.getUpdateTime())
+            );
+            state.status = entity.getStatus() == null
+                    ? CourseResourceImportTaskStatus.PENDING
+                    : CourseResourceImportTaskStatus.valueOf(entity.getStatus());
+            state.progress = entity.getProgress() == null ? 0 : entity.getProgress();
+            state.discoveredCount = entity.getDiscoveredCount() == null ? 0 : entity.getDiscoveredCount();
+            state.selectedCount = entity.getSelectedCount() == null ? 0 : entity.getSelectedCount();
+            state.downloadedCount = entity.getDownloadedCount() == null ? 0 : entity.getDownloadedCount();
+            state.ignoredCount = entity.getIgnoredCount() == null ? 0 : entity.getIgnoredCount();
+            state.generatedPdf = entity.getGeneratedPdf();
+            state.message = entity.getMessage() == null ? "Task pending" : entity.getMessage();
+            state.coursewareId = entity.getCoursewareId();
+            state.files = files == null ? List.of() : List.copyOf(files);
+            return state;
         }
 
         private boolean isTerminal() {
@@ -564,15 +781,12 @@ public class CourseResourceImportTaskService {
         }
 
         private void setFiles(List<CourseResourceImportTaskFileItemView> files) {
-            this.files = files;
+            this.files = files == null ? List.of() : List.copyOf(files);
         }
 
         private void touch() {
             this.updatedAt = Instant.now();
         }
-    }
-
-    private static final class ObjectMapperHolder extends com.fasterxml.jackson.databind.ObjectMapper {
     }
 
     private static final class TaskCancelledException extends RuntimeException {

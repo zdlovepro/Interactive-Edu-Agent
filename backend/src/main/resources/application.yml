@@ -7,6 +7,10 @@ spring:
       - optional:file:../.env[.properties]
   profiles:
     default: local
+  data:
+    redis:
+      repositories:
+        enabled: false
   servlet:
     multipart:
       max-file-size: 100MB

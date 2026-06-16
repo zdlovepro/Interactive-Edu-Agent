@@ -41,8 +41,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -103,13 +107,17 @@ public class CoursewareService {
         String filename = normalizeFilename(normalizedFile.getFileName().toString());
         String displayName = resolveDisplayName(requestedName, filename);
         String contentType = probeContentType(normalizedFile);
+        StoredObject storedObject = storageServiceFactory.get().save(
+                coursewareId,
+                new PathMultipartFile(normalizedFile, filename, contentType)
+        );
 
         CoursewareState state = new CoursewareState(
                 coursewareId,
                 displayName,
                 filename,
-                normalizedFile.toString(),
-                "local",
+                storedObject.getKey(),
+                storedObject.getStorageType(),
                 contentType
         );
         state.setStatus(CoursewareStatus.PARSING.name());
@@ -120,10 +128,11 @@ public class CoursewareService {
         taskExecutor.execute(() -> completeParse(state));
 
         log.info(
-                "Courseware local import accepted. coursewareId={}, file={}, displayName={}",
+                "Courseware local import accepted. coursewareId={}, file={}, displayName={}, storageType={}",
                 coursewareId,
                 normalizedFile,
-                displayName
+                displayName,
+                storedObject.getStorageType()
         );
         return new CoursewareUploadResult(coursewareId, CoursewareStatus.UPLOADED.name());
     }
@@ -1462,6 +1471,71 @@ public class CoursewareService {
     }
 
     public record PageMediaResource(Resource resource, MediaType mediaType) {
+    }
+
+    private static final class PathMultipartFile implements MultipartFile {
+        private final Path sourcePath;
+        private final String originalFilename;
+        private final String contentType;
+
+        private PathMultipartFile(Path sourcePath, String originalFilename, String contentType) {
+            this.sourcePath = sourcePath;
+            this.originalFilename = originalFilename;
+            this.contentType = contentType;
+        }
+
+        @Override
+        public String getName() {
+            return originalFilename;
+        }
+
+        @Override
+        public String getOriginalFilename() {
+            return originalFilename;
+        }
+
+        @Override
+        public String getContentType() {
+            return contentType;
+        }
+
+        @Override
+        public boolean isEmpty() {
+            try {
+                return Files.size(sourcePath) <= 0;
+            } catch (IOException ex) {
+                return true;
+            }
+        }
+
+        @Override
+        public long getSize() {
+            try {
+                return Files.size(sourcePath);
+            } catch (IOException ex) {
+                throw new IllegalStateException("Failed to read file size for imported courseware", ex);
+            }
+        }
+
+        @Override
+        public byte[] getBytes() throws IOException {
+            return Files.readAllBytes(sourcePath);
+        }
+
+        @Override
+        public InputStream getInputStream() throws IOException {
+            return Files.newInputStream(sourcePath);
+        }
+
+        @Override
+        public void transferTo(File dest) throws IOException {
+            Path targetPath = dest.toPath().toAbsolutePath().normalize();
+            Path parent = targetPath.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Files.copy(sourcePath, targetPath, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     private record ParsedCourseware(String coursewareId, List<ParsedSegment> segments) {

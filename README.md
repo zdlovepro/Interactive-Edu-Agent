@@ -1,5 +1,14 @@
 # Interactive-Edu-Agent
 
+## Full Persistent Mode
+
+When `SPRING_PROFILES_ACTIVE=full`:
+
+- MySQL stores courseware metadata, parsed pages, scripts, render tasks, lecture sessions, QA records, interrupt records, and course-resource import tasks.
+- Redis stores lecture-session runtime cache and short-lived import-task secrets such as Cookie / Authorization.
+- MinIO stores uploaded courseware files when `storage.type=minio`, and TTS audio when `TTS_ENABLED=true`.
+- The backend no longer relies on in-memory-only session/task state for the main teaching chain.
+
 Interactive-Edu-Agent 是一个多服务项目，当前主链路包括：
 
 - 课件上传或超星课程导入
