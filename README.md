@@ -94,8 +94,8 @@ Copy-Item .env.docker.example .env.docker
 `Docker full` 默认会把仓库根目录只读挂载到容器内的 `/workspace`，所以如果你把数字人参考视频和人物图片放在仓库根目录，可以直接配置成：
 
 ```properties
-DIGITAL_HUMAN_REF_VIDEO_PATH=/workspace/your_digital_human.mp4
-DIGITAL_HUMAN_REF_IMAGE_PATH=/workspace/OIP.png
+DIGITAL_HUMAN_REF_VIDEO_PATH=/workspace/assets/digital-human/reference/avatar.mp4
+DIGITAL_HUMAN_REF_IMAGE_PATH=/workspace/assets/digital-human/reference/OIP.png
 ```
 
 ### 2. Local 模式

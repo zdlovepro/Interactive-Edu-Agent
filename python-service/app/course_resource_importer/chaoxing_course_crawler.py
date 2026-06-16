@@ -48,7 +48,7 @@ async def discover_resources_from_chaoxing_course_structure(
 ) -> list[DiscoveredResource]:
     """Discover resources from Chaoxing chapter/card attachment metadata.
 
-    This is a read-only subset inspired by `fxxkstar.py`: it only follows URLs and
+    This is a read-only subset inspired by the earlier local Chaoxing helper: it only follows URLs and
     object IDs that already appear in the user's authorized course pages.
     """
 

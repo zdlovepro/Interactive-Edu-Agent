@@ -22,6 +22,7 @@ import com.interactive.edu.service.python.PythonScriptRequest;
 import com.interactive.edu.storage.StorageServiceFactory;
 import com.interactive.edu.storage.StoredObject;
 import com.interactive.edu.service.tts.TtsService;
+import com.interactive.edu.util.TextEncodingRepairer;
 import com.interactive.edu.vo.courseware.CoursewareDetailView;
 import com.interactive.edu.vo.courseware.CoursewareListItem;
 import com.interactive.edu.vo.courseware.CoursewareListView;
@@ -359,7 +360,7 @@ public class CoursewareService {
 
         ScriptView script = findExistingScript(coursewareId);
         if (script != null) {
-            return script;
+            return sanitizeScriptView(script);
         }
 
         if (CoursewareStatus.FAILED.name().equals(getScriptStatus(coursewareId))) {
@@ -383,7 +384,7 @@ public class CoursewareService {
             throw new IllegalArgumentException("Script segments must not be empty");
         }
 
-        ScriptView existing = requireScript(coursewareId);
+        ScriptView existing = sanitizeScriptView(requireScript(coursewareId));
         Map<String, UpdateCoursewareScriptRequest.Segment> updatesById = new LinkedHashMap<>();
         for (UpdateCoursewareScriptRequest.Segment segment : request.getSegments()) {
             updatesById.put(segment.getId(), segment);
@@ -406,8 +407,8 @@ public class CoursewareService {
                 continue;
             }
 
-            String resolvedTitle = defaultText(update.getTitle(), segment.title());
-            String resolvedContent = defaultText(update.getContent(), segment.content());
+            String resolvedTitle = normalizeScriptText(defaultText(update.getTitle(), segment.title()));
+            String resolvedContent = normalizeScriptText(defaultText(update.getContent(), segment.content()));
             boolean resolvedDigitalHumanEnabled = update.getDigitalHumanEnabled() != null
                     ? update.getDigitalHumanEnabled()
                     : segment.digitalHumanEnabled();
@@ -458,8 +459,8 @@ public class CoursewareService {
                 List.copyOf(rewrittenOutline),
                 ttsBatchResult.segments(),
                 CoursewareStatus.READY.name(),
-                existing.opening(),
-                existing.closing()
+                normalizeScriptText(existing.opening()),
+                normalizeScriptText(existing.closing())
         );
 
         scriptStore.put(coursewareId, updated);
@@ -605,14 +606,14 @@ public class CoursewareService {
     private void backfillMissingSegmentAudio(String coursewareId, CoursewareState state, ScriptView existingScript) {
         try {
             TtsBatchResult ttsBatchResult = synthesizeSegmentAudioUrls(coursewareId, existingScript.segments());
-            ScriptView scriptView = new ScriptView(
+            ScriptView scriptView = sanitizeScriptView(new ScriptView(
                     existingScript.coursewareId(),
                     existingScript.outline(),
                     ttsBatchResult.segments(),
                     CoursewareStatus.READY.name(),
                     existingScript.opening(),
                     existingScript.closing()
-            );
+            ));
 
             scriptStore.put(coursewareId, scriptView);
             TaskStatus taskStatus = resolveScriptTaskStatus(ttsBatchResult);
@@ -719,14 +720,14 @@ public class CoursewareService {
             TtsBatchResult ttsBatchResult = synthesizeSegmentAudioUrls(coursewareId, baseScriptView.segments());
             TaskStatus taskStatus = resolveScriptTaskStatus(ttsBatchResult);
 
-            ScriptView scriptView = new ScriptView(
+            ScriptView scriptView = sanitizeScriptView(new ScriptView(
                     baseScriptView.coursewareId(),
                     baseScriptView.outline(),
                     ttsBatchResult.segments(),
                     baseScriptView.status(),
                     baseScriptView.opening(),
                     baseScriptView.closing()
-            );
+            ));
 
             scriptStore.put(coursewareId, scriptView);
             markScriptReady(state, taskStatus, scriptView);
@@ -839,8 +840,8 @@ public class CoursewareService {
             generatedByPageIndex.putIfAbsent(page.pageIndex(), page);
         }
 
-        String opening = defaultText(draft.opening(), "");
-        String closing = defaultText(draft.closing(), "");
+        String opening = normalizeScriptText(defaultText(draft.opening(), ""));
+        String closing = normalizeScriptText(defaultText(draft.closing(), ""));
         List<OutlineItemView> outline = new ArrayList<>();
         List<ScriptSegmentView> segments = new ArrayList<>();
         int totalPages = parsedCourseware.segments().size();
@@ -849,10 +850,10 @@ public class CoursewareService {
             ParsedSegment parsedSegment = parsedCourseware.segments().get(index);
             GeneratedPage generatedPage = generatedByPageIndex.get(parsedSegment.pageIndex());
             String scriptBody = generatedPage != null && StringUtils.hasText(generatedPage.script())
-                    ? generatedPage.script().trim()
+                    ? normalizeScriptText(generatedPage.script().trim())
                     : buildFallbackPageScript(parsedSegment, index + 1, totalPages);
             String transition = generatedPage != null
-                    ? defaultText(generatedPage.transition(), "")
+                    ? normalizeScriptText(defaultText(generatedPage.transition(), ""))
                     : buildFallbackTransition(index + 1, totalPages, nextTitle(parsedCourseware, index));
 
             String nodeId = coursewareId + "_node_" + String.format("%03d", index + 1);
@@ -863,31 +864,31 @@ public class CoursewareService {
                     index == totalPages - 1 ? closing : null
             );
 
-            outline.add(new OutlineItemView(nodeId, parsedSegment.title()));
+            outline.add(new OutlineItemView(nodeId, normalizeScriptText(parsedSegment.title())));
             segments.add(new ScriptSegmentView(
                     nodeId,
                     nodeId,
                     parsedSegment.pageIndex(),
-                    parsedSegment.title(),
+                    normalizeScriptText(parsedSegment.title()),
                     content,
                     parsedSegment.knowledgePoints(),
                     null,
                     parsedSegment.pageImagePath(),
                     resolvePageImageAccessUrl(coursewareId, parsedSegment.pageIndex(), parsedSegment.pageImagePath()),
-                    parsedSegment.visualSummary(),
+                    normalizeScriptText(parsedSegment.visualSummary()),
                     parsedSegment.visualObjects(),
                     false
             ));
         }
 
-        return new ScriptView(
+        return sanitizeScriptView(new ScriptView(
                 coursewareId,
                 List.copyOf(outline),
                 List.copyOf(segments),
                 CoursewareStatus.READY.name(),
                 StringUtils.hasText(opening) ? opening : null,
                 StringUtils.hasText(closing) ? closing : null
-        );
+        ));
     }
 
     private String composeSegmentContent(String scriptBody, String transition, String opening, String closing) {
@@ -898,7 +899,7 @@ public class CoursewareService {
         if (StringUtils.hasText(scriptBody)) {
             parts.add(scriptBody.trim());
         }
-        return String.join(" ", parts);
+        return normalizeScriptText(String.join(" ", parts));
     }
 
     private TtsBatchResult synthesizeSegmentAudioUrls(String coursewareId, List<ScriptSegmentView> segments) {
@@ -1194,14 +1195,14 @@ public class CoursewareService {
                 .map(this::toSegmentView)
                 .toList();
 
-        ScriptView scriptView = new ScriptView(
+        ScriptView scriptView = sanitizeScriptView(new ScriptView(
                 coursewareId,
                 outline,
                 segments,
                 defaultText(courseware.getStatus(), CoursewareStatus.READY.name()),
-                courseware.getScriptOpening(),
-                courseware.getScriptClosing()
-        );
+                normalizeScriptText(courseware.getScriptOpening()),
+                normalizeScriptText(courseware.getScriptClosing())
+        ));
         scriptStore.put(coursewareId, scriptView);
         return scriptView;
     }
@@ -1212,12 +1213,12 @@ public class CoursewareService {
                 script.getNodeId(),
                 script.getPageIndex(),
                 defaultText(script.getTitle(), "第 " + script.getPageIndex() + " 页"),
-                defaultText(script.getContent(), ""),
+                normalizeScriptText(defaultText(script.getContent(), "")),
                 deserializeList(script.getKnowledgePointsJson()),
                 script.getAudioUrl(),
                 script.getPageImageUrl(),
                 resolvePageImageAccessUrl(script.getCoursewareId(), script.getPageIndex(), script.getPageImageUrl()),
-                script.getVisualSummary(),
+                normalizeScriptText(script.getVisualSummary()),
                 deserializeList(script.getVisualObjectsJson()),
                 Boolean.TRUE.equals(script.getDigitalHumanEnabled())
         );
@@ -1309,8 +1310,8 @@ public class CoursewareService {
 
         Courseware courseware = coursewareRepository().findById(state.getId()).orElseGet(Courseware::new);
         applyStateToCourseware(courseware, state);
-        courseware.setScriptOpening(scriptView.opening());
-        courseware.setScriptClosing(scriptView.closing());
+        courseware.setScriptOpening(normalizeScriptText(scriptView.opening()));
+        courseware.setScriptClosing(normalizeScriptText(scriptView.closing()));
         coursewareRepository().save(courseware);
     }
 
@@ -1318,12 +1319,12 @@ public class CoursewareService {
         script.setCoursewareId(coursewareId);
         script.setPageIndex(segment.pageIndex());
         script.setNodeId(segment.nodeId());
-        script.setTitle(segment.title());
-        script.setContent(segment.content());
+        script.setTitle(normalizeScriptText(segment.title()));
+        script.setContent(normalizeScriptText(segment.content()));
         script.setKnowledgePointsJson(serializeList(segment.knowledgePoints()));
         script.setAudioUrl(segment.audioUrl());
         script.setPageImageUrl(segment.pageImagePath());
-        script.setVisualSummary(segment.visualSummary());
+        script.setVisualSummary(normalizeScriptText(segment.visualSummary()));
         script.setVisualObjectsJson(serializeList(segment.visualObjects()));
         script.setDigitalHumanEnabled(segment.digitalHumanEnabled());
     }
@@ -1545,6 +1546,57 @@ public class CoursewareService {
 
     private String defaultText(String text, String fallback) {
         return StringUtils.hasText(text) ? text.trim() : fallback;
+    }
+
+    private ScriptView sanitizeScriptView(ScriptView scriptView) {
+        if (scriptView == null) {
+            return null;
+        }
+
+        List<OutlineItemView> sanitizedOutline = scriptView.outline() == null
+                ? List.of()
+                : scriptView.outline().stream()
+                .map(item -> new OutlineItemView(item.id(), normalizeScriptText(item.title())))
+                .toList();
+
+        List<ScriptSegmentView> sanitizedSegments = scriptView.segments() == null
+                ? List.of()
+                : scriptView.segments().stream()
+                .map(this::sanitizeScriptSegment)
+                .toList();
+
+        return new ScriptView(
+                scriptView.coursewareId(),
+                sanitizedOutline,
+                sanitizedSegments,
+                scriptView.status(),
+                normalizeScriptText(scriptView.opening()),
+                normalizeScriptText(scriptView.closing())
+        );
+    }
+
+    private ScriptSegmentView sanitizeScriptSegment(ScriptSegmentView segment) {
+        return new ScriptSegmentView(
+                segment.id(),
+                segment.nodeId(),
+                segment.pageIndex(),
+                normalizeScriptText(segment.title()),
+                normalizeScriptText(segment.content()),
+                segment.knowledgePoints(),
+                segment.audioUrl(),
+                segment.pageImagePath(),
+                segment.pageImageUrl(),
+                normalizeScriptText(segment.visualSummary()),
+                segment.visualObjects(),
+                segment.digitalHumanEnabled()
+        );
+    }
+
+    private String normalizeScriptText(String text) {
+        if (!StringUtils.hasText(text)) {
+            return text;
+        }
+        return TextEncodingRepairer.repairIfNeeded(text.trim());
     }
 
     private String normalizeOptionalValue(String value) {

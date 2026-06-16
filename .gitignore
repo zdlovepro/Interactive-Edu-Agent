@@ -148,8 +148,12 @@ logs/
 *~
 *.orig
 .tmp*/
+tmp/
+.tmp/
 tmp_*.png
 tmp_env_test/
+exports/test-artifacts/
+all.zip
 
 # ================================
 # Docker 相关（不忽略 Dockerfile，忽略构建产物）
@@ -209,3 +213,4 @@ volumes/
 # Dedicated local avatar reference videos for digital human rendering
 assets/digital-human/reference/*
 !assets/digital-human/reference/README.md
+!assets/digital-human/reference/OIP.png
