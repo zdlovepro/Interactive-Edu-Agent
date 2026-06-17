@@ -56,7 +56,7 @@ from app.schemas.script import PageScript, ScriptGenerateRequest, ScriptGenerate
 from app.utils.logger import logger
 
 SCRIPT_TEMPERATURE = 0.0
-SCRIPT_PAGE_CHUNK_SIZE = 4
+SCRIPT_PAGE_CHUNK_SIZE = 7
 SCRIPT_PAGE_MAX_TOKENS = 1800
 SCRIPT_CHUNK_RETRY_ATTEMPTS = 2
 

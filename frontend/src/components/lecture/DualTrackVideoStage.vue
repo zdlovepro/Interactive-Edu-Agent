@@ -2,6 +2,7 @@
   <section class="video-stage" aria-label="课堂视频画面">
     <HlsVideoPlayer
       v-if="videoSrc"
+      ref="playerRef"
       class="video-stage__player"
       :src="videoSrc"
       :muted="muted"
@@ -47,9 +48,17 @@ const props = defineProps({
 defineEmits(['timeupdate', 'play', 'pause'])
 
 const playerError = ref('')
+const playerRef = ref(null)
 const normalizedVideoStatus = computed(() =>
   String(props.videoStatus || '').trim().toUpperCase() || 'UNAVAILABLE',
 )
+
+const pause = () => playerRef.value?.pause?.() ?? false
+const play = async () => playerRef.value?.play?.() ?? false
+const seek = seconds => playerRef.value?.seek?.(seconds) ?? false
+const getCurrentTime = () => playerRef.value?.getCurrentTime?.() ?? 0
+const getDuration = () => playerRef.value?.getDuration?.() ?? 0
+const isPaused = () => playerRef.value?.isPaused?.() ?? true
 
 const placeholderText = computed(() => {
   if (props.videoStatusText) {
@@ -64,6 +73,15 @@ const placeholderText = computed(() => {
     default:
       return '请先在讲稿页完成视频生成，课堂页就会直接展示真实生成结果。'
   }
+})
+
+defineExpose({
+  pause,
+  play,
+  seek,
+  getCurrentTime,
+  getDuration,
+  isPaused,
 })
 </script>
 

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import re
+import socket
 from itertools import count
 from typing import Any, Dict, List
+from urllib.parse import urlparse
 
 from app.core.config import settings
 from app.core.exceptions import VectorStoreException
@@ -134,6 +136,9 @@ class MilvusVectorRepository:
 
     def _connect(self) -> None:
         logger.info("Initializing Milvus vector repository.")
+        if not _is_milvus_endpoint_reachable(settings.MILVUS_URI, settings.MILVUS_CONNECT_TIMEOUT_SECONDS):
+            logger.warning("Milvus endpoint is unreachable. Fallback will be used. uri=%s", settings.MILVUS_URI)
+            raise VectorStoreException("Milvus endpoint is unreachable")
         try:
             connections.connect(
                 alias="default",
@@ -141,6 +146,7 @@ class MilvusVectorRepository:
                 user=settings.MILVUS_USER,
                 password=settings.MILVUS_PASSWORD,
                 db_name=settings.MILVUS_DB_NAME,
+                timeout=settings.MILVUS_CONNECT_TIMEOUT_SECONDS,
             )
             self._init_collection()
             logger.info("Milvus vector repository is ready. collection=%s", self.collection_name)
@@ -292,6 +298,24 @@ def _metadata_dict(document: Dict[str, Any]) -> Dict[str, Any]:
 
 def _metadata_json(document: Dict[str, Any]) -> str:
     return json.dumps(_metadata_dict(document), ensure_ascii=False, sort_keys=True)
+
+
+def _is_milvus_endpoint_reachable(uri: str, timeout_seconds: float) -> bool:
+    normalized_uri = (uri or "").strip()
+    if not normalized_uri:
+        return False
+
+    parsed = urlparse(normalized_uri if "://" in normalized_uri else f"tcp://{normalized_uri}")
+    host = parsed.hostname
+    port = parsed.port or 19530
+    if not host:
+        return False
+
+    try:
+        with socket.create_connection((host, port), timeout=max(0.2, float(timeout_seconds))):
+            return True
+    except OSError:
+        return False
 
 
 def _parse_metadata_json(raw_value: Any) -> Dict[str, Any]:

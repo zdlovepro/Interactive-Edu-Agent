@@ -146,12 +146,48 @@ class AsrServiceTest {
     @Test
     @DisplayName("unsupported content type returns param error")
     void recognize_unsupportedContentType_returnsParamError() {
-        AsrRequest request = sampleRequest("application/octet-stream", 64);
+        AsrRequest request = AsrRequest.builder()
+                .audioData(new byte[64])
+                .filename("question.bin")
+                .contentType("application/octet-stream")
+                .build();
 
         assertThatThrownBy(() -> asrService.recognize(request))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.PARAM_ERROR);
+    }
+
+    @Test
+    @DisplayName("content type with codecs parameter is accepted")
+    void recognize_contentTypeWithCodecs_isAccepted() {
+        properties.setEnabled(false);
+        AsrRequest request = sampleRequest("audio/webm;codecs=opus", 128);
+        when(localMockAsrClient.recognize(request))
+                .thenReturn(mockResult("local-mock", "mock-asr", "这是一个模拟语音问题"));
+
+        AsrResult result = asrService.recognize(request);
+
+        assertThat(result.getText()).isEqualTo("这是一个模拟语音问题");
+        verify(localMockAsrClient).recognize(request);
+    }
+
+    @Test
+    @DisplayName("filename fallback is used when content type is generic")
+    void recognize_genericContentType_usesFilenameFallback() {
+        properties.setEnabled(false);
+        AsrRequest request = AsrRequest.builder()
+                .audioData(new byte[128])
+                .filename("question.webm")
+                .contentType("application/octet-stream")
+                .build();
+        when(localMockAsrClient.recognize(request))
+                .thenReturn(mockResult("local-mock", "mock-asr", "这是一个模拟语音问题"));
+
+        AsrResult result = asrService.recognize(request);
+
+        assertThat(result.getText()).isEqualTo("这是一个模拟语音问题");
+        verify(localMockAsrClient).recognize(request);
     }
 
     private AsrRequest sampleRequest(String contentType, int size) {

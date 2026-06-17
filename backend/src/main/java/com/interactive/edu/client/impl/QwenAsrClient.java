@@ -259,8 +259,8 @@ public class QwenAsrClient implements AsrClient {
             if (normalized != null) {
                 return normalized;
             }
-            throw new ServiceException(ErrorCode.THIRD_PARTY_MEDIA_ERROR, "音频格式不受支持");
         }
+
         String lowerFilename = filename == null ? "" : filename.toLowerCase();
         if (lowerFilename.endsWith(".webm")) {
             return "audio/webm";
@@ -281,9 +281,15 @@ public class QwenAsrClient implements AsrClient {
         if (!StringUtils.hasText(contentType)) {
             return null;
         }
+
         String normalized = contentType.trim().toLowerCase();
+        int separatorIndex = normalized.indexOf(';');
+        if (separatorIndex >= 0) {
+            normalized = normalized.substring(0, separatorIndex).trim();
+        }
+
         return switch (normalized) {
-            case "audio/webm" -> "audio/webm";
+            case "audio/webm", "video/webm" -> "audio/webm";
             case "audio/wav", "audio/x-wav" -> "audio/wav";
             case "audio/mpeg", "audio/mp3" -> "audio/mpeg";
             case "audio/mp4", "audio/m4a" -> "audio/mp4";

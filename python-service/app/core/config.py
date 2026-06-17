@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     MILVUS_PASSWORD: str = ""
     MILVUS_DB_NAME: str = "default"
     COLLECTION_NAME: str = "lecture_knowledge"
+    MILVUS_CONNECT_TIMEOUT_SECONDS: float = 0.8
 
     # ---------- Embedding Model Config ----------
     EMBEDDING_PROVIDER: str = "dashscope"
@@ -93,6 +94,7 @@ class Settings(BaseSettings):
     DIGITAL_HUMAN_OVERLAY_MARGIN_RIGHT: int = 0
     DIGITAL_HUMAN_POLL_INTERVAL_SECONDS: int = 5
     DIGITAL_HUMAN_TASK_TIMEOUT_SECONDS: int = 1800
+    DIGITAL_HUMAN_SOFT_TIMEOUT_SECONDS: int = 60
     DIGITAL_HUMAN_RESOLUTION: str = "720P"
     DIGITAL_HUMAN_RATIO: str = "16:9"
     DIGITAL_HUMAN_PROMPT_EXTEND: bool = False

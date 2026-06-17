@@ -95,22 +95,42 @@ public class AsrService {
 
     private String resolveMimeType(String contentType, String filename) {
         if (StringUtils.hasText(contentType)) {
-            String normalized = contentType.trim().toLowerCase();
-            if ("audio/webm".equals(normalized)) {
-                return "audio/webm";
+            String normalized = normalizeContentType(contentType);
+            if (normalized != null) {
+                return normalized;
             }
-            if ("audio/wav".equals(normalized) || "audio/x-wav".equals(normalized)) {
-                return "audio/wav";
-            }
-            if ("audio/mpeg".equals(normalized) || "audio/mp3".equals(normalized)) {
-                return "audio/mpeg";
-            }
-            if ("audio/mp4".equals(normalized) || "audio/m4a".equals(normalized)) {
-                return "audio/mp4";
-            }
+        }
+
+        return resolveMimeTypeFromFilename(filename);
+    }
+
+    private String normalizeContentType(String contentType) {
+        if (!StringUtils.hasText(contentType)) {
             return null;
         }
 
+        String baseType = contentType.trim().toLowerCase();
+        int separatorIndex = baseType.indexOf(';');
+        if (separatorIndex >= 0) {
+            baseType = baseType.substring(0, separatorIndex).trim();
+        }
+
+        if ("audio/webm".equals(baseType) || "video/webm".equals(baseType)) {
+            return "audio/webm";
+        }
+        if ("audio/wav".equals(baseType) || "audio/x-wav".equals(baseType)) {
+            return "audio/wav";
+        }
+        if ("audio/mpeg".equals(baseType) || "audio/mp3".equals(baseType)) {
+            return "audio/mpeg";
+        }
+        if ("audio/mp4".equals(baseType) || "audio/m4a".equals(baseType)) {
+            return "audio/mp4";
+        }
+        return null;
+    }
+
+    private String resolveMimeTypeFromFilename(String filename) {
         if (!StringUtils.hasText(filename)) {
             return null;
         }

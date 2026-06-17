@@ -85,6 +85,78 @@ class QwenAsrClientTest {
     }
 
     @Test
+    @DisplayName("recognize webm audio with codecs parameter")
+    void recognize_webmWithCodecs_success() throws Exception {
+        HttpClient httpClient = mock(HttpClient.class);
+        HttpResponse<String> response = mockHttpResponse(
+                200,
+                """
+                        {
+                          "id": "req_webm_codec_1",
+                          "choices": [
+                            {
+                              "message": {
+                                "content": "请解释这一页的核心概念"
+                              }
+                            }
+                          ]
+                        }
+                        """
+        );
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(response);
+
+        QwenAsrClient client = new QwenAsrClient(newProperties("test-qwen-key"), objectMapper, httpClient);
+        AsrResult result = client.recognize(AsrRequest.builder()
+                .audioData("webm-audio".getBytes())
+                .filename("question.webm")
+                .contentType("audio/webm;codecs=opus")
+                .build());
+
+        assertThat(result.getText()).isEqualTo("请解释这一页的核心概念");
+
+        ArgumentCaptor<HttpRequest> requestCaptor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpClient).send(requestCaptor.capture(), any(HttpResponse.BodyHandler.class));
+        String requestBody = readBody(requestCaptor.getValue());
+        assertThat(requestBody).contains("data:audio/webm;base64,");
+    }
+
+    @Test
+    @DisplayName("falls back to filename when content type is generic")
+    void recognize_genericContentType_usesFilenameFallback() throws Exception {
+        HttpClient httpClient = mock(HttpClient.class);
+        HttpResponse<String> response = mockHttpResponse(
+                200,
+                """
+                        {
+                          "id": "req_generic_1",
+                          "choices": [
+                            {
+                              "message": {
+                                "content": "这是文件名兜底识别结果"
+                              }
+                            }
+                          ]
+                        }
+                        """
+        );
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(response);
+
+        QwenAsrClient client = new QwenAsrClient(newProperties("test-qwen-key"), objectMapper, httpClient);
+        AsrResult result = client.recognize(AsrRequest.builder()
+                .audioData("webm-audio".getBytes())
+                .filename("question.webm")
+                .contentType("application/octet-stream")
+                .build());
+
+        assertThat(result.getText()).isEqualTo("这是文件名兜底识别结果");
+
+        ArgumentCaptor<HttpRequest> requestCaptor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpClient).send(requestCaptor.capture(), any(HttpResponse.BodyHandler.class));
+        String requestBody = readBody(requestCaptor.getValue());
+        assertThat(requestBody).contains("data:audio/webm;base64,");
+    }
+
+    @Test
     @DisplayName("recognize mp3 audio with qwen asr")
     void recognize_mp3_success() throws Exception {
         HttpClient httpClient = mock(HttpClient.class);

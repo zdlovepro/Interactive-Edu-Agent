@@ -3,8 +3,8 @@
     <header v-if="!isAuthPage" class="app-header">
       <div class="page-shell header-inner">
         <RouterLink class="brand" to="/">
-          <span class="brand-mark">I</span>
-          <div>
+          <span class="brand-mark" aria-hidden="true">I</span>
+          <div class="brand-copy">
             <strong>IEA 智能教学助手</strong>
             <span>Interactive-Edu-Agent</span>
           </div>
@@ -160,28 +160,29 @@ async function handleLogout() {
 .brand-mark {
   width: 2.5rem;
   height: 2.5rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: inline-grid;
+  place-items: center;
   border-radius: 0.95rem;
   background:
     linear-gradient(135deg, rgba(14, 90, 224, 1), rgba(24, 126, 168, 0.92)),
     #ffffff;
   box-shadow: 0 16px 30px rgba(14, 90, 224, 0.24);
+  overflow: hidden;
   color: #ffffff;
-  font-size: 1.2rem;
+  font-size: 1.6rem;
   font-weight: 800;
+  line-height: 1;
   letter-spacing: 0.02em;
 }
 
-.brand strong {
+.brand-copy strong {
   display: block;
   color: var(--text-primary);
   font-size: 1rem;
   letter-spacing: -0.01em;
 }
 
-.brand span {
+.brand-copy span {
   display: block;
   margin-top: 0.2rem;
   color: var(--text-tertiary);

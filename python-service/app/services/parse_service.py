@@ -90,10 +90,6 @@ def _download_minio_object(request: ParseRequest) -> tuple[Path, Path]:
     except ImportError as exc:  # pragma: no cover - dependency exists in full image.
         raise PythonServiceException("minio dependency is not installed") from exc
 
-    endpoint = settings.MINIO_ENDPOINT.strip()
-    parsed = urlsplit(endpoint if "://" in endpoint else f"http://{endpoint}")
-    minio_endpoint = parsed.netloc or parsed.path
-    secure = settings.MINIO_SECURE or parsed.scheme == "https"
     bucket = settings.MINIO_BUCKET
     object_key = request.key.strip().lstrip("/")
 
@@ -102,13 +98,30 @@ def _download_minio_object(request: ParseRequest) -> tuple[Path, Path]:
     local_path = temp_dir / filename
 
     try:
-        client = Minio(
-            minio_endpoint,
-            access_key=settings.MINIO_ACCESS_KEY,
-            secret_key=settings.MINIO_SECRET_KEY,
-            secure=secure,
-        )
-        client.fget_object(bucket, object_key, str(local_path))
+        last_error: Exception | None = None
+        for minio_endpoint, secure in _iter_minio_client_endpoints():
+            try:
+                client = Minio(
+                    minio_endpoint,
+                    access_key=settings.MINIO_ACCESS_KEY,
+                    secret_key=settings.MINIO_SECRET_KEY,
+                    secure=secure,
+                )
+                client.fget_object(bucket, object_key, str(local_path))
+                last_error = None
+                break
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                logger.warning(
+                    "MinIO download attempt failed. coursewareId=%s endpoint=%s bucket=%s key=%s reason=%s",
+                    request.courseware_id,
+                    minio_endpoint,
+                    bucket,
+                    object_key,
+                    type(exc).__name__,
+                )
+        if last_error is not None:
+            raise last_error
         logger.info(
             "Downloaded MinIO courseware object for parse. coursewareId=%s bucket=%s key=%s bytes=%s",
             request.courseware_id,
@@ -126,6 +139,32 @@ def _download_minio_object(request: ParseRequest) -> tuple[Path, Path]:
             object_key,
         )
         raise AppException(BUSINESS_VALIDATION_FAILED, f"minio courseware file not found: {object_key}") from exc
+
+
+def _iter_minio_client_endpoints() -> list[tuple[str, bool]]:
+    endpoint = settings.MINIO_ENDPOINT.strip()
+    parsed = urlsplit(endpoint if "://" in endpoint else f"http://{endpoint}")
+    primary_netloc = parsed.netloc or parsed.path
+    secure = settings.MINIO_SECURE or parsed.scheme == "https"
+    candidates: list[tuple[str, bool]] = []
+
+    if primary_netloc:
+        candidates.append((primary_netloc, secure))
+
+    hostname = parsed.hostname or ""
+    port = f":{parsed.port}" if parsed.port else ""
+    localhost_netloc = f"localhost{port}"
+    if hostname and hostname not in {"localhost", "127.0.0.1"}:
+        candidates.append((localhost_netloc, secure))
+
+    deduped: list[tuple[str, bool]] = []
+    seen: set[tuple[str, bool]] = set()
+    for item in candidates:
+        if item in seen:
+            continue
+        seen.add(item)
+        deduped.append(item)
+    return deduped
 
 
 def _parse_local_file(local_path: Path, request: ParseRequest) -> ParseResult:

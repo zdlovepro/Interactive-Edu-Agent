@@ -28,6 +28,7 @@ import org.springframework.util.StringUtils;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -46,6 +47,7 @@ public class CoursewareVideoRenderService {
     private static final String TIMELINE_FILE_NAME = "timeline.json";
     private static final String DIGITAL_HUMAN_MANIFEST_FILE_NAME = "digital_human_manifest.json";
     private static final int MAX_ERROR_MESSAGE_LENGTH = 1000;
+    private static final Duration STALE_RENDER_TASK_THRESHOLD = Duration.ofMinutes(2);
 
     private final CoursewareService coursewareService;
     private final PythonVideoRenderClient pythonVideoRenderClient;
@@ -190,7 +192,7 @@ public class CoursewareVideoRenderService {
     private VideoRenderTaskState loadTaskState(String coursewareId) {
         VideoRenderTaskState cached = taskStore.get(coursewareId);
         if (cached != null) {
-            return cached;
+            return normalizeRecoveredTaskState(cached);
         }
 
         if (!isPersistentMode()) {
@@ -200,6 +202,7 @@ public class CoursewareVideoRenderService {
         return taskRepository().findById(coursewareId)
                 .map(entity -> {
                     VideoRenderTaskState state = VideoRenderTaskState.fromEntity(entity, outputDirFor(coursewareId));
+                    normalizeRecoveredTaskState(state);
                     taskStore.put(coursewareId, state);
                     return state;
                 })
@@ -349,6 +352,93 @@ public class CoursewareVideoRenderService {
             return MediaType.parseMediaType("video/mp4");
         }
         return MediaType.APPLICATION_OCTET_STREAM;
+    }
+
+    private VideoRenderTaskState normalizeRecoveredTaskState(VideoRenderTaskState state) {
+        if (state == null || !"RENDERING".equalsIgnoreCase(state.getStatus())) {
+            return state;
+        }
+        if (Boolean.TRUE.equals(activeRenderJobs.get(state.getCoursewareId()))) {
+            return state;
+        }
+
+        if (hasRecoveredVideoOutputs(state)) {
+            recoverCompletedState(state);
+            persistTaskState(state);
+            return state;
+        }
+
+        if (state.getUpdatedAt() != null
+                && state.getUpdatedAt().isBefore(Instant.now().minus(STALE_RENDER_TASK_THRESHOLD))) {
+            log.warn(
+                    "Recovered stale courseware video render task as failed. coursewareId={}, lastUpdate={}, message={}",
+                    state.getCoursewareId(),
+                    state.getUpdatedAt(),
+                    state.getMessage()
+            );
+            state.markFailed("Previous video render task was interrupted. Please trigger render again.");
+            persistTaskState(state);
+        }
+        return state;
+    }
+
+    private boolean hasRecoveredVideoOutputs(VideoRenderTaskState state) {
+        Path mp4Path = recoveredMp4Path(state);
+        Path hlsPath = recoveredHlsPlaylistPath(state);
+        return Files.exists(mp4Path)
+                && Files.isRegularFile(mp4Path)
+                && Files.exists(hlsPath)
+                && Files.isRegularFile(hlsPath);
+    }
+
+    private void recoverCompletedState(VideoRenderTaskState state) {
+        Path mp4Path = recoveredMp4Path(state);
+        Path hlsPath = recoveredHlsPlaylistPath(state);
+        List<CoursewareVideoTimelineItemView> timeline = loadRecoveredTimeline(state);
+        long recoveredDurationMs = timeline.isEmpty()
+                ? (state.getDurationMs() == null ? 0L : state.getDurationMs())
+                : timeline.get(timeline.size() - 1).endMs();
+        int recoveredSegmentCount = timeline.isEmpty()
+                ? (state.getSegmentCount() == null ? 0 : state.getSegmentCount())
+                : timeline.size();
+        state.recoverReady(
+                mp4Path.toString(),
+                hlsPath.toString(),
+                recoveredDurationMs,
+                recoveredSegmentCount,
+                "Recovered completed lecture video from existing render output."
+        );
+    }
+
+    private List<CoursewareVideoTimelineItemView> loadRecoveredTimeline(VideoRenderTaskState state) {
+        Path timelinePath = state.getOutputDir().resolve(TIMELINE_FILE_NAME).toAbsolutePath().normalize();
+        if (!Files.exists(timelinePath) || !Files.isRegularFile(timelinePath)) {
+            return List.of();
+        }
+
+        try {
+            return objectMapper.readValue(
+                    timelinePath.toFile(),
+                    new TypeReference<List<CoursewareVideoTimelineItemView>>() {
+                    }
+            );
+        } catch (Exception ex) {
+            log.warn(
+                    "Failed to recover courseware video timeline. coursewareId={}, path={}, reason={}",
+                    state.getCoursewareId(),
+                    timelinePath,
+                    ex.getMessage()
+            );
+            return List.of();
+        }
+    }
+
+    private Path recoveredMp4Path(VideoRenderTaskState state) {
+        return state.getOutputDir().resolve("lecture.mp4").toAbsolutePath().normalize();
+    }
+
+    private Path recoveredHlsPlaylistPath(VideoRenderTaskState state) {
+        return state.getOutputDir().resolve("hls").resolve("index.m3u8").toAbsolutePath().normalize();
     }
 
     private String buildReadyMessage(ScriptView script, PythonVideoRenderClient.VideoRenderResult result) {
@@ -537,6 +627,24 @@ public class CoursewareVideoRenderService {
             this.hlsPlaylistPath = result.getHlsPlaylistPath();
             this.durationMs = result.getDurationMs();
             this.segmentCount = result.getSegmentCount();
+            this.errorMessage = null;
+            touch();
+        }
+
+        private void recoverReady(
+                String mp4Path,
+                String hlsPlaylistPath,
+                Long durationMs,
+                Integer segmentCount,
+                String message
+        ) {
+            this.status = "READY";
+            this.progress = 100;
+            this.message = sanitizeErrorMessage(StringUtils.hasText(message) ? message : "Courseware lecture video rendered");
+            this.mp4Path = mp4Path;
+            this.hlsPlaylistPath = hlsPlaylistPath;
+            this.durationMs = durationMs;
+            this.segmentCount = segmentCount;
             this.errorMessage = null;
             touch();
         }

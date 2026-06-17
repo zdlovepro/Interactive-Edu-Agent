@@ -357,12 +357,20 @@ async def _generate_digital_human_overlays(
                     raise PythonServiceException("Combined digital human audio is shorter than the minimum duration")
 
                 _stretch_reference_video_to_duration(reference_video_path, combined_visible_ms, prepared_video_path)
-                await client.render_clip(
-                    reference_video_path=prepared_video_path,
-                    reference_audio_path=overlay_audio_path,
-                    output_path=overlay_video_path,
-                    enable_video_extension=False,
-                )
+                try:
+                    await asyncio.wait_for(
+                        client.render_clip(
+                            reference_video_path=prepared_video_path,
+                            reference_audio_path=overlay_audio_path,
+                            output_path=overlay_video_path,
+                            enable_video_extension=False,
+                        ),
+                        timeout=max(30, settings.DIGITAL_HUMAN_SOFT_TIMEOUT_SECONDS),
+                    )
+                except asyncio.TimeoutError as exc:
+                    raise PythonServiceException(
+                        f"Digital human generation timed out after {max(30, settings.DIGITAL_HUMAN_SOFT_TIMEOUT_SECONDS)} seconds"
+                    ) from exc
                 final_duration_ms = _normalize_digital_human_clip(overlay_video_path)
 
                 source_offset_ms = 0
@@ -427,23 +435,6 @@ def _resolve_digital_human_reference_video() -> Path | None:
     configured = (settings.DIGITAL_HUMAN_REFERENCE_VIDEO_PATH or "").strip()
     if configured:
         return _resolve_existing_file(configured, "digital human reference video")
-
-    workspace_root = Path("/workspace")
-    if not workspace_root.exists():
-        return None
-
-    dedicated_reference_video = _find_reference_video_in_dedicated_dirs(workspace_root)
-    if dedicated_reference_video is not None:
-        logger.info(
-            "Digital human reference video loaded from dedicated directory. path=%s",
-            dedicated_reference_video,
-        )
-        return dedicated_reference_video
-
-    auto_selected = _auto_select_workspace_digital_human_video(workspace_root)
-    if auto_selected is not None:
-        logger.info("Digital human reference video auto-selected. path=%s", auto_selected)
-        return auto_selected
 
     return None
 
@@ -960,22 +951,23 @@ def _download_audio_from_minio(parsed_url: object, target: Path) -> bool:
         return False
 
     bucket_name, object_name = object_path.split("/", 1)
-    endpoint = urlsplit(settings.MINIO_ENDPOINT or "").netloc
-    if not endpoint or not settings.MINIO_ACCESS_KEY or not settings.MINIO_SECRET_KEY:
+    if not settings.MINIO_ACCESS_KEY or not settings.MINIO_SECRET_KEY:
         return False
 
-    client = _create_minio_client(endpoint, urlsplit(settings.MINIO_ENDPOINT).scheme == "https")
-    try:
-        response = client.get_object(bucket_name, object_name)
+    for endpoint, secure in _iter_minio_client_endpoints():
         try:
-            target.write_bytes(response.read())
-        finally:
-            response.close()
-            response.release_conn()
-    except Exception:  # noqa: BLE001
-        return False
+            client = _create_minio_client(endpoint, secure)
+            response = client.get_object(bucket_name, object_name)
+            try:
+                target.write_bytes(response.read())
+            finally:
+                response.close()
+                response.release_conn()
+            return target.exists() and target.stat().st_size > 0
+        except Exception:  # noqa: BLE001
+            continue
 
-    return target.exists() and target.stat().st_size > 0
+    return False
 
 
 def _create_minio_client(endpoint: str, secure: bool) -> object:
@@ -987,6 +979,35 @@ def _create_minio_client(endpoint: str, secure: bool) -> object:
         secret_key=settings.MINIO_SECRET_KEY,
         secure=secure,
     )
+
+
+def _iter_minio_client_endpoints() -> list[tuple[str, bool]]:
+    raw_endpoint = (settings.MINIO_ENDPOINT or "").strip()
+    if not raw_endpoint:
+        return []
+
+    parsed = urlsplit(raw_endpoint if "://" in raw_endpoint else f"http://{raw_endpoint}")
+    primary_netloc = parsed.netloc or parsed.path
+    secure = settings.MINIO_SECURE or parsed.scheme == "https"
+    candidates: list[tuple[str, bool]] = []
+
+    if primary_netloc:
+        candidates.append((primary_netloc, secure))
+
+    hostname = parsed.hostname or ""
+    port = f":{parsed.port}" if parsed.port else ""
+    localhost_netloc = f"localhost{port}"
+    if hostname and hostname not in {"localhost", "127.0.0.1"}:
+        candidates.append((localhost_netloc, secure))
+
+    deduped: list[tuple[str, bool]] = []
+    seen: set[tuple[str, bool]] = set()
+    for item in candidates:
+        if item in seen:
+            continue
+        seen.add(item)
+        deduped.append(item)
+    return deduped
 
 
 def _rewrite_internal_download_url(raw_url: str) -> str:

@@ -213,6 +213,55 @@ const handleVideoError = () => {
   )
 }
 
+const pause = () => {
+  const video = videoRef.value
+  if (!video) {
+    return false
+  }
+
+  video.pause()
+  emitPlaybackState('pause')
+  return true
+}
+
+const play = async () => {
+  const video = videoRef.value
+  if (!video) {
+    return false
+  }
+
+  await video.play()
+  emitPlaybackState('play')
+  return true
+}
+
+const seek = seconds => {
+  const video = videoRef.value
+  const nextTime = Number(seconds)
+  if (!video || !Number.isFinite(nextTime)) {
+    return false
+  }
+
+  video.currentTime = Math.max(0, nextTime)
+  emitPlaybackState('timeupdate')
+  return true
+}
+
+const getCurrentTime = () => {
+  const video = videoRef.value
+  return video && Number.isFinite(video.currentTime) ? video.currentTime : 0
+}
+
+const getDuration = () => {
+  const video = videoRef.value
+  return video && Number.isFinite(video.duration) ? video.duration : 0
+}
+
+const isPaused = () => {
+  const video = videoRef.value
+  return video ? Boolean(video.paused) : true
+}
+
 const emitPlaybackState = eventName => {
   const video = videoRef.value
   if (!video || suppressVideoEvents.value) {
@@ -255,6 +304,15 @@ onBeforeUnmount(() => {
     video.removeEventListener('error', handleVideoError)
   }
   cleanupPlayer()
+})
+
+defineExpose({
+  pause,
+  play,
+  seek,
+  getCurrentTime,
+  getDuration,
+  isPaused,
 })
 </script>
 
