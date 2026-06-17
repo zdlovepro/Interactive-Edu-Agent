@@ -76,13 +76,37 @@ class DigitalHumanSelection:
     reason: str
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class DigitalHumanOverlayClip:
     video_path: Path
     source_offset_ms: int
     visible_ms: int
     group_id: str
     reason: str
+    score: float
+
+    def __init__(
+        self,
+        *,
+        video_path: Path,
+        visible_ms: int,
+        reason: str,
+        source_offset_ms: int | None = None,
+        start_offset_ms: int | None = None,
+        group_id: str = "",
+        score: float = 0.0,
+    ) -> None:
+        resolved_offset_ms = source_offset_ms if source_offset_ms is not None else start_offset_ms
+        object.__setattr__(self, "video_path", video_path)
+        object.__setattr__(self, "source_offset_ms", max(0, int(resolved_offset_ms or 0)))
+        object.__setattr__(self, "visible_ms", max(0, int(visible_ms)))
+        object.__setattr__(self, "group_id", group_id or "")
+        object.__setattr__(self, "reason", reason)
+        object.__setattr__(self, "score", float(score))
+
+    @property
+    def start_offset_ms(self) -> int:
+        return self.source_offset_ms
 
 
 @dataclass(frozen=True)
@@ -91,6 +115,7 @@ class DigitalHumanOverlayGroup:
     segments: tuple[PreparedRenderSegment, ...]
     segment_visible_ms: tuple[int, ...]
     total_visible_ms: int
+    reason: str = "manual digital human selection"
 
 
 _SUBTITLE_SENTENCE_BREAK_RE = re.compile(r"(?<=[。！？!?])\s*")
@@ -317,6 +342,9 @@ def _build_digital_human_overlays(
 
     selected_groups = _group_selected_digital_human_segments(prepared_segments)
     if not selected_groups:
+        auto_selected = _select_digital_human_segments(prepared_segments)
+        selected_groups = _group_auto_selected_digital_human_segments(auto_selected)
+    if not selected_groups:
         logger.info("Digital human rendering skipped because no script segments were selected for digital human.")
         return {}, []
 
@@ -386,14 +414,14 @@ async def _generate_digital_human_overlays(
                         source_offset_ms=source_offset_ms,
                         visible_ms=effective_visible_ms,
                         group_id=group.group_id,
-                        reason="manual digital human selection",
+                        reason=group.reason,
                     )
                     manifest.append(
                         {
                             "pageIndex": prepared.segment.page_index,
                             "segmentId": prepared.segment.segment_id,
                             "status": "success",
-                            "reason": "manual digital human selection",
+                            "reason": group.reason,
                             "groupId": group.group_id,
                             "sourceOffsetSeconds": round(source_offset_ms / 1000, 3),
                             "overlaySeconds": round(effective_visible_ms / 1000, 3),
@@ -589,6 +617,7 @@ def _group_selected_digital_human_segments(
                     segments=tuple(current_segments),
                     segment_visible_ms=tuple(current_visible_ms),
                     total_visible_ms=current_total_ms,
+                    reason="manual digital human selection",
                 )
             )
         current_segments = []
@@ -623,6 +652,116 @@ def _group_selected_digital_human_segments(
 
     flush_current_group()
     logger.info("Digital human group plan prepared. groups=%s", len(groups))
+    return groups
+
+
+def _select_digital_human_segments(
+    prepared_segments: list[PreparedRenderSegment],
+) -> list[tuple[PreparedRenderSegment, DigitalHumanSelection]]:
+    if not prepared_segments:
+        return []
+
+    configured_max_segments = max(0, int(settings.DIGITAL_HUMAN_MAX_SEGMENTS))
+    if configured_max_segments <= 0:
+        return []
+
+    ratio_limit = max(0, float(settings.DIGITAL_HUMAN_MAX_SEGMENT_RATIO))
+    ratio_cap = math.ceil(len(prepared_segments) * ratio_limit) if ratio_limit > 0 else configured_max_segments
+    selection_limit = min(configured_max_segments, max(1, ratio_cap))
+    min_page_gap = max(0, int(settings.DIGITAL_HUMAN_MIN_PAGE_GAP))
+    min_score = max(0.0, float(settings.DIGITAL_HUMAN_MIN_IMPORTANCE_SCORE))
+    min_duration_ms = max(1, int(settings.DIGITAL_HUMAN_MIN_AUDIO_SECONDS) * 1000)
+
+    ranked_candidates: list[tuple[PreparedRenderSegment, DigitalHumanSelection]] = []
+    for prepared in prepared_segments:
+        if not prepared.has_real_audio or prepared.duration_ms < min_duration_ms:
+            continue
+        selection = _estimate_digital_human_importance(prepared)
+        if selection.score < min_score:
+            continue
+        ranked_candidates.append((prepared, selection))
+
+    ranked_candidates.sort(
+        key=lambda item: (
+            item[1].score,
+            item[0].duration_ms,
+            item[0].segment.page_index,
+        ),
+        reverse=True,
+    )
+
+    selected: list[tuple[PreparedRenderSegment, DigitalHumanSelection]] = []
+    for prepared, selection in ranked_candidates:
+        page_index = prepared.segment.page_index
+        if any(abs(page_index - existing.segment.page_index) <= min_page_gap for existing, _ in selected):
+            continue
+        selected.append((prepared, selection))
+        if len(selected) >= selection_limit:
+            break
+
+    selected.sort(key=lambda item: item[0].segment.page_index)
+    logger.info(
+        "Digital human auto-selection prepared. candidates=%s selected=%s pages=%s",
+        len(ranked_candidates),
+        len(selected),
+        [prepared.segment.page_index for prepared, _ in selected],
+    )
+    return selected
+
+
+def _group_auto_selected_digital_human_segments(
+    selected_segments: list[tuple[PreparedRenderSegment, DigitalHumanSelection]],
+) -> list[DigitalHumanOverlayGroup]:
+    if not selected_segments:
+        return []
+
+    groups: list[DigitalHumanOverlayGroup] = []
+    max_duration_ms = _effective_digital_human_max_audio_seconds() * 1000
+    min_duration_ms = settings.DIGITAL_HUMAN_MIN_AUDIO_SECONDS * 1000
+
+    current_segments: list[PreparedRenderSegment] = []
+    current_visible_ms: list[int] = []
+    current_reasons: list[str] = []
+    current_total_ms = 0
+
+    def flush_current_group() -> None:
+        nonlocal current_segments, current_visible_ms, current_reasons, current_total_ms
+        if current_segments and current_total_ms >= min_duration_ms:
+            group_index = len(groups) + 1
+            reason = "; ".join(dict.fromkeys(current_reasons)) if current_reasons else "auto-selected digital human segment"
+            groups.append(
+                DigitalHumanOverlayGroup(
+                    group_id=f"auto_group_{group_index:03d}",
+                    segments=tuple(current_segments),
+                    segment_visible_ms=tuple(current_visible_ms),
+                    total_visible_ms=current_total_ms,
+                    reason=reason,
+                )
+            )
+        current_segments = []
+        current_visible_ms = []
+        current_reasons = []
+        current_total_ms = 0
+
+    for prepared, selection in selected_segments:
+        visible_ms = min(prepared.duration_ms, max_duration_ms)
+        if visible_ms <= 0:
+            continue
+
+        is_consecutive = not current_segments or prepared.segment.page_index == current_segments[-1].segment.page_index + 1
+        if current_segments and (not is_consecutive or current_total_ms + visible_ms > max_duration_ms):
+            flush_current_group()
+
+        current_segments.append(prepared)
+        current_visible_ms.append(visible_ms)
+        current_reasons.append(f"auto-selected: {selection.reason} (score={selection.score:.2f})")
+        current_total_ms += visible_ms
+
+        if current_total_ms >= max_duration_ms:
+            flush_current_group()
+
+    flush_current_group()
+    logger.info("Digital human auto-group plan prepared. groups=%s", len(groups))
     return groups
 
 
@@ -720,6 +859,9 @@ def _create_overlay_audio_clip(source_audio_path: Path, output_path: Path, *, cl
 
 def _effective_digital_human_max_audio_seconds() -> int:
     configured_max = max(0, int(settings.DIGITAL_HUMAN_MAX_AUDIO_SECONDS))
+    model_name = (settings.DIGITAL_HUMAN_MODEL_NAME or "").strip().lower()
+    if "wan" in model_name:
+        configured_max = min(configured_max, 10)
     return max(int(settings.DIGITAL_HUMAN_MIN_AUDIO_SECONDS), configured_max)
 
 

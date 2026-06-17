@@ -223,5 +223,5 @@ def test_build_filter_graph_places_overlay_at_top_right_when_margins_zero(monkey
     )
 
     assert "overlay=x=W-w:y=0" in filter_graph
-    assert "enable='between(t,1.500,13.500)'" in filter_graph
+    assert "trim=start=1.500:duration=12.000" in filter_graph
     assert "MarginV=6" in filter_graph
