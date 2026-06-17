@@ -249,6 +249,7 @@ public class CoursewareVideoRenderService {
                 state.getMp4Path(),
                 state.getHlsPlaylistPath(),
                 state.getHlsPlaylistPath() == null ? null : HLS_URL_TEMPLATE.formatted(state.getCoursewareId()),
+                state.getUpdatedAt() == null ? null : state.getUpdatedAt().toEpochMilli(),
                 state.getDurationMs(),
                 state.getSegmentCount(),
                 state.getErrorMessage(),

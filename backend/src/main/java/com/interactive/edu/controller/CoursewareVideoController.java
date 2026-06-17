@@ -21,8 +21,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.TimeUnit;
-
 @RestController
 @RequestMapping("/api/v1/courseware/{coursewareId}/video")
 @RequiredArgsConstructor
@@ -81,7 +79,9 @@ public class CoursewareVideoController {
     private ResponseEntity<Resource> buildMediaResponse(CoursewareVideoRenderService.MediaResource mediaResource) {
         return ResponseEntity.ok()
                 .contentType(mediaResource.mediaType())
-                .cacheControl(CacheControl.maxAge(1, TimeUnit.HOURS).cachePublic())
+                .cacheControl(CacheControl.noStore().mustRevalidate())
+                .header("Pragma", "no-cache")
+                .header("Expires", "0")
                 .body(mediaResource.resource());
     }
 }

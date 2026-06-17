@@ -234,7 +234,7 @@
                   如果你修改了讲稿或数字人勾选，请重新生成讲解视频，让字幕、音频和数字人片段保持同步。
                 </div>
                 <HlsVideoPlayer
-                  :src="videoRenderTask.hlsUrl"
+                  :src="resolvedVideoRenderUrl"
                   title="课件讲解视频"
                   @error="message => (videoPlayerError = message)"
                   @ready="videoPlayerError = ''"
@@ -396,6 +396,24 @@ const resolvedVideoRenderStatusText = computed(() => {
 
   return task.message || '正在整理页面图、字幕和音频。'
 })
+
+const appendCacheKey = (url, cacheKey) => {
+  const rawUrl = String(url || '').trim()
+  if (!rawUrl) {
+    return ''
+  }
+
+  const normalizedKey = Number(cacheKey)
+  if (!Number.isFinite(normalizedKey) || normalizedKey <= 0) {
+    return rawUrl
+  }
+
+  return `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}v=${normalizedKey}`
+}
+
+const resolvedVideoRenderUrl = computed(() =>
+  appendCacheKey(videoRenderTask.value?.hlsUrl, videoRenderTask.value?.cacheKey),
+)
 
 const normalizeScript = raw => {
   const segments = Array.isArray(raw?.segments)

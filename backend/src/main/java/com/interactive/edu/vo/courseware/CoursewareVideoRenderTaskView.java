@@ -10,6 +10,7 @@ public record CoursewareVideoRenderTaskView(
         String mp4Path,
         String hlsPlaylistPath,
         String hlsUrl,
+        Long cacheKey,
         Long durationMs,
         Integer segmentCount,
         String errorMessage,

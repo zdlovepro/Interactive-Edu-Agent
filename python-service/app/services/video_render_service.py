@@ -434,7 +434,38 @@ def _digital_human_enabled() -> bool:
 def _resolve_digital_human_reference_video() -> Path | None:
     configured = (settings.DIGITAL_HUMAN_REFERENCE_VIDEO_PATH or "").strip()
     if configured:
-        return _resolve_existing_file(configured, "digital human reference video")
+        try:
+            resolved = _resolve_existing_file(configured, "digital human reference video")
+            logger.info("Using configured digital human reference video. path=%s", resolved)
+            return resolved
+        except PythonServiceException as exc:
+            logger.warning(
+                "Configured digital human reference video is unavailable, falling back to auto-discovery. path=%s reason=%s",
+                configured,
+                str(exc),
+            )
+
+    workspace_candidates = [Path("/workspace"), Path(__file__).resolve().parents[3], Path.cwd()]
+    seen_roots: set[Path] = set()
+
+    for candidate_root in workspace_candidates:
+        try:
+            root = candidate_root.expanduser().resolve()
+        except OSError:
+            continue
+        if root in seen_roots or not root.exists():
+            continue
+        seen_roots.add(root)
+
+        dedicated_match = _find_reference_video_in_dedicated_dirs(root)
+        if dedicated_match is not None:
+            logger.info("Auto-discovered digital human reference video from dedicated directory. path=%s", dedicated_match)
+            return dedicated_match
+
+        auto_selected = _auto_select_workspace_digital_human_video(root)
+        if auto_selected is not None:
+            logger.info("Auto-selected digital human reference video from workspace scan. path=%s", auto_selected)
+            return auto_selected
 
     return None
 

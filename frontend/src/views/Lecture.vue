@@ -327,10 +327,16 @@ const lectureVideoUrl = computed(() => {
   }
 
   if (videoRenderTask.value?.hlsUrl) {
-    return buildApiUrl(videoRenderTask.value.hlsUrl)
+    return appendCacheKey(
+      buildApiUrl(videoRenderTask.value.hlsUrl),
+      videoRenderTask.value?.cacheKey,
+    )
   }
 
-  return buildApiUrl(COURSEWARE_VIDEO_API.SOURCE(coursewareId))
+  return appendCacheKey(
+    buildApiUrl(COURSEWARE_VIDEO_API.SOURCE(coursewareId)),
+    videoRenderTask.value?.cacheKey,
+  )
 })
 const hasPlayableVideo = computed(() => Boolean(lectureVideoUrl.value))
 const videoRenderStatusText = computed(() => {
@@ -402,6 +408,20 @@ const buildApiUrl = path => {
     return normalizedPath
   }
   return `${normalizedBase}${normalizedPath}`
+}
+
+const appendCacheKey = (url, cacheKey) => {
+  const rawUrl = String(url || '').trim()
+  if (!rawUrl) {
+    return ''
+  }
+
+  const normalizedKey = Number(cacheKey)
+  if (!Number.isFinite(normalizedKey) || normalizedKey <= 0) {
+    return rawUrl
+  }
+
+  return `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}v=${normalizedKey}`
 }
 
 const normalizeCourseCodeInput = value => String(value || '').trim().toUpperCase()
